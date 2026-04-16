@@ -217,7 +217,7 @@ export default function AreaMasterPage() {
       {areas.length === 0 ? (
         <p className="text-muted-foreground">エリアが登録されていません。「新規登録」から追加してください。</p>
       ) : (
-        <div className="rounded-md border">
+        <div className="rounded-md border max-w-2xl mx-auto">
           <Table>
             <TableHeader>
               <TableRow>
