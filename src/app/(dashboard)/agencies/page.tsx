@@ -44,6 +44,7 @@ type Agency = {
   phone: string | null;
   email: string | null;
   contact_person: string | null;
+  url: string | null;
   notes: string | null;
 };
 
@@ -184,7 +185,7 @@ export default function AgenciesPage() {
   // 会社編集
   const [agencyDialogOpen, setAgencyDialogOpen] = useState(false);
   const [editingAgencyId, setEditingAgencyId] = useState<string | null>(null);
-  const [agencyForm, setAgencyForm] = useState({ name: "", phone: "", email: "", contact_person: "", notes: "" });
+  const [agencyForm, setAgencyForm] = useState({ name: "", phone: "", email: "", contact_person: "", url: "", notes: "" });
   const [savingAgency, setSavingAgency] = useState(false);
   const [deleteAgencyDialogOpen, setDeleteAgencyDialogOpen] = useState(false);
   const [deletingAgency, setDeletingAgency] = useState<Agency | null>(null);
@@ -218,13 +219,13 @@ export default function AgenciesPage() {
   // --- 会社CRUD ---
   const openAgencyEdit = (a: Agency) => {
     setEditingAgencyId(a.id);
-    setAgencyForm({ name: a.name, phone: a.phone || "", email: a.email || "", contact_person: a.contact_person || "", notes: a.notes || "" });
+    setAgencyForm({ name: a.name, phone: a.phone || "", email: a.email || "", contact_person: a.contact_person || "", url: a.url || "", notes: a.notes || "" });
     setAgencyDialogOpen(true);
   };
 
   const openAgencyCreate = () => {
     setEditingAgencyId(null);
-    setAgencyForm({ name: "", phone: "", email: "", contact_person: "", notes: "" });
+    setAgencyForm({ name: "", phone: "", email: "", contact_person: "", url: "", notes: "" });
     setAgencyDialogOpen(true);
   };
 
@@ -236,6 +237,7 @@ export default function AgenciesPage() {
       phone: agencyForm.phone.trim() || null,
       email: agencyForm.email.trim() || null,
       contact_person: agencyForm.contact_person.trim() || null,
+      url: agencyForm.url.trim() || null,
       notes: agencyForm.notes.trim() || null,
     };
     if (editingAgencyId) {
@@ -422,6 +424,7 @@ export default function AgenciesPage() {
                       <span className="font-medium">{a.name}</span>
                       {a.contact_person && <span className="text-muted-foreground text-xs">担当: {a.contact_person}</span>}
                       {a.phone && <span className="text-muted-foreground text-xs">{a.phone}</span>}
+                      {a.url && <a href={a.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs">HP</a>}
                       <Badge variant="outline" className="text-[10px]">{count}名</Badge>
                     </div>
                     {canEdit && (
@@ -785,6 +788,10 @@ export default function AgenciesPage() {
             <div className="space-y-1">
               <Label className="text-xs">メールアドレス</Label>
               <Input value={agencyForm.email} onChange={(e) => setAgencyForm({ ...agencyForm, email: e.target.value })} placeholder="info@example.com" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">URL</Label>
+              <Input value={agencyForm.url} onChange={(e) => setAgencyForm({ ...agencyForm, url: e.target.value })} placeholder="https://example.com" />
             </div>
             <div className="space-y-1">
               <Label className="text-xs">備考</Label>
