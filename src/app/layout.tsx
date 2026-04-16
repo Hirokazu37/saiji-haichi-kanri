@@ -15,6 +15,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "催事手配管理",
   description: "安岡蒲鉾 催事手配管理システム",
+  icons: {
+    icon: "/favicon.png",
+  },
 };
 
 export default function RootLayout({
