@@ -498,8 +498,8 @@ export default function AgenciesPage() {
             <TableRow>
               <TableHead>氏名</TableHead>
               <TableHead>マネキン会社</TableHead>
+              <TableHead className="hidden md:table-cell">電話番号</TableHead>
               <TableHead className="hidden md:table-cell">エリア</TableHead>
-              <TableHead className="hidden md:table-cell">日当目安</TableHead>
               <TableHead className="hidden lg:table-cell">評価</TableHead>
               {canEdit && <TableHead className="w-28">操作</TableHead>}
             </TableRow>
@@ -516,6 +516,9 @@ export default function AgenciesPage() {
                 <TableRow key={person.id}>
                   <TableCell className="font-medium">{person.name}</TableCell>
                   <TableCell>{getAgencyName(person.agency_id)}</TableCell>
+                  <TableCell className="hidden md:table-cell text-sm">
+                    {person.mobile_phone || person.phone || "—"}
+                  </TableCell>
                   <TableCell className="hidden md:table-cell">
                     {(() => {
                       const names = getAreaNamesForPerson(person.id);
@@ -525,9 +528,6 @@ export default function AgenciesPage() {
                         </div>
                       ) : "—";
                     })()}
-                  </TableCell>
-                  <TableCell className="hidden md:table-cell">
-                    {person.daily_rate ? `¥${person.daily_rate.toLocaleString()}` : "—"}
                   </TableCell>
                   <TableCell className="hidden lg:table-cell">
                     {person.evaluation ? (
