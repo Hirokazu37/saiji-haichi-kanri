@@ -463,11 +463,15 @@ export default function AgenciesPage() {
 
               {agencyMode === "existing" ? (
                 <Select
-                  value={personForm.agency_id}
-                  onValueChange={(v) => v && setPersonForm({ ...personForm, agency_id: v })}
+                  value={personForm.agency_id || "none"}
+                  onValueChange={(v) => setPersonForm({ ...personForm, agency_id: v === "none" ? "" : v })}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="マネキン会社を選択（任意）" />
+                    <SelectValue placeholder="マネキン会社を選択（任意）">
+                      {personForm.agency_id && personForm.agency_id !== "none"
+                        ? agencies.find((a) => a.id === personForm.agency_id)?.name || "不明な会社"
+                        : "なし（個人）"}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">なし（個人）</SelectItem>
