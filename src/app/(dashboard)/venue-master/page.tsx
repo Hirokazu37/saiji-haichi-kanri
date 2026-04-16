@@ -121,9 +121,12 @@ export default function VenueMasterPage() {
     return mannequinPeople.filter((p) => pids.includes(p.id));
   };
 
+  // トグル直後に消えないよう、最近トグルしたIDを保持
+  const [recentToggledIds, setRecentToggledIds] = useState<Set<string>>(new Set());
+
   // フィルタ
   const filtered = venues.filter((v) => {
-    if (!showInactive && !v.is_active) return false;
+    if (!showInactive && !v.is_active && !recentToggledIds.has(v.id)) return false;
     if (search) {
       const s = search.toLowerCase();
       const label = getVenueLabel(v).toLowerCase();
@@ -292,8 +295,15 @@ export default function VenueMasterPage() {
   };
 
   const toggleActive = async (v: VenueMaster) => {
-    // 楽観的更新（即消えを防止）
+    // 楽観的更新
     setVenues((prev) => prev.map((x) => x.id === v.id ? { ...x, is_active: !x.is_active } : x));
+    // 停止にした場合、3秒間はフィルタから除外しない
+    if (v.is_active) {
+      setRecentToggledIds((prev) => new Set(prev).add(v.id));
+      setTimeout(() => {
+        setRecentToggledIds((prev) => { const next = new Set(prev); next.delete(v.id); return next; });
+      }, 3000);
+    }
     await supabase.from("venue_master").update({ is_active: !v.is_active }).eq("id", v.id);
   };
 
