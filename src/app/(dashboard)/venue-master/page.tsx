@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/select";
 import { Plus, Pencil, Trash2, Search, X, Store, PlusCircle } from "lucide-react";
 import { prefectures } from "@/lib/prefectures";
-import { areaNames, getAreaForPrefecture } from "@/lib/areas";
+import { getAreaForPrefecture } from "@/lib/areas";
 import { usePermission } from "@/hooks/usePermission";
 
 type VenueMaster = {
@@ -78,8 +78,6 @@ export default function VenueMasterPage() {
   // エリア新規作成
   const [showNewArea, setShowNewArea] = useState(false);
   const [newAreaName, setNewAreaName] = useState("");
-  const [newAreaRegion, setNewAreaRegion] = useState("");
-  const [newAreaPrefecture, setNewAreaPrefecture] = useState("");
   const [savingArea, setSavingArea] = useState(false);
 
   // 削除
@@ -136,21 +134,23 @@ export default function VenueMasterPage() {
   const resetAreaForm = () => {
     setShowNewArea(false);
     setNewAreaName("");
-    setNewAreaRegion("");
-    setNewAreaPrefecture("");
   };
 
   const handleCreateArea = async () => {
     if (!newAreaName.trim()) return;
     setSavingArea(true);
 
+    // 百貨店の都道府県から地方・都道府県を自動セット
+    const pref = form.prefecture || null;
+    const region = pref ? getAreaForPrefecture(pref) : null;
+
     // sort_orderは既存エリアの最大値+1
     const maxOrder = areas.length > 0 ? Math.max(...areas.map((a) => (a as unknown as { sort_order?: number }).sort_order ?? 0)) + 1 : 0;
 
     const { data } = await supabase.from("area_master").insert({
       name: newAreaName.trim(),
-      region: newAreaRegion || null,
-      prefecture: newAreaPrefecture || null,
+      region,
+      prefecture: pref,
       sort_order: maxOrder,
     }).select("id, name, region, prefecture").single();
 
@@ -425,27 +425,20 @@ export default function VenueMasterPage() {
                     </Select>
                   ) : (
                     <div className="rounded border border-blue-300 bg-blue-50 dark:bg-blue-950/30 p-2 space-y-2">
-                      <Input value={newAreaName} onChange={(e) => setNewAreaName(e.target.value)} placeholder="エリア名（例: 梅田）" className="h-7 text-xs" />
-                      <div className="grid grid-cols-2 gap-2">
-                        <Select value={newAreaRegion} onValueChange={(v) => setNewAreaRegion(v)}>
-                          <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="地方" /></SelectTrigger>
-                          <SelectContent>
-                            {areaNames.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                        <Select value={newAreaPrefecture} onValueChange={(v) => { setNewAreaPrefecture(v); if (!newAreaRegion) { const r = getAreaForPrefecture(v); if (r) setNewAreaRegion(r); } }}>
-                          <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="都道府県" /></SelectTrigger>
-                          <SelectContent>
-                            {prefectures.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      </div>
                       <div className="flex gap-2">
-                        <Button type="button" size="sm" variant="outline" className="h-7 text-xs flex-1" onClick={resetAreaForm}>キャンセル</Button>
-                        <Button type="button" size="sm" className="h-7 text-xs flex-1 bg-blue-600 hover:bg-blue-700" onClick={handleCreateArea} disabled={!newAreaName.trim() || savingArea}>
-                          {savingArea ? "作成中..." : "エリア作成"}
+                        <Input value={newAreaName} onChange={(e) => setNewAreaName(e.target.value)} placeholder="エリア名（例: 梅田）" className="h-7 text-xs flex-1" />
+                        <Button type="button" size="sm" className="h-7 text-xs bg-blue-600 hover:bg-blue-700 shrink-0" onClick={handleCreateArea} disabled={!newAreaName.trim() || savingArea}>
+                          {savingArea ? "..." : "作成"}
+                        </Button>
+                        <Button type="button" size="sm" variant="outline" className="h-7 text-xs shrink-0" onClick={resetAreaForm}>
+                          <X className="h-3 w-3" />
                         </Button>
                       </div>
+                      {form.prefecture && (
+                        <p className="text-[10px] text-muted-foreground">
+                          {getAreaForPrefecture(form.prefecture)} / {form.prefecture} に自動紐づけ
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
