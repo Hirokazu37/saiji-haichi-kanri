@@ -128,3 +128,32 @@
     @apply font-sans;
   }
 }
+
+/* 印刷用スタイル */
+@media print {
+  @page { size: landscape; margin: 8mm; }
+  body { background: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .print\:hidden { display: none !important; }
+  aside, header, nav { display: none !important; }
+  .md\:pl-60 { padding-left: 0 !important; }
+  main { padding: 0 !important; }
+  /* 1ページに収める */
+  html, body { width: 100%; overflow: visible !important; }
+  * { overflow: visible !important; }
+  table { font-size: 9px; }
+  [data-slot="card"] { break-inside: avoid; }
+
+  /* 社外秘ウォーターマーク */
+  body::after {
+    content: "社外秘";
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(-30deg);
+    font-size: 120px;
+    font-weight: bold;
+    color: rgba(0, 0, 0, 0.06);
+    pointer-events: none;
+    z-index: 9999;
+  }
+}
