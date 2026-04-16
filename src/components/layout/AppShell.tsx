@@ -3,10 +3,12 @@
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
 import { PermissionProvider } from "@/hooks/usePermission";
+import { ConsentDialog } from "./ConsentDialog";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <PermissionProvider>
+      <ConsentDialog />
       <div className="min-h-screen bg-muted/40">
         <Sidebar />
         <div className="md:pl-60">
