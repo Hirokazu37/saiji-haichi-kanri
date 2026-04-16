@@ -17,7 +17,8 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel,
 } from "@/components/ui/select";
-import { Plus, Pencil, Trash2, Search, X, Store, PlusCircle } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, X, Store, PlusCircle, ExternalLink } from "lucide-react";
+import Link from "next/link";
 import { Switch } from "@/components/ui/switch";
 import { prefectures } from "@/lib/prefectures";
 import { getAreaForPrefecture } from "@/lib/areas";
@@ -507,7 +508,12 @@ export default function VenueMasterPage() {
 
             {/* ③ ホテル紐づけ */}
             <div className="rounded-lg border-2 border-green-300 dark:border-green-700 p-3 space-y-2">
-              <p className="text-xs font-semibold text-green-700 dark:text-green-400">よく使うホテル{form.area_id ? `（${areas.find((a) => a.id === form.area_id)?.name || ""}エリア）` : ""}</p>
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-green-700 dark:text-green-400">よく使うホテル{form.area_id ? `（${areas.find((a) => a.id === form.area_id)?.name || ""}エリア）` : ""}</p>
+                <Link href="/hotel-master" target="_blank" className="text-[10px] text-green-600 hover:underline flex items-center gap-0.5">
+                  ホテルマスター<ExternalLink className="h-2.5 w-2.5" />
+                </Link>
+              </div>
               {form.area_id ? (
                 (() => {
                   const hotelsInArea = hotelMasters.filter((h) => h.area_id === form.area_id);
@@ -534,7 +540,12 @@ export default function VenueMasterPage() {
 
             {/* ④ マネキン紐づけ */}
             <div className="rounded-lg border-2 border-purple-300 dark:border-purple-700 p-3 space-y-2">
-              <p className="text-xs font-semibold text-purple-700 dark:text-purple-400">よく使うマネキン</p>
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-purple-700 dark:text-purple-400">よく使うマネキン</p>
+                <Link href="/agencies" target="_blank" className="text-[10px] text-purple-600 hover:underline flex items-center gap-0.5">
+                  マネキン管理<ExternalLink className="h-2.5 w-2.5" />
+                </Link>
+              </div>
               {selectedMannequinIds.size > 0 && (
                 <div className="flex flex-wrap gap-1">
                   {Array.from(selectedMannequinIds).map((pid) => {
