@@ -17,8 +17,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel,
 } from "@/components/ui/select";
-import { Plus, Pencil, Trash2, Search, X, Store, PlusCircle, ExternalLink } from "lucide-react";
-import Link from "next/link";
+import { Plus, Pencil, Trash2, Search, X, Store, PlusCircle } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { prefectures } from "@/lib/prefectures";
 import { getAreaForPrefecture } from "@/lib/areas";
@@ -81,6 +80,17 @@ export default function VenueMasterPage() {
   const [showNewArea, setShowNewArea] = useState(false);
   const [newAreaName, setNewAreaName] = useState("");
   const [savingArea, setSavingArea] = useState(false);
+
+  // ホテル新規作成
+  const [showNewHotel, setShowNewHotel] = useState(false);
+  const [newHotelName, setNewHotelName] = useState("");
+  const [savingHotel, setSavingHotel] = useState(false);
+
+  // マネキン新規作成
+  const [showNewMannequin, setShowNewMannequin] = useState(false);
+  const [newMannequinName, setNewMannequinName] = useState("");
+  const [newMannequinAgency, setNewMannequinAgency] = useState("");
+  const [savingMannequin, setSavingMannequin] = useState(false);
 
   // 削除
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -168,6 +178,61 @@ export default function VenueMasterPage() {
     setNewAreaName("");
   };
 
+  const resetHotelForm = () => {
+    setShowNewHotel(false);
+    setNewHotelName("");
+  };
+
+  const resetMannequinForm = () => {
+    setShowNewMannequin(false);
+    setNewMannequinName("");
+    setNewMannequinAgency("");
+  };
+
+  const handleCreateHotel = async () => {
+    if (!newHotelName.trim()) return;
+    setSavingHotel(true);
+    const { data } = await supabase.from("hotel_master").insert({
+      name: newHotelName.trim(),
+      area_id: form.area_id || null,
+      is_active: true,
+    }).select("id, name, area_id").single();
+    if (data) {
+      setHotelMasters((prev) => [...prev, data as HotelMasterItem]);
+      setSelectedHotelIds((prev) => new Set(prev).add(data.id));
+    }
+    setSavingHotel(false);
+    resetHotelForm();
+  };
+
+  const handleCreateMannequin = async () => {
+    if (!newMannequinName.trim()) return;
+    setSavingMannequin(true);
+    // 会社名があれば既存のagencyを探すか新規作成
+    let agencyId: string | null = null;
+    let agencyName: string | null = null;
+    if (newMannequinAgency.trim()) {
+      agencyName = newMannequinAgency.trim();
+      const { data: existing } = await supabase.from("mannequin_agencies").select("id").eq("name", agencyName).single();
+      if (existing) {
+        agencyId = existing.id;
+      } else {
+        const { data: newAgency } = await supabase.from("mannequin_agencies").insert({ name: agencyName }).select("id").single();
+        agencyId = newAgency?.id || null;
+      }
+    }
+    const { data } = await supabase.from("mannequin_people").insert({
+      name: newMannequinName.trim(),
+      agency_id: agencyId,
+    }).select("id, name").single();
+    if (data) {
+      setMannequinPeople((prev) => [...prev, { id: data.id, name: data.name, agency_name: agencyName }]);
+      setSelectedMannequinIds((prev) => new Set(prev).add(data.id));
+    }
+    setSavingMannequin(false);
+    resetMannequinForm();
+  };
+
   const handleCreateArea = async () => {
     if (!newAreaName.trim()) return;
     setSavingArea(true);
@@ -204,6 +269,8 @@ export default function VenueMasterPage() {
     setHotelSearch("");
     setMannequinSearch("");
     resetAreaForm();
+    resetHotelForm();
+    resetMannequinForm();
     setDialogOpen(true);
   };
 
@@ -510,10 +577,26 @@ export default function VenueMasterPage() {
             <div className="rounded-lg border-2 border-green-300 dark:border-green-700 p-3 space-y-2">
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold text-green-700 dark:text-green-400">よく使うホテル{form.area_id ? `（${areas.find((a) => a.id === form.area_id)?.name || ""}エリア）` : ""}</p>
-                <Link href="/hotel-master" target="_blank" className="text-[10px] text-green-600 hover:underline flex items-center gap-0.5">
-                  ホテルマスター<ExternalLink className="h-2.5 w-2.5" />
-                </Link>
+                {!showNewHotel && (
+                  <button type="button" onClick={() => setShowNewHotel(true)} className="text-[10px] text-green-600 hover:underline flex items-center gap-0.5">
+                    <PlusCircle className="h-3 w-3" />新規ホテル
+                  </button>
+                )}
               </div>
+              {showNewHotel && (
+                <div className="rounded border border-green-300 bg-green-50 dark:bg-green-950/30 p-2">
+                  <div className="flex gap-2">
+                    <Input value={newHotelName} onChange={(e) => setNewHotelName(e.target.value)} placeholder="ホテル名" className="h-7 text-xs flex-1" />
+                    <Button type="button" size="sm" className="h-7 text-xs bg-green-600 hover:bg-green-700 shrink-0" onClick={handleCreateHotel} disabled={!newHotelName.trim() || savingHotel}>
+                      {savingHotel ? "..." : "作成"}
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" className="h-7 text-xs shrink-0" onClick={resetHotelForm}>
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                  {form.area_id && <p className="text-[10px] text-muted-foreground mt-1">{areas.find((a) => a.id === form.area_id)?.name}エリアに紐づけ</p>}
+                </div>
+              )}
               {form.area_id ? (
                 (() => {
                   const hotelsInArea = hotelMasters.filter((h) => h.area_id === form.area_id);
@@ -542,10 +625,28 @@ export default function VenueMasterPage() {
             <div className="rounded-lg border-2 border-purple-300 dark:border-purple-700 p-3 space-y-2">
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold text-purple-700 dark:text-purple-400">よく使うマネキン</p>
-                <Link href="/agencies" target="_blank" className="text-[10px] text-purple-600 hover:underline flex items-center gap-0.5">
-                  マネキン管理<ExternalLink className="h-2.5 w-2.5" />
-                </Link>
+                {!showNewMannequin && (
+                  <button type="button" onClick={() => setShowNewMannequin(true)} className="text-[10px] text-purple-600 hover:underline flex items-center gap-0.5">
+                    <PlusCircle className="h-3 w-3" />新規マネキン
+                  </button>
+                )}
               </div>
+              {showNewMannequin && (
+                <div className="rounded border border-purple-300 bg-purple-50 dark:bg-purple-950/30 p-2 space-y-1">
+                  <div className="flex gap-2">
+                    <Input value={newMannequinName} onChange={(e) => setNewMannequinName(e.target.value)} placeholder="マネキン名" className="h-7 text-xs flex-1" />
+                    <Input value={newMannequinAgency} onChange={(e) => setNewMannequinAgency(e.target.value)} placeholder="会社名" className="h-7 text-xs flex-1" />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button type="button" size="sm" className="h-7 text-xs bg-purple-600 hover:bg-purple-700 flex-1" onClick={handleCreateMannequin} disabled={!newMannequinName.trim() || savingMannequin}>
+                      {savingMannequin ? "..." : "作成"}
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" className="h-7 text-xs shrink-0" onClick={resetMannequinForm}>
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              )}
               {selectedMannequinIds.size > 0 && (
                 <div className="flex flex-wrap gap-1">
                   {Array.from(selectedMannequinIds).map((pid) => {
