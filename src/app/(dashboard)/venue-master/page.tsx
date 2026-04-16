@@ -515,8 +515,9 @@ export default function VenueMasterPage() {
                     )}
                   </div>
                   {!showNewArea ? (
+                    <div className="flex gap-2">
                     <Select value={form.area_id} onValueChange={(v) => { setForm({ ...form, area_id: v }); setSelectedHotelIds(new Set()); }}>
-                      <SelectTrigger><SelectValue placeholder="エリア選択">{form.area_id ? (() => { const a = areas.find((x) => x.id === form.area_id); return a ? (a.prefecture ? `${a.prefecture} / ${a.name}` : a.name) : ""; })() : undefined}</SelectValue></SelectTrigger>
+                      <SelectTrigger className="flex-1"><SelectValue placeholder="エリア選択">{form.area_id ? (() => { const a = areas.find((x) => x.id === form.area_id); return a ? (a.prefecture ? `${a.prefecture} / ${a.name}` : a.name) : ""; })() : undefined}</SelectValue></SelectTrigger>
                       <SelectContent>
                         {(() => {
                           const grouped = new Map<string, AreaItem[]>();
@@ -530,6 +531,12 @@ export default function VenueMasterPage() {
                         })()}
                       </SelectContent>
                     </Select>
+                    {form.area_id && (
+                      <Button type="button" variant="outline" size="sm" className="h-9 px-2 shrink-0" onClick={() => { setForm({ ...form, area_id: "" }); setSelectedHotelIds(new Set()); }}>
+                        <X className="h-3 w-3" />
+                      </Button>
+                    )}
+                    </div>
                   ) : (
                     <div className="rounded border border-blue-300 bg-blue-50 dark:bg-blue-950/30 p-2 space-y-2">
                       <div className="flex gap-2">
