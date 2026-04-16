@@ -23,9 +23,10 @@ import {
   Train,
   FileText,
   Mail,
+  UserCog,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const navItems = [
   { label: "ダッシュボード", href: "/", icon: LayoutDashboard },
@@ -39,6 +40,7 @@ const navItems = [
   { label: "ホテルマスター", href: "/hotel-master", icon: Hotel },
   { label: "社員マスター", href: "/employees", icon: Users },
   { label: "マネキン", href: "/agencies", icon: Building2 },
+  { label: "ユーザー管理", href: "/users", icon: UserCog },
 ];
 
 export function Header() {
@@ -46,6 +48,21 @@ export function Header() {
   const pathname = usePathname();
   const supabase = createClient();
   const [open, setOpen] = useState(false);
+  const [displayName, setDisplayName] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase
+          .from("user_profiles")
+          .select("display_name")
+          .eq("id", user.id)
+          .single();
+        if (data) setDisplayName(data.display_name);
+      }
+    })();
+  }, [supabase]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -94,8 +111,13 @@ export function Header() {
       {/* PC: ページタイトル */}
       <h1 className="text-lg font-semibold md:hidden">催事手配管理</h1>
 
-      {/* 右端: ログアウト */}
-      <div className="ml-auto">
+      {/* 右端: ユーザー名 + ログアウト */}
+      <div className="ml-auto flex items-center gap-2">
+        {displayName && (
+          <span className="text-sm text-muted-foreground hidden sm:inline">
+            {displayName}
+          </span>
+        )}
         <Button variant="ghost" size="sm" onClick={handleLogout}>
           <LogOut className="h-4 w-4 mr-2" />
           ログアウト

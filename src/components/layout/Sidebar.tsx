@@ -15,6 +15,7 @@ import {
   Mail,
   Store,
   MapPin,
+  UserCog,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -31,6 +32,7 @@ const navItems = [
   { label: "ホテルマスター", href: "/hotel-master", icon: Hotel },
   { label: "社員マスター", href: "/employees", icon: Users },
   { label: "マネキン", href: "/agencies", icon: Building2 },
+  { label: "ユーザー管理", href: "/users", icon: UserCog },
 ];
 
 export function Sidebar() {

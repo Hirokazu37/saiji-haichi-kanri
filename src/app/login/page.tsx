@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -21,13 +21,14 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
 
+    const email = `${username}@yasuoka.app`;
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
     if (error) {
-      setError("メールアドレスまたはパスワードが正しくありません");
+      setError("ユーザー名またはパスワードが正しくありません");
       setLoading(false);
       return;
     }
@@ -48,14 +49,15 @@ export default function LoginPage() {
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">メールアドレス</Label>
+              <Label htmlFor="username">ユーザー名</Label>
               <Input
-                id="email"
-                type="email"
-                placeholder="example@yasuoka.co.jp"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                id="username"
+                type="text"
+                placeholder="hirokazu"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
                 required
+                autoComplete="username"
               />
             </div>
             <div className="space-y-2">
