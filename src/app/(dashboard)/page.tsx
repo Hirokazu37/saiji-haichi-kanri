@@ -19,6 +19,8 @@ type Event = {
   application_status: string | null;
   person_in_charge: string | null;
   dm_status: string | null;
+  equipment_from: string | null;
+  equipment_to: string | null;
 };
 
 type EventAlert = {
@@ -76,17 +78,15 @@ export default function DashboardPage() {
     const targetEvents = Array.from(new Map([...upcoming, ...active].map((e) => [e.id, e])).values());
     const eventIds = targetEvents.map((e) => e.id);
 
-    const [hotelRes, transportRes, staffRes, shipmentRes] = await Promise.all([
+    const [hotelRes, transportRes, staffRes] = await Promise.all([
       supabase.from("hotels").select("event_id, reservation_status").in("event_id", eventIds),
       supabase.from("transportations").select("event_id, reservation_status").in("event_id", eventIds),
       supabase.from("event_staff").select("event_id").in("event_id", eventIds),
-      supabase.from("shipments").select("event_id, shipment_status").in("event_id", eventIds),
     ]);
 
     const hotels = hotelRes.data || [];
     const transports = transportRes.data || [];
     const staffList = staffRes.data || [];
-    const shipmentList = shipmentRes.data || [];
 
     const alerts: EventAlert[] = [];
     for (const evt of targetEvents) {
@@ -94,11 +94,10 @@ export default function DashboardPage() {
       const evtHotels = hotels.filter((h) => h.event_id === evt.id);
       const evtTransports = transports.filter((t) => t.event_id === evt.id);
       const evtStaff = staffList.filter((s) => s.event_id === evt.id);
-      const evtShipments = shipmentList.filter((s) => s.event_id === evt.id);
 
       const hotelStatus = evtHotels.length === 0 ? "na" : evtHotels.every((h) => h.reservation_status === "予約済") ? "ok" : "ng";
       const transportStatus = evtTransports.length === 0 ? "na" : evtTransports.every((t) => t.reservation_status === "予約済") ? "ok" : "ng";
-      const shipmentStatus = evtShipments.length === 0 ? "na" : "ok";
+      const shipmentStatus = (evt.equipment_from && evt.equipment_to) ? "ok" : (!evt.equipment_from && !evt.equipment_to) ? "na" : "ng";
       const appStatus = evt.application_status === "提出済" ? "ok" : "ng";
       const staffStatus = evtStaff.length > 0 ? "ok" : "ng";
       const dmStatus = evt.dm_status === null ? "na" : evt.dm_status === "印刷済み" ? "ok" : "ng";

@@ -17,7 +17,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Users } from "lucide-react";
 import { addLog } from "@/lib/log";
 
 type Employee = { id: string; name: string; position: string | null };
@@ -102,9 +102,12 @@ export function StaffTab({ eventId, startDate, endDate }: { eventId: string; sta
   };
 
   return (
-    <Card>
+    <Card className="border-l-4 border-l-cyan-500 bg-cyan-50/50">
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>社員配置</CardTitle>
+        <div className="flex items-center gap-2">
+          <Users className="h-4 w-4 text-cyan-600" />
+          <CardTitle className="text-cyan-800">社員配置</CardTitle>
+        </div>
         <Button size="sm" onClick={openCreate}><Plus className="h-4 w-4 mr-1" />追加</Button>
       </CardHeader>
       <CardContent>

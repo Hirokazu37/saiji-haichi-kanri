@@ -211,25 +211,21 @@ export default function SchedulePage() {
 
   const handleSaveJpg = async () => {
     if (!tableRef.current) return;
-    const html2canvas = (await import("html2canvas")).default;
-    const canvas = await html2canvas(tableRef.current, { scale: 2, useCORS: true, scrollX: 0, scrollY: -window.scrollY });
-    const ctx = canvas.getContext("2d");
-    if (ctx) {
-      ctx.save();
-      ctx.globalAlpha = 0.08;
-      ctx.font = `bold ${Math.floor(canvas.height / 4)}px sans-serif`;
-      ctx.fillStyle = "#000";
-      ctx.translate(canvas.width / 2, canvas.height / 2);
-      ctx.rotate(-Math.PI / 6);
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText("社外秘", 0, 0);
-      ctx.restore();
+    try {
+      const { toJpeg } = await import("html-to-image");
+      const dataUrl = await toJpeg(tableRef.current, {
+        quality: 0.92,
+        pixelRatio: 2,
+        backgroundColor: "#ffffff",
+      });
+      const link = document.createElement("a");
+      link.download = `社員スケジュール_${year}年${month}月.jpg`;
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      console.error("JPG保存エラー:", err);
+      alert("JPG保存に失敗しました。");
     }
-    const link = document.createElement("a");
-    link.download = `社員スケジュール_${year}年${month}月.jpg`;
-    link.href = canvas.toDataURL("image/jpeg", 0.95);
-    link.click();
   };
 
   const monthLabel = monthSpan === 1
@@ -432,7 +428,7 @@ export default function SchedulePage() {
                                 render={
                                   <Link
                                     href={`/events/${a.event_id}`}
-                                    className={`absolute rounded text-[10px] leading-tight px-1 flex items-center overflow-hidden whitespace-nowrap hover:opacity-80 transition-opacity z-[1] ${color.bar}`}
+                                    className={`absolute rounded text-xs leading-snug px-1.5 flex items-center overflow-hidden whitespace-nowrap hover:opacity-80 transition-opacity z-[1] ${color.bar}`}
                                     style={{
                                       left: style.left,
                                       width: style.width,
@@ -440,9 +436,9 @@ export default function SchedulePage() {
                                       height: `${BAR_HEIGHT}px`,
                                     }}
                                   >
-                                    <div className="truncate">{a.events?.venue}{a.events?.store_name ? ` ${a.events.store_name}` : ""}</div>
+                                    <div className="truncate font-bold">{a.events?.venue}{a.events?.store_name ? ` ${a.events.store_name}` : ""}</div>
                                     {a.hotel_name && (
-                                      <div className="truncate text-[8px] opacity-70">🏨 {a.hotel_name}</div>
+                                      <div className="truncate text-[11px] opacity-70">🏨 {a.hotel_name}</div>
                                     )}
                                   </Link>
                                 }

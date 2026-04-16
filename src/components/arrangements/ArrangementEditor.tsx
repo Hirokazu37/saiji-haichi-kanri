@@ -9,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose,
 } from "@/components/ui/dialog";
-import { Save, FileText, Hotel, Train, Mail, UserCheck, Package } from "lucide-react";
+import { Save, FileText, Hotel, Train, Mail, UserCheck, Package, Trash2 } from "lucide-react";
 
 type StaffRow = {
   id: string;
@@ -49,7 +49,11 @@ export function ArrangementEditor({ eventId, venue, storeName, startDate, endDat
   const [mannequins, setMannequins] = useState<MannequinRow[]>([]);
   const [pastVenues, setPastVenues] = useState<VenueOption[]>([]);
   const [selectedDests, setSelectedDests] = useState<Map<string, "send" | "return">>(new Map());
+  const [equipmentFrom, setEquipmentFrom] = useState<string | null>(null);
+  const [equipmentTo, setEquipmentTo] = useState<string | null>(null);
   const [appStatus, setAppStatus] = useState<string>("未提出");
+  const [appSubmittedDate, setAppSubmittedDate] = useState<string>("");
+  const [appMethod, setAppMethod] = useState<string>("");
   const [dmStatus, setDmStatus] = useState<string | null>(null);
   const [dmCount, setDmCount] = useState<string>("");
   const [saving, setSaving] = useState(false);
@@ -64,8 +68,8 @@ export function ArrangementEditor({ eventId, venue, storeName, startDate, endDat
     const [staffRes, shipRes, evtRes, venueRes, hmRes, hvlRes, mannRes] = await Promise.all([
       supabase.from("event_staff").select("id, employee_id, start_date, end_date, role, hotel_name, hotel_status, transport_outbound_status, transport_return_status, employees(name)").eq("event_id", eventId).order("start_date"),
       supabase.from("shipments").select("id, item_name, recipient_name").eq("event_id", eventId),
-      supabase.from("events").select("application_status, dm_status, dm_count").eq("id", eventId).single(),
-      supabase.from("events").select("venue, store_name").order("created_at", { ascending: false }).limit(100),
+      supabase.from("events").select("application_status, application_submitted_date, application_method, dm_status, dm_count, equipment_from, equipment_to").eq("id", eventId).single(),
+      supabase.from("events").select("venue, store_name, start_date").order("start_date").limit(100),
       supabase.from("hotel_master").select("id, name").eq("is_active", true).order("name"),
       supabase.from("hotel_venue_links").select("hotel_id, venue_name"),
       supabase.from("mannequins").select("id, agency_name, staff_name, work_start_date, work_end_date, daily_rate, arrangement_status").eq("event_id", eventId).order("work_start_date"),
@@ -74,8 +78,12 @@ export function ArrangementEditor({ eventId, venue, storeName, startDate, endDat
     setShipments((shipRes.data || []) as ShipmentRow[]);
     setMannequins((mannRes.data || []) as MannequinRow[]);
     setAppStatus(evtRes.data?.application_status || "未提出");
+    setAppSubmittedDate(evtRes.data?.application_submitted_date || "");
+    setAppMethod(evtRes.data?.application_method || "");
     setDmStatus(evtRes.data?.dm_status || null);
     setDmCount(evtRes.data?.dm_count ? String(evtRes.data.dm_count) : "");
+    setEquipmentFrom(evtRes.data?.equipment_from || null);
+    setEquipmentTo(evtRes.data?.equipment_to || null);
 
     const existing = new Map<string, "send" | "return">();
     (shipRes.data || []).forEach((s: ShipmentRow) => {
@@ -85,7 +93,7 @@ export function ArrangementEditor({ eventId, venue, storeName, startDate, endDat
 
     const seen = new Set<string>();
     const venues: string[] = [];
-    (venueRes.data || []).forEach((e: { venue: string; store_name: string | null }) => {
+    (venueRes.data || []).forEach((e: { venue: string; store_name: string | null; start_date: string }) => {
       const label = e.store_name ? `${e.venue} ${e.store_name}` : e.venue;
       if (!seen.has(label)) { seen.add(label); venues.push(label); }
     });
@@ -134,7 +142,7 @@ export function ArrangementEditor({ eventId, venue, storeName, startDate, endDat
   const handleSave = async () => {
     setSaving(true);
 
-    await supabase.from("events").update({ application_status: appStatus, dm_status: dmStatus, dm_count: dmCount ? parseInt(dmCount) : null }).eq("id", eventId);
+    await supabase.from("events").update({ application_status: appStatus, application_submitted_date: appSubmittedDate || null, application_method: appMethod || null, dm_status: dmStatus, dm_count: dmCount ? parseInt(dmCount) : null, equipment_from: equipmentFrom, equipment_to: equipmentTo }).eq("id", eventId);
 
     for (const s of staff) {
       await supabase.from("event_staff").update({
@@ -146,6 +154,10 @@ export function ArrangementEditor({ eventId, venue, storeName, startDate, endDat
 
     for (const m of mannequins) {
       await supabase.from("mannequins").update({
+        agency_name: m.agency_name || null,
+        staff_name: m.staff_name || null,
+        work_start_date: m.work_start_date || null,
+        work_end_date: m.work_end_date || null,
         arrangement_status: m.arrangement_status || "未手配",
       }).eq("id", m.id);
     }
@@ -193,10 +205,35 @@ export function ArrangementEditor({ eventId, venue, storeName, startDate, endDat
               <FileText className="h-4 w-4 text-green-600" />
               <span className="text-sm font-bold text-green-800">出店申込書</span>
             </div>
-            <div className="flex gap-1">
-              {["未提出", "提出済"].map((s) => (
-                <Badge key={s} variant={appStatus === s ? "default" : "outline"} className="cursor-pointer text-xs"
-                  onClick={() => { setAppStatus(s); markDirty(); }}>{s}</Badge>
+            <button
+              type="button"
+              className={`relative inline-flex h-6 w-24 items-center rounded-full transition-colors ${appStatus === "提出済" ? "bg-green-700" : "bg-gray-300"}`}
+              onClick={() => {
+                const next = appStatus === "提出済" ? "未提出" : "提出済";
+                setAppStatus(next);
+                if (next === "提出済" && !appSubmittedDate) setAppSubmittedDate(new Date().toISOString().slice(0, 10));
+                if (next === "未提出") setAppSubmittedDate("");
+                markDirty();
+              }}
+            >
+              <span className={`absolute text-[10px] font-medium ${appStatus === "提出済" ? "left-2 text-white" : "right-2 text-gray-600"}`}>
+                {appStatus === "提出済" ? "提出済" : "未提出"}
+              </span>
+              <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${appStatus === "提出済" ? "translate-x-[72px]" : "translate-x-0.5"}`} />
+            </button>
+          </div>
+          <div className="flex items-center gap-3 mt-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">提出日</span>
+              <Input type="date" value={appSubmittedDate} onChange={(e) => { setAppSubmittedDate(e.target.value); markDirty(); }} className="h-8 text-sm w-36 bg-white" />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">提出方法</span>
+              {["郵送", "FAX", "メール"].map((m) => (
+                <button key={m} type="button"
+                  className={`px-2 py-1 text-xs rounded border transition-colors ${appMethod === m ? "bg-green-700 text-white border-green-700 font-bold" : "bg-white text-gray-500 border-gray-300 hover:bg-green-50 hover:text-green-700"}`}
+                  onClick={() => { setAppMethod(appMethod === m ? "" : m); markDirty(); }}
+                >{m}</button>
               ))}
             </div>
           </div>
@@ -215,7 +252,7 @@ export function ArrangementEditor({ eventId, venue, storeName, startDate, endDat
               {staff.map((s, i) => (
                 <div key={s.id} className="bg-white rounded border p-3 space-y-2">
                   <div className="flex items-center gap-2">
-                    <Badge variant="default" className="text-xs">{s.employees?.name || "不明"}</Badge>
+                    <span className="text-sm font-bold">{s.employees?.name || "不明"}</span>
                     <span className="text-xs text-muted-foreground">{s.start_date}〜{s.end_date} {s.role || ""}</span>
                   </div>
                   <div className="space-y-1">
@@ -252,14 +289,14 @@ export function ArrangementEditor({ eventId, venue, storeName, startDate, endDat
               {staff.map((s, i) => (
                 <div key={s.id} className="bg-white rounded border p-3">
                   <div className="flex items-center gap-2 mb-2">
-                    <Badge variant="default" className="text-xs">{s.employees?.name || "不明"}</Badge>
+                    <span className="text-sm font-bold">{s.employees?.name || "不明"}</span>
                     <span className="text-xs text-muted-foreground">{s.start_date}〜{s.end_date}</span>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="text-xs text-muted-foreground">行き</span>
                     <button
                       type="button"
-                      className={`relative inline-flex h-5 w-20 items-center rounded-full transition-colors ${s.transport_outbound_status === "手配済" ? "bg-green-500" : "bg-gray-300"}`}
+                      className={`relative inline-flex h-5 w-20 items-center rounded-full transition-colors ${s.transport_outbound_status === "手配済" ? "bg-green-700" : "bg-gray-300"}`}
                       onClick={() => updateStaffField(i, "transport_outbound_status", s.transport_outbound_status === "手配済" ? "未手配" : "手配済")}
                     >
                       <span className={`absolute text-[9px] font-medium ${s.transport_outbound_status === "手配済" ? "left-1.5 text-white" : "right-1.5 text-gray-600"}`}>
@@ -270,7 +307,7 @@ export function ArrangementEditor({ eventId, venue, storeName, startDate, endDat
                     <span className="text-xs text-muted-foreground">帰り</span>
                     <button
                       type="button"
-                      className={`relative inline-flex h-5 w-20 items-center rounded-full transition-colors ${s.transport_return_status === "手配済" ? "bg-green-500" : "bg-gray-300"}`}
+                      className={`relative inline-flex h-5 w-20 items-center rounded-full transition-colors ${s.transport_return_status === "手配済" ? "bg-green-700" : "bg-gray-300"}`}
                       onClick={() => updateStaffField(i, "transport_return_status", s.transport_return_status === "手配済" ? "未手配" : "手配済")}
                     >
                       <span className={`absolute text-[9px] font-medium ${s.transport_return_status === "手配済" ? "left-1.5 text-white" : "right-1.5 text-gray-600"}`}>
@@ -300,7 +337,7 @@ export function ArrangementEditor({ eventId, venue, storeName, startDate, endDat
               {["なし", "未着手", "校正中", "印刷済み"].map((s) => {
                 const current = dmStatus || "なし";
                 return (
-                  <Badge key={s} variant={current === s ? "default" : "outline"} className="cursor-pointer text-xs"
+                  <Badge key={s} variant={current === s ? "default" : "outline"} className={`cursor-pointer text-xs ${current !== s ? "bg-white" : ""}`}
                     onClick={() => { setDmStatus(s === "なし" ? null : s); markDirty(); }}>{s}</Badge>
                 );
               })}
@@ -309,7 +346,7 @@ export function ArrangementEditor({ eventId, venue, storeName, startDate, endDat
           {dmStatus && (
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground">枚数</span>
-              <Input type="number" value={dmCount} onChange={(e) => { setDmCount(e.target.value); markDirty(); }} placeholder="枚数を入力" className="h-8 text-sm w-32" min="0" />
+              <Input type="number" value={dmCount} onChange={(e) => { setDmCount(e.target.value); markDirty(); }} placeholder="枚数を入力" className="h-8 text-sm w-32 bg-white" min="0" />
               <span className="text-xs text-muted-foreground">枚</span>
             </div>
           )}
@@ -319,54 +356,119 @@ export function ArrangementEditor({ eventId, venue, storeName, startDate, endDat
       {/* マネキン */}
       <Card className="border-l-4 border-l-pink-500 bg-pink-50/50">
         <CardContent className="pt-4 pb-4 space-y-3">
-          <div className="flex items-center gap-2">
-            <UserCheck className="h-4 w-4 text-pink-600" />
-            <span className="text-sm font-bold text-pink-800">マネキン</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <UserCheck className="h-4 w-4 text-pink-600" />
+              <span className="text-sm font-bold text-pink-800">マネキン</span>
+            </div>
+            <Button variant="outline" size="sm" className="h-7 text-xs"
+              onClick={async () => {
+                const { data } = await supabase.from("mannequins").insert({
+                  event_id: eventId, agency_name: null, staff_name: null,
+                  work_start_date: startDate, work_end_date: endDate,
+                  daily_rate: null, arrangement_status: "未手配",
+                }).select("*").single();
+                if (data) setMannequins((prev) => [...prev, data as MannequinRow]);
+              }}
+            >＋ 追加</Button>
           </div>
           {mannequins.length > 0 ? (
             <div className="space-y-2">
               {mannequins.map((m, i) => (
-                <div key={m.id} className="bg-white rounded border p-3">
+                <div key={m.id} className="bg-white rounded border p-3 space-y-2">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">{m.agency_name || "未設定"}</span>
-                      <span className="text-xs text-muted-foreground">{m.staff_name || ""}</span>
-                      <span className="text-xs text-muted-foreground">{m.work_start_date}〜{m.work_end_date}</span>
+                      <Input value={m.agency_name || ""} onChange={(e) => updateMannequinField(i, "agency_name", e.target.value)} placeholder="派遣会社名" className="h-8 text-sm w-40" />
+                      <Input value={m.staff_name || ""} onChange={(e) => updateMannequinField(i, "staff_name", e.target.value)} placeholder="人数（例: 2名）" className="h-8 text-sm w-24" />
                     </div>
-                    <button
-                      type="button"
-                      className={`relative inline-flex h-5 w-20 items-center rounded-full transition-colors ${m.arrangement_status === "手配済" ? "bg-green-500" : "bg-gray-300"}`}
-                      onClick={() => updateMannequinField(i, "arrangement_status", m.arrangement_status === "手配済" ? "未手配" : "手配済")}
-                    >
-                      <span className={`absolute text-[9px] font-medium ${m.arrangement_status === "手配済" ? "left-1.5 text-white" : "right-1.5 text-gray-600"}`}>
-                        {m.arrangement_status === "手配済" ? "手配済" : "未手配"}
-                      </span>
-                      <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform ${m.arrangement_status === "手配済" ? "translate-x-[60px]" : "translate-x-0.5"}`} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className={`relative inline-flex h-5 w-20 items-center rounded-full transition-colors ${m.arrangement_status === "手配済" ? "bg-green-700" : "bg-gray-300"}`}
+                        onClick={() => updateMannequinField(i, "arrangement_status", m.arrangement_status === "手配済" ? "未手配" : "手配済")}
+                      >
+                        <span className={`absolute text-[9px] font-medium ${m.arrangement_status === "手配済" ? "left-1.5 text-white" : "right-1.5 text-gray-600"}`}>
+                          {m.arrangement_status === "手配済" ? "手配済" : "未手配"}
+                        </span>
+                        <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform ${m.arrangement_status === "手配済" ? "translate-x-[60px]" : "translate-x-0.5"}`} />
+                      </button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive"
+                        onClick={async () => {
+                          await supabase.from("mannequins").delete().eq("id", m.id);
+                          setMannequins((prev) => prev.filter((x) => x.id !== m.id));
+                        }}
+                      ><Trash2 className="h-3 w-3" /></Button>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">勤務期間</span>
+                    <Input type="date" value={m.work_start_date || ""} onChange={(e) => updateMannequinField(i, "work_start_date", e.target.value)} className="h-7 text-xs w-32" />
+                    <span className="text-xs text-muted-foreground">〜</span>
+                    <Input type="date" value={m.work_end_date || ""} onChange={(e) => updateMannequinField(i, "work_end_date", e.target.value)} className="h-7 text-xs w-32" />
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">マネキン手配がありません。</p>
+            <p className="text-sm text-muted-foreground">マネキン手配がありません。「＋ 追加」から登録してください。</p>
           )}
         </CardContent>
       </Card>
 
-      {/* 備品転送 */}
+      {/* 備品の流れ */}
       <Card className="border-l-4 border-l-amber-500 bg-amber-50/50">
-        <CardContent className="pt-4 pb-4 space-y-3">
+        <CardContent className="pt-4 pb-4 space-y-4">
           <div className="flex items-center gap-2">
             <Package className="h-4 w-4 text-amber-600" />
-            <span className="text-sm font-bold text-amber-800">備品転送</span>
+            <span className="text-sm font-bold text-amber-800">備品の流れ</span>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {destinations.map((dest) => (
-              <Badge key={dest.label} variant={selectedDests.has(dest.label) ? "default" : "outline"} className="cursor-pointer text-xs"
-                onClick={() => toggleDest(dest.label, dest.type)}>
-                {dest.type === "return" ? "← " : "→ "}{dest.label}
-              </Badge>
-            ))}
+
+          {/* 搬入元 */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-amber-700 font-medium">搬入元</span>
+              <span className="text-muted-foreground">→</span>
+              <span className="text-sm font-medium">{venueLabel}</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              <Badge variant="outline"
+                className={`cursor-pointer text-xs transition-colors ${equipmentFrom === "本社（安岡蒲鉾）" ? "bg-black border-black text-white font-bold" : "border-gray-300 text-gray-500 bg-white hover:bg-gray-100 hover:text-black hover:border-gray-500"}`}
+                onClick={() => { setEquipmentFrom(equipmentFrom === "本社（安岡蒲鉾）" ? null : "本社（安岡蒲鉾）"); markDirty(); }}
+              >本社（安岡蒲鉾）</Badge>
+              {pastVenues.filter((v) => v !== venueLabel).map((v) => {
+                const sel = equipmentFrom === v;
+                return (
+                  <Badge key={v} variant="outline"
+                    className={`cursor-pointer text-xs transition-colors ${sel ? "bg-amber-500 border-amber-500 text-white font-bold" : "border-amber-300 text-amber-400 bg-white hover:bg-amber-50 hover:text-amber-700 hover:border-amber-500"}`}
+                    onClick={() => { setEquipmentFrom(sel ? null : v); markDirty(); }}
+                  >{v}</Badge>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 搬出先 */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-sm font-medium">{venueLabel}</span>
+              <span className="text-muted-foreground">→</span>
+              <span className="text-amber-700 font-medium">搬出先</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              <Badge variant="outline"
+                className={`cursor-pointer text-xs transition-colors ${equipmentTo === "本社（安岡蒲鉾）" ? "bg-black border-black text-white font-bold" : "border-gray-300 text-gray-500 bg-white hover:bg-gray-100 hover:text-black hover:border-gray-500"}`}
+                onClick={() => { setEquipmentTo(equipmentTo === "本社（安岡蒲鉾）" ? null : "本社（安岡蒲鉾）"); markDirty(); }}
+              >本社（安岡蒲鉾）</Badge>
+              {pastVenues.filter((v) => v !== venueLabel).map((v) => {
+                const sel = equipmentTo === v;
+                return (
+                  <Badge key={v} variant="outline"
+                    className={`cursor-pointer text-xs transition-colors ${sel ? "bg-amber-500 border-amber-500 text-white font-bold" : "border-amber-300 text-amber-400 bg-white hover:bg-amber-50 hover:text-amber-700 hover:border-amber-500"}`}
+                    onClick={() => { setEquipmentTo(sel ? null : v); markDirty(); }}
+                  >{v}</Badge>
+                );
+              })}
+            </div>
           </div>
         </CardContent>
       </Card>

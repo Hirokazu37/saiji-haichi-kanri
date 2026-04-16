@@ -314,6 +314,19 @@ export default function HotelMasterPage() {
             </div>
             <div className="space-y-2">
               <Label>近くの百貨店（複数選択可）</Label>
+              {/* 選択済みだがpastVenuesにない百貨店を解除できるように表示 */}
+              {(() => {
+                const extraVenues = Array.from(selectedVenues).filter((v) => !pastVenues.includes(v));
+                return extraVenues.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pb-1 mb-1 border-b border-dashed">
+                    {extraVenues.map((v) => (
+                      <Badge key={v} variant="default" className="cursor-pointer text-xs" onClick={() => toggleVenue(v)}>
+                        {v} ✕
+                      </Badge>
+                    ))}
+                  </div>
+                );
+              })()}
               <div className="flex flex-wrap gap-1.5">
                 {pastVenues.map((v) => (
                   <Badge key={v} variant={selectedVenues.has(v) ? "default" : "outline"} className="cursor-pointer text-xs" onClick={() => toggleVenue(v)}>

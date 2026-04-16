@@ -23,7 +23,7 @@ const navItems = [
   { label: "日程表", href: "/events", icon: CalendarDays },
   { label: "社員スケジュール", href: "/schedule", icon: CalendarClock },
   { label: "ホテル・交通", href: "/hotels", icon: Hotel },
-  { label: "備品転送", href: "/shipments", icon: Package },
+  { label: "備品の流れ", href: "/shipments", icon: Package },
   { label: "出店申込書", href: "/applications", icon: FileText },
   { label: "DMハガキ", href: "/dm", icon: Mail },
   { label: "百貨店マスター", href: "/venue-master", icon: Store },
@@ -38,9 +38,10 @@ export function Sidebar() {
 
   return (
     <aside className="hidden md:flex md:w-60 md:flex-col md:fixed md:inset-y-0 border-r bg-background">
-      <div className="flex h-14 items-center border-b px-4">
-        <Link href="/" className="font-bold text-lg">
-          催事手配管理
+      <div className="flex items-center gap-2 border-b px-4 py-2">
+        <Link href="/" className="flex items-center gap-2">
+          <img src="/logo.jpg" alt="安岡蒲鉾" className="h-10 w-10 rounded object-contain" />
+          <span className="font-bold text-lg">催事手配管理</span>
         </Link>
       </div>
       <nav className="flex-1 p-3 space-y-1">

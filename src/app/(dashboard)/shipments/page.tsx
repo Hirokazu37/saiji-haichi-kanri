@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,11 +11,7 @@ import {
 import {
   Tooltip, TooltipTrigger, TooltipContent, TooltipProvider,
 } from "@/components/ui/tooltip";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose,
-} from "@/components/ui/dialog";
-import { ChevronLeft, ChevronRight, Printer, ImageDown, CheckCircle, AlertTriangle } from "lucide-react";
-import Link from "next/link";
+import { ChevronLeft, ChevronRight, Printer, ImageDown, AlertTriangle, Warehouse, GripHorizontal, X } from "lucide-react";
 import { getHolidaysForRange } from "@/lib/holidays";
 
 type EventRecord = {
@@ -26,36 +22,91 @@ type EventRecord = {
   start_date: string;
   end_date: string;
   status: string;
+  equipment_from: string | null;
+  equipment_to: string | null;
 };
 
-type ShipmentRecord = {
-  id: string;
-  event_id: string;
-  item_name: string;
-  recipient_name: string;
-  ship_date: string;
-  shipment_status: string | null;
-};
+const HONSHA = "本社（安岡蒲鉾）";
 
-type VenueOption = { label: string };
+const barColors = [
+  { bar: "bg-sky-100 border-sky-400", badge: "bg-white border-sky-300 text-sky-400", badgeFill: "bg-sky-500 border-sky-500 text-white", badgeHover: "hover:bg-sky-50 hover:text-sky-700 hover:border-sky-500", arrow: "#0ea5e9" },
+  { bar: "bg-cyan-100 border-cyan-400", badge: "bg-white border-cyan-300 text-cyan-500", badgeFill: "bg-cyan-500 border-cyan-500 text-white", badgeHover: "hover:bg-cyan-50 hover:text-cyan-700 hover:border-cyan-500", arrow: "#06b6d4" },
+  { bar: "bg-emerald-100 border-emerald-400", badge: "bg-white border-emerald-300 text-emerald-400", badgeFill: "bg-emerald-500 border-emerald-500 text-white", badgeHover: "hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-500", arrow: "#10b981" },
+  { bar: "bg-rose-100 border-rose-400", badge: "bg-white border-rose-300 text-rose-400", badgeFill: "bg-rose-500 border-rose-500 text-white", badgeHover: "hover:bg-rose-50 hover:text-rose-700 hover:border-rose-500", arrow: "#f43f5e" },
+  { bar: "bg-violet-100 border-violet-400", badge: "bg-white border-violet-300 text-violet-400", badgeFill: "bg-violet-500 border-violet-500 text-white", badgeHover: "hover:bg-violet-50 hover:text-violet-700 hover:border-violet-500", arrow: "#8b5cf6" },
+  { bar: "bg-teal-100 border-teal-400", badge: "bg-white border-teal-300 text-teal-400", badgeFill: "bg-teal-500 border-teal-500 text-white", badgeHover: "hover:bg-teal-50 hover:text-teal-700 hover:border-teal-500", arrow: "#14b8a6" },
+  { bar: "bg-pink-100 border-pink-400", badge: "bg-white border-pink-300 text-pink-400", badgeFill: "bg-pink-500 border-pink-500 text-white", badgeHover: "hover:bg-pink-50 hover:text-pink-700 hover:border-pink-500", arrow: "#ec4899" },
+  { bar: "bg-indigo-100 border-indigo-400", badge: "bg-white border-indigo-300 text-indigo-400", badgeFill: "bg-indigo-500 border-indigo-500 text-white", badgeHover: "hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-500", arrow: "#6366f1" },
+];
 
 export default function ShipmentsPage() {
   const supabase = createClient();
   const [events, setEvents] = useState<EventRecord[]>([]);
-  const [shipments, setShipments] = useState<ShipmentRecord[]>([]);
-  const [pastVenues, setPastVenues] = useState<VenueOption[]>([]);
+  const [pastVenues, setPastVenues] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const tableRef = useRef<HTMLDivElement>(null);
 
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [dialogEvent, setDialogEvent] = useState<EventRecord | null>(null);
-  const [selectedDests, setSelectedDests] = useState<Map<string, "send" | "return">>(new Map());
-  const [saving, setSaving] = useState(false);
+  // 編集パネル
+  const [editEvent, setEditEvent] = useState<EventRecord | null>(null);
+  const [draftFrom, setDraftFrom] = useState<string | null>(null);
+  const [draftTo, setDraftTo] = useState<string | null>(null);
+  const [panelDirty, setPanelDirty] = useState(false);
+  const [panelPos, setPanelPos] = useState({ x: 100, y: 100 });
+  const panelRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
+
+  const onDragStart = (e: React.MouseEvent) => {
+    dragRef.current = { startX: e.clientX, startY: e.clientY, origX: panelPos.x, origY: panelPos.y };
+    const onMove = (ev: MouseEvent) => {
+      if (!dragRef.current) return;
+      setPanelPos({
+        x: dragRef.current.origX + (ev.clientX - dragRef.current.startX),
+        y: dragRef.current.origY + (ev.clientY - dragRef.current.startY),
+      });
+    };
+    const onUp = () => { dragRef.current = null; window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  const handlePanelKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape" && !panelDirty) {
+      setEditEvent(null);
+    }
+  };
+
+  const openEditPanel = (evt: EventRecord) => {
+    setEditEvent(evt);
+    setDraftFrom(evt.equipment_from);
+    setDraftTo(evt.equipment_to);
+    setPanelDirty(false);
+    setPanelPos({ x: Math.max(window.innerWidth / 2 - 200, 20), y: 120 });
+    setTimeout(() => panelRef.current?.focus(), 50);
+  };
+
+  const savePanel = () => {
+    if (!editEvent) return;
+    // 自分を更新
+    updateEquipment(editEvent.id, "equipment_from", draftFrom);
+    updateEquipment(editEvent.id, "equipment_to", draftTo);
+    // editEventのローカル値も更新
+    setEditEvent({ ...editEvent, equipment_from: draftFrom, equipment_to: draftTo });
+    setPanelDirty(false);
+  };
+
+  const cancelPanel = () => {
+    if (!editEvent) return;
+    // ドラフトを元に戻す
+    setDraftFrom(editEvent.equipment_from);
+    setDraftTo(editEvent.equipment_to);
+    setPanelDirty(false);
+    setEditEvent(null);
+  };
 
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth() + 1);
-  const [monthSpan, setMonthSpan] = useState(2);
+  const [monthSpan, setMonthSpan] = useState(3);
 
   const getMonthRange = () => {
     const months: { year: number; month: number; days: number }[] = [];
@@ -83,20 +134,21 @@ export default function ShipmentsPage() {
     const startOfRange = `${firstMonth.year}-${String(firstMonth.month).padStart(2, "0")}-01`;
     const endOfRange = `${lastMonth.year}-${String(lastMonth.month).padStart(2, "0")}-${lastMonth.days}`;
 
-    const [evtRes, shipRes, venueRes] = await Promise.all([
-      supabase.from("events").select("id, name, venue, store_name, start_date, end_date, status")
-        .gte("end_date", startOfRange).lte("start_date", endOfRange).order("start_date"),
-      supabase.from("shipments").select("id, event_id, item_name, recipient_name, ship_date, shipment_status"),
+    const [evtRes, venueRes] = await Promise.all([
+      supabase.from("events")
+        .select("id, name, venue, store_name, start_date, end_date, status, equipment_from, equipment_to")
+        .gte("end_date", startOfRange)
+        .lte("start_date", endOfRange)
+        .order("start_date"),
       supabase.from("events").select("venue, store_name").order("created_at", { ascending: false }).limit(100),
     ]);
-    setEvents(evtRes.data || []);
-    setShipments(shipRes.data || []);
 
+    setEvents(evtRes.data || []);
     const seen = new Set<string>();
-    const venues: VenueOption[] = [];
+    const venues: string[] = [];
     (venueRes.data || []).forEach((e: { venue: string; store_name: string | null }) => {
       const label = e.store_name ? `${e.venue} ${e.store_name}` : e.venue;
-      if (!seen.has(label)) { seen.add(label); venues.push({ label }); }
+      if (!seen.has(label)) { seen.add(label); venues.push(label); }
     });
     setPastVenues(venues);
     setLoading(false);
@@ -135,86 +187,172 @@ export default function ShipmentsPage() {
     const startIdx = allDays.findIndex((d) => d.date.getFullYear() === effectiveStart.getFullYear() && d.date.getMonth() === effectiveStart.getMonth() && d.date.getDate() === effectiveStart.getDate());
     const endIdx = allDays.findIndex((d) => d.date.getFullYear() === effectiveEnd.getFullYear() && d.date.getMonth() === effectiveEnd.getMonth() && d.date.getDate() === effectiveEnd.getDate());
     if (startIdx === -1 || endIdx === -1) return null;
-    return { left: `${(startIdx / totalDays) * 100}%`, width: `${(Math.max(endIdx - startIdx + 1, 1) / totalDays) * 100}%` };
+    return {
+      left: `${(startIdx / totalDays) * 100}%`,
+      width: `${(Math.max(endIdx - startIdx + 1, 1) / totalDays) * 100}%`,
+      startPct: (startIdx / totalDays) * 100,
+      endPct: ((endIdx + 1) / totalDays) * 100,
+    };
   };
 
-  // --- ダイアログ ---
-  const openDialog = (evt: EventRecord) => {
-    setDialogEvent(evt);
-    // 既存のshipmentをプリセット
-    const existing = new Map<string, "send" | "return">();
-    shipments.filter((s) => s.event_id === evt.id).forEach((s) => {
-      existing.set(s.recipient_name, s.item_name === "返送備品" ? "return" : "send");
-    });
-    setSelectedDests(existing);
-    setDialogOpen(true);
-  };
+  const getVenueLabel = (evt: EventRecord) => evt.store_name ? `${evt.venue} ${evt.store_name}` : evt.venue;
 
-  const toggleDest = (label: string, type: "send" | "return") => {
-    setSelectedDests((prev) => {
-      const next = new Map(prev);
-      if (next.has(label)) { next.delete(label); } else { next.set(label, type); }
-      return next;
-    });
-  };
+  const updateEquipment = (evtId: string, field: "equipment_from" | "equipment_to", value: string | null) => {
+    // オプティミスティック更新: 先にUIを即座に反映
+    setEvents((prev) => prev.map((e) => e.id === evtId ? { ...e, [field]: value } : e));
+    if (editEvent?.id === evtId) setEditEvent((prev) => prev ? { ...prev, [field]: value } : prev);
 
-  const handleSave = async () => {
-    if (!dialogEvent) return;
-    setSaving(true);
+    // 連動: 搬出先/搬入元を相手催事にも反映
+    const sourceEvt = events.find((e) => e.id === evtId);
+    if (sourceEvt) {
+      const sourceLabel = getVenueLabel(sourceEvt);
 
-    // 既存を削除して全入れ替え
-    await supabase.from("shipments").delete().eq("event_id", dialogEvent.id);
-
-    if (selectedDests.size > 0) {
-      const rows = Array.from(selectedDests.entries()).map(([name, type]) => ({
-        event_id: dialogEvent.id,
-        item_name: type === "return" ? "返送備品" : "備品一式",
-        recipient_name: name,
-        recipient_address: "",
-        ship_date: dialogEvent.start_date,
-        shipment_status: "未発送",
-      }));
-      await supabase.from("shipments").insert(rows);
+      if (field === "equipment_to" && value && value !== HONSHA) {
+        const targetEvt = events.find((e) => getVenueLabel(e) === value && e.id !== evtId);
+        if (targetEvt) {
+          setEvents((prev) => prev.map((e) => e.id === targetEvt.id ? { ...e, equipment_from: sourceLabel } : e));
+          if (editEvent?.id === targetEvt.id) setEditEvent((prev) => prev ? { ...prev, equipment_from: sourceLabel } : prev);
+          supabase.from("events").update({ equipment_from: sourceLabel }).eq("id", targetEvt.id).then();
+        }
+      } else if (field === "equipment_to" && !value) {
+        const targetEvt = events.find((e) => e.equipment_from === sourceLabel && e.id !== evtId);
+        if (targetEvt) {
+          setEvents((prev) => prev.map((e) => e.id === targetEvt.id ? { ...e, equipment_from: null } : e));
+          if (editEvent?.id === targetEvt.id) setEditEvent((prev) => prev ? { ...prev, equipment_from: null } : prev);
+          supabase.from("events").update({ equipment_from: null }).eq("id", targetEvt.id).then();
+        }
+      } else if (field === "equipment_from" && value && value !== HONSHA) {
+        const targetEvt = events.find((e) => getVenueLabel(e) === value && e.id !== evtId);
+        if (targetEvt) {
+          setEvents((prev) => prev.map((e) => e.id === targetEvt.id ? { ...e, equipment_to: sourceLabel } : e));
+          if (editEvent?.id === targetEvt.id) setEditEvent((prev) => prev ? { ...prev, equipment_to: sourceLabel } : prev);
+          supabase.from("events").update({ equipment_to: sourceLabel }).eq("id", targetEvt.id).then();
+        }
+      } else if (field === "equipment_from" && !value) {
+        const targetEvt = events.find((e) => e.equipment_to === sourceLabel && e.id !== evtId);
+        if (targetEvt) {
+          setEvents((prev) => prev.map((e) => e.id === targetEvt.id ? { ...e, equipment_to: null } : e));
+          if (editEvent?.id === targetEvt.id) setEditEvent((prev) => prev ? { ...prev, equipment_to: null } : prev);
+          supabase.from("events").update({ equipment_to: null }).eq("id", targetEvt.id).then();
+        }
+      }
     }
 
-    setSaving(false);
-    setDialogOpen(false);
-    fetchData();
-  };
-
-  const getDestinations = (evt: EventRecord) => {
-    const venueLabel = evt.store_name ? `${evt.venue} ${evt.store_name}` : evt.venue;
-    const dests: { label: string; type: "send" | "return" }[] = [
-      { label: venueLabel, type: "send" },
-      { label: "本社（安岡蒲鉾）", type: "return" },
-      ...pastVenues.filter((v) => v.label !== venueLabel).map((v) => ({ label: v.label, type: "send" as const })),
-    ];
-    return dests;
+    // DB保存（バックグラウンド）
+    supabase.from("events").update({ [field]: value }).eq("id", evtId).then();
   };
 
   const handlePrint = () => { window.print(); };
   const handleSaveJpg = async () => {
     if (!tableRef.current) return;
-    const html2canvas = (await import("html2canvas")).default;
-    const canvas = await html2canvas(tableRef.current, { scale: 2, useCORS: true, scrollX: 0, scrollY: -window.scrollY });
-    const ctx = canvas.getContext("2d");
-    if (ctx) { ctx.save(); ctx.globalAlpha = 0.08; ctx.font = `bold ${Math.floor(canvas.height / 4)}px sans-serif`; ctx.fillStyle = "#000"; ctx.translate(canvas.width / 2, canvas.height / 2); ctx.rotate(-Math.PI / 6); ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("社外秘", 0, 0); ctx.restore(); }
-    const link = document.createElement("a");
-    link.download = `備品転送_${year}年${month}月.jpg`;
-    link.href = canvas.toDataURL("image/jpeg", 0.95);
-    link.click();
+    try {
+      const { toJpeg } = await import("html-to-image");
+      const dataUrl = await toJpeg(tableRef.current, {
+        quality: 0.92,
+        pixelRatio: 2,
+        backgroundColor: "#ffffff",
+      });
+      const link = document.createElement("a");
+      link.download = `備品の流れ_${year}年${month}月.jpg`;
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      console.error("JPG保存エラー:", err);
+      alert("JPG保存に失敗しました。");
+    }
   };
 
   const monthLabel = monthSpan === 1 ? `${year}年 ${month}月` : `${year}年 ${month}月 〜 ${monthRange[monthRange.length - 1].year}年 ${monthRange[monthRange.length - 1].month}月`;
 
+  // 備品の流れ: 催事を時系列で並べてチェーンを構築
+  const sortedEvents = [...events].sort((a, b) => a.start_date.localeCompare(b.start_date));
+
+  // 催事ごとの色インデックスマップ
+  const eventColorMap = new Map<string, number>();
+  sortedEvents.forEach((evt, idx) => { eventColorMap.set(evt.id, idx % barColors.length); });
+
+  // 会場名→催事IDマップ（搬出先からバーへの矢印用）
+  const venueToEventMap = new Map<string, EventRecord>();
+  sortedEvents.forEach((evt) => { venueToEventMap.set(getVenueLabel(evt), evt); });
+
+  // 接続情報を構築: equipment_to が他催事の会場名と一致すれば矢印
+  const connections: { fromEvt: EventRecord; toEvt: EventRecord }[] = [];
+  for (const from of sortedEvents) {
+    if (!from.equipment_to || from.equipment_to === HONSHA) continue;
+    const toEvt = venueToEventMap.get(from.equipment_to);
+    if (toEvt && toEvt.id !== from.id && new Date(toEvt.start_date) >= new Date(from.start_date)) {
+      connections.push({ fromEvt: from, toEvt });
+    }
+  }
+
+  // 整合性チェック
+  type Warning = { evtId: string; venue: string; message: string };
+  const warnings: Warning[] = [];
+  for (const evt of sortedEvents) {
+    const label = getVenueLabel(evt);
+
+    // 搬出先の催事が存在しない（百貨店名が見つからない）
+    if (evt.equipment_to && evt.equipment_to !== HONSHA) {
+      const target = venueToEventMap.get(evt.equipment_to);
+      if (!target) {
+        warnings.push({ evtId: evt.id, venue: label, message: `${label}の搬出先「${evt.equipment_to}」はこの期間の催事に存在しません` });
+      }
+      // 時系列チェック: 搬出先が自分より前に始まる
+      if (target && new Date(target.start_date) < new Date(evt.start_date)) {
+        warnings.push({ evtId: evt.id, venue: label, message: `${label}の搬出先「${evt.equipment_to}」は会期が先に始まります（時系列が逆）` });
+      }
+    }
+
+    // 搬入元の催事が存在しない
+    if (evt.equipment_from && evt.equipment_from !== HONSHA) {
+      const source = venueToEventMap.get(evt.equipment_from);
+      if (!source) {
+        warnings.push({ evtId: evt.id, venue: label, message: `${label}の搬入元「${evt.equipment_from}」はこの期間の催事に存在しません` });
+      }
+    }
+
+    // 搬入元も搬出先も未設定
+    if (!evt.equipment_from && !evt.equipment_to) {
+      warnings.push({ evtId: evt.id, venue: label, message: `${label}の搬入元・搬出先が未設定です` });
+    }
+  }
+  const uniqueWarnings = warnings.filter((w, i, arr) => arr.findIndex((x) => x.message === w.message) === i);
+  const evtHasWarning = new Set(warnings.map((w) => w.evtId));
+
   if (loading) return <p className="text-muted-foreground">読み込み中...</p>;
+
+  const ROW_HEIGHT = 95;
+
+  // イベント行のみ（矢印はSVGオーバーレイで描画）
+  const eventRows = sortedEvents.map((evt, idx) => ({ evt, idx }));
+
+  // 各催事の行インデックスマップ（SVG矢印の座標計算用）
+  const eventRowIndexMap = new Map<string, number>();
+  eventRows.forEach((r, i) => { eventRowIndexMap.set(r.evt.id, i); });
 
   return (
     <div className="space-y-4">
-      <style>{`@media print { @page { size: landscape; margin: 10mm; } body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }`}</style>
+      <style>{`
+        @media print {
+          @page { size: A4 portrait; margin: 8mm; }
+          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          /* サイドバー非表示 */
+          nav, aside, header { display: none !important; }
+          /* メインコンテンツを全幅に */
+          main, [data-slot="main"] { margin: 0 !important; padding: 0 !important; max-width: 100% !important; }
+          /* テーブルの横スクロールを解除して全体表示 */
+          .print\\:overflow-visible { overflow: visible !important; }
+          /* 左パネルの幅を縮小 */
+          .print\\:w-32 { width: 8rem !important; min-width: 8rem !important; max-width: 8rem !important; }
+          /* フォントサイズを縮小 */
+          .print\\:text-\\[8px\\] { font-size: 8px !important; }
+          /* 行の高さを縮小 */
+          .print\\:h-auto { height: auto !important; min-height: 60px !important; }
+        }
+      `}</style>
 
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h1 className="text-2xl font-bold">備品転送</h1>
+        <h1 className="text-2xl font-bold">備品の流れ</h1>
         <div className="flex gap-2 print:hidden">
           <Button variant="outline" size="sm" onClick={handlePrint}><Printer className="h-4 w-4 mr-1" />印刷</Button>
           <Button variant="outline" size="sm" onClick={handleSaveJpg}><ImageDown className="h-4 w-4 mr-1" />JPG保存</Button>
@@ -232,25 +370,45 @@ export default function ShipmentsPage() {
             <SelectItem value="1">1ヶ月</SelectItem>
             <SelectItem value="2">2ヶ月</SelectItem>
             <SelectItem value="3">3ヶ月</SelectItem>
+            <SelectItem value="6">6ヶ月</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
-      <p className="text-xs text-muted-foreground print:hidden">※ 左の催事名をクリックして備品転送先を設定できます</p>
+      {/* 凡例 */}
+      <div className="flex items-center gap-4 text-xs text-muted-foreground print:hidden">
+        <div className="flex items-center gap-1"><Warehouse className="h-3 w-3" /> 本社（安岡蒲鉾）</div>
+        <div className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-amber-500" /> 本社から/本社へ</div>
+        <div className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-blue-500" /> 催事間の直送</div>
+        <div className="flex items-center gap-1"><AlertTriangle className="h-3 w-3 text-orange-400" /> 未設定</div>
+      </div>
+
+      {/* 整合性警告 */}
+      {uniqueWarnings.length > 0 && (
+        <div className="rounded-lg border-2 border-red-300 bg-red-50 p-3 space-y-1 print:hidden">
+          <div className="flex items-center gap-2 text-sm font-bold text-red-700">
+            <AlertTriangle className="h-4 w-4" />
+            備品の流れに不整合があります（{uniqueWarnings.length}件）
+          </div>
+          {uniqueWarnings.map((w, i) => (
+            <div key={i} className="text-xs text-red-600 pl-6">• {w.message}</div>
+          ))}
+        </div>
+      )}
 
       <div ref={tableRef}>
-        <div className="hidden print:block text-center mb-3">
-          <h2 className="text-lg font-bold">備品転送</h2>
-          <p className="text-sm text-muted-foreground">{monthLabel}</p>
+        <div className="hidden print:block text-center mb-2">
+          <h2 className="text-base font-bold">備品の流れ — {monthLabel}</h2>
         </div>
 
         <TooltipProvider>
           <Card>
-            <CardContent className="p-0 overflow-x-auto print:overflow-visible">
+            <CardContent className="p-0 overflow-x-auto print:overflow-visible print:text-[8px]">
               <div>
+                {/* 月ヘッダー */}
                 {monthSpan > 1 && (
                   <div className="flex border-b">
-                    <div className="w-40 shrink-0 border-r" />
+                    <div className="w-48 print:w-32 shrink-0 border-r" />
                     <div className="flex-1 flex">
                       {monthRange.map((m) => (
                         <div key={`${m.year}-${m.month}`} className="text-center text-xs font-bold py-1 border-r last:border-r-0 bg-muted/50" style={{ width: `${(m.days / totalDays) * 100}%` }}>
@@ -261,8 +419,9 @@ export default function ShipmentsPage() {
                   </div>
                 )}
 
+                {/* 日付ヘッダー */}
                 <div className="flex border-b sticky top-0 bg-background z-10">
-                  <div className="w-40 shrink-0 p-2 border-r font-medium text-sm">催事</div>
+                  <div className="w-48 print:w-32 shrink-0 p-2 border-r font-medium text-sm">催事 / 備品の流れ</div>
                   <div className="flex-1 flex">
                     {allDays.map((d, i) => {
                       const holiday = holidays.get(d.dateStr);
@@ -278,133 +437,342 @@ export default function ShipmentsPage() {
                   </div>
                 </div>
 
-                {events.map((evt, evtIdx) => {
-                  const eventBarPos = getBarPosition(evt.start_date, evt.end_date);
-                  const venueLabel = evt.store_name ? `${evt.venue} ${evt.store_name}` : evt.venue;
-                  const evtShipments = shipments.filter((s) => s.event_id === evt.id);
+                {/* イベント行 + SVGオーバーレイ */}
+                <div className="relative">
+                  {eventRows.map(({ evt, idx }) => {
+                    const barPos = getBarPosition(evt.start_date, evt.end_date);
+                    const venueLabel = getVenueLabel(evt);
+                    const colorIdx = eventColorMap.get(evt.id) ?? (idx % barColors.length);
+                    const color = barColors[colorIdx];
+                    const hasFrom = !!evt.equipment_from;
+                    const hasTo = !!evt.equipment_to;
+                    const fromIsHonsha = evt.equipment_from === HONSHA;
+                    const toIsHonsha = evt.equipment_to === HONSHA;
 
-                  return (
-                    <div key={evt.id} className={`flex border-b last:border-b-0 ${evtIdx % 2 === 1 ? "bg-muted/20" : ""}`} style={{ minHeight: evtShipments.length > 0 ? 52 : 40 }}>
-                      <div
-                        className="w-40 shrink-0 p-1.5 border-r text-xs font-medium cursor-pointer hover:bg-muted/50 transition-colors print:cursor-default"
-                        onClick={() => openDialog(evt)}
-                      >
-                        <div className="flex items-center gap-1">
-                          <div className="font-bold truncate flex-1">{venueLabel}</div>
-                          {evtShipments.length > 0 ? (
-                            <CheckCircle className="h-3 w-3 text-green-500 shrink-0" />
-                          ) : (
-                            <AlertTriangle className="h-3 w-3 text-orange-400 shrink-0" />
+                    const fromEvtMatch = !fromIsHonsha && evt.equipment_from ? sortedEvents.find((e) => getVenueLabel(e) === evt.equipment_from) : null;
+                    const toEvtMatch = !toIsHonsha && evt.equipment_to ? sortedEvents.find((e) => getVenueLabel(e) === evt.equipment_to) : null;
+                    const fromBadgeColor = fromIsHonsha ? "border-amber-400 text-amber-700 bg-amber-50" : fromEvtMatch ? barColors[eventColorMap.get(fromEvtMatch.id) ?? 0].badge : "border-gray-400 text-gray-700 bg-gray-50";
+                    const toBadgeColor = toIsHonsha ? "border-amber-400 text-amber-700 bg-amber-50" : toEvtMatch ? barColors[eventColorMap.get(toEvtMatch.id) ?? 0].badge : "border-gray-400 text-gray-700 bg-gray-50";
+
+                    return (
+                      <div key={evt.id} className={`flex border-b last:border-b-0 ${idx % 2 === 1 ? "bg-muted/20" : ""}`} style={{ height: ROW_HEIGHT }}>
+                        {/* 左パネル */}
+                        <div
+                          className="w-48 print:w-32 shrink-0 p-1.5 border-r text-xs hover:bg-muted/50 transition-colors cursor-pointer overflow-hidden"
+                          onClick={() => openEditPanel(evt)}
+                        >
+                          <div className="font-bold text-sm truncate text-black flex items-center gap-1">
+                            {venueLabel}
+                            {evtHasWarning.has(evt.id) && <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground truncate">{evt.name}</div>
+                          <div className="flex items-center gap-1 mt-1">
+                            {hasFrom ? (
+                              <Badge variant="outline" className={`text-[11px] px-1.5 py-0 ${fromBadgeColor}`}>
+                                ← {evt.equipment_from}
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-[11px] px-1.5 py-0 border-orange-300 text-orange-500 bg-orange-50">
+                                <AlertTriangle className="h-3 w-3 mr-0.5" />搬入未設定
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            {hasTo ? (
+                              <Badge variant="outline" className={`text-[11px] px-1.5 py-0 ${toBadgeColor}`}>
+                                → {evt.equipment_to}
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-[11px] px-1.5 py-0 border-orange-300 text-orange-500 bg-orange-50">
+                                <AlertTriangle className="h-3 w-3 mr-0.5" />搬出未設定
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* ガントエリア */}
+                        <div className="flex-1 relative">
+                          <div className="absolute inset-0 flex">
+                            {allDays.map((d, i) => {
+                              const red = isRedDay(d.date, d.dateStr);
+                              const sat = isSaturday(d.date);
+                              return (<div key={i} className={`flex-1 border-r last:border-r-0 ${isToday(d.date) ? "bg-primary/5" : ""} ${red ? "bg-red-50/30" : sat ? "bg-blue-50/30" : ""}`} />);
+                            })}
+                          </div>
+                          {todayIndex >= 0 && (<div className="absolute top-0 bottom-0 w-0.5 bg-red-400 z-[5] pointer-events-none" style={{ left: `${((todayIndex + 0.5) / totalDays) * 100}%` }} />)}
+
+                          {/* 本社から搬入の矢印 */}
+                          {barPos && fromIsHonsha && (
+                            <>
+                              <svg className="absolute inset-0 w-full h-full pointer-events-none z-[1]">
+                                <defs>
+                                  <marker id={`honsha-from-${evt.id}`} markerWidth="12" markerHeight="8" refX="12" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+                                    <polygon points="0 0, 12 4, 0 8" fill="#d97706" />
+                                  </marker>
+                                </defs>
+                                <line x1={`${Math.max(barPos.startPct - 6, 0)}%`} y1="48" x2={`${barPos.startPct}%`} y2="48" stroke="#d97706" strokeWidth="3" markerEnd={`url(#honsha-from-${evt.id})`} />
+                              </svg>
+                              <div className="absolute pointer-events-none z-[3]" style={{ left: `${Math.max(barPos.startPct - 6.5, 0)}%`, top: 38, transform: "translateX(-100%)" }}>
+                                <span className="inline-block px-2 py-0.5 text-[11px] font-bold rounded border-2 border-amber-400 bg-white text-amber-700 whitespace-nowrap">
+                                  本社
+                                </span>
+                              </div>
+                            </>
+                          )}
+
+                          {/* 本社へ搬出の矢印 */}
+                          {barPos && toIsHonsha && (
+                            <>
+                              <svg className="absolute inset-0 w-full h-full pointer-events-none z-[1]">
+                                <defs>
+                                  <marker id={`honsha-to-${evt.id}`} markerWidth="12" markerHeight="8" refX="12" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+                                    <polygon points="0 0, 12 4, 0 8" fill="#d97706" />
+                                  </marker>
+                                </defs>
+                                <line x1={`${barPos.endPct}%`} y1="48" x2={`${Math.min(barPos.endPct + 6, 100)}%`} y2="48" stroke="#d97706" strokeWidth="3" markerEnd={`url(#honsha-to-${evt.id})`} />
+                              </svg>
+                              <div className="absolute pointer-events-none z-[3]" style={{ left: `${Math.min(barPos.endPct + 6.5, 100)}%`, top: 38 }}>
+                                <span className="inline-block px-2 py-0.5 text-[11px] font-bold rounded border-2 border-amber-400 bg-white text-amber-700 whitespace-nowrap">
+                                  本社
+                                </span>
+                              </div>
+                            </>
+                          )}
+
+                          {/* 催事バー */}
+                          {barPos && (
+                            <Tooltip>
+                              <TooltipTrigger
+                                render={
+                                  <div
+                                    className={`absolute rounded border-2 text-xs leading-snug px-1.5 flex items-center overflow-hidden whitespace-nowrap z-[2] hover:opacity-80 transition-opacity cursor-pointer ${color.bar}`}
+                                    style={{ left: barPos.left, width: barPos.width, top: 28, height: 40 }}
+                                    onClick={() => openEditPanel(evt)}
+                                  >
+                                    <div className="truncate">
+                                      <div className="font-bold flex items-center gap-1">
+                                        {venueLabel}
+                                        {evtHasWarning.has(evt.id) && <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />}
+                                      </div>
+                                      <div className="text-[10px] opacity-70">{evt.start_date} 〜 {evt.end_date}</div>
+                                    </div>
+                                  </div>
+                                }
+                              />
+                              <TooltipContent side="bottom" className="max-w-xs">
+                                <div className="space-y-1">
+                                  <div className="font-bold">{venueLabel}</div>
+                                  <div className="text-muted-foreground">{evt.name}</div>
+                                  <div>{evt.start_date} 〜 {evt.end_date}</div>
+                                  <div className="border-t pt-1 mt-1">
+                                    <div>搬入元: {evt.equipment_from || "未設定"}</div>
+                                    <div>搬出先: {evt.equipment_to || "未設定"}</div>
+                                  </div>
+                                </div>
+                              </TooltipContent>
+                            </Tooltip>
                           )}
                         </div>
-                        {evtShipments.length > 0 ? (
-                          <div className="mt-0.5 space-y-0">
-                            {evtShipments.map((s) => (
-                              <div key={s.id} className={`text-[9px] leading-tight truncate ${s.item_name === "返送備品" ? "text-orange-600" : "text-blue-600"}`}>
-                                {s.item_name === "返送備品" ? "← " : "→ "}{s.recipient_name}
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="text-[9px] text-muted-foreground mt-0.5">未設定</div>
-                        )}
                       </div>
-                      <div className="flex-1 relative">
-                        <div className="absolute inset-0 flex">
-                          {allDays.map((d, i) => {
-                            const red = isRedDay(d.date, d.dateStr);
-                            const sat = isSaturday(d.date);
-                            return (<div key={i} className={`flex-1 border-r last:border-r-0 ${isToday(d.date) ? "bg-primary/5" : ""} ${red ? "bg-red-50/30" : sat ? "bg-blue-50/30" : ""}`} />);
-                          })}
+                    );
+                  })}
+
+
+                  {/* 接続矢印オーバーレイ: 各接続ごとに個別SVG */}
+                  {connections.map((conn, ci) => {
+                    const fromPos = getBarPosition(conn.fromEvt.start_date, conn.fromEvt.end_date);
+                    const toPos = getBarPosition(conn.toEvt.start_date, conn.toEvt.end_date);
+                    const fromRow = eventRowIndexMap.get(conn.fromEvt.id);
+                    const toRow = eventRowIndexMap.get(conn.toEvt.id);
+                    if (!fromPos || !toPos || fromRow === undefined || toRow === undefined) return null;
+
+                    const cIdx = eventColorMap.get(conn.toEvt.id) ?? 0;
+                    const arrowColor = barColors[cIdx].arrow;
+                    const toLabel = getVenueLabel(conn.toEvt);
+
+                    // 位置計算（px）
+                    const y1 = fromRow * ROW_HEIGHT + ROW_HEIGHT / 2;
+                    const x2Pct = toPos.startPct;
+                    const y2 = toRow * ROW_HEIGHT + ROW_HEIGHT / 2;
+
+                    // ラベル位置: 搬出元バーの終了日あたり
+                    const oneDayPct = (1 / totalDays) * 100;
+                    const labelXPct = fromPos.endPct + oneDayPct;
+                    const labelY = y1;
+
+                    return (
+                      <React.Fragment key={`conn-${ci}`}>
+                        {/* 矢印線のSVG */}
+                        <svg
+                          className="absolute pointer-events-none"
+                          style={{ top: 0, left: 192, width: "calc(100% - 192px)", height: eventRows.length * ROW_HEIGHT, zIndex: 0, overflow: "visible" }}
+                        >
+                          <defs>
+                            <marker id={`conn-arr-${ci}`} markerWidth="16" markerHeight="12" refX="16" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+                              <polygon points="0 0, 16 6, 0 12" fill={arrowColor} />
+                            </marker>
+                          </defs>
+                          <line
+                            x1={`${fromPos.endPct}%`} y1={y1}
+                            x2={`${x2Pct}%`} y2={y2}
+                            stroke={arrowColor} strokeWidth="4" opacity="0.85"
+                            markerEnd={`url(#conn-arr-${ci})`}
+                          />
+                        </svg>
+                        {/* ラベル（HTML） */}
+                        <div
+                          className="absolute pointer-events-none"
+                          style={{
+                            left: `calc(192px + (100% - 192px) * ${labelXPct / 100})`,
+                            top: labelY - 12,
+                            transform: "translateX(-50%)",
+                            zIndex: 10,
+                          }}
+                        >
+                          <span className="inline-block px-2 py-0.5 text-[11px] font-bold rounded border bg-white/95 whitespace-nowrap"
+                            style={{ color: arrowColor, borderColor: arrowColor }}
+                          >
+                            →{toLabel}
+                          </span>
                         </div>
-                        {todayIndex >= 0 && (<div className="absolute top-0 bottom-0 w-0.5 bg-red-400 z-[5] pointer-events-none" style={{ left: `${((todayIndex + 0.5) / totalDays) * 100}%` }} />)}
+                      </React.Fragment>
+                    );
+                  })}
 
-                        {eventBarPos && (
-                          <Tooltip>
-                            <TooltipTrigger
-                              render={
-                                <div
-                                  className="absolute rounded bg-gray-200 border border-gray-400 text-[10px] leading-tight px-1 flex items-center overflow-hidden whitespace-nowrap z-[1] cursor-pointer hover:opacity-80"
-                                  style={{ left: eventBarPos.left, width: eventBarPos.width, top: 8, height: 22 }}
-                                  onClick={() => openDialog(evt)}
-                                >
-                                  {venueLabel}
-                                </div>
-                              }
-                            />
-                            <TooltipContent side="bottom">
-                              <div className="space-y-0.5">
-                                <div className="font-medium">{evt.name}</div>
-                                <div>{venueLabel}</div>
-                                <div className="text-muted-foreground">{evt.start_date} 〜 {evt.end_date}</div>
-                                <div>{evtShipments.length > 0 ? `備品転送: ${evtShipments.length}件登録済み` : "備品転送: 未登録 — クリックで設定"}</div>
-                              </div>
-                            </TooltipContent>
-                          </Tooltip>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {events.length === 0 && (
-                  <div className="p-8 text-center text-muted-foreground">この期間に催事がありません。</div>
-                )}
+                  {events.length === 0 && (
+                    <div className="p-8 text-center text-muted-foreground">この期間に催事がありません。</div>
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>
         </TooltipProvider>
       </div>
 
-      {/* 備品転送登録ダイアログ */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>備品転送の設定</DialogTitle>
-          </DialogHeader>
-          {dialogEvent && (
-            <div className="space-y-4">
-              <div className="text-sm">
-                <span className="font-medium">{dialogEvent.venue}{dialogEvent.store_name ? ` ${dialogEvent.store_name}` : ""}</span>
-                <span className="text-muted-foreground ml-2">{dialogEvent.name}</span>
-                <div className="text-muted-foreground text-xs mt-0.5">{dialogEvent.start_date} 〜 {dialogEvent.end_date}</div>
+      {/* 備品の流れ編集パネル（ドラッグ移動可能・背景ぼかしなし） */}
+      {editEvent && (() => {
+        const venueLabel = getVenueLabel(editEvent);
+        return (
+          <div
+            ref={panelRef}
+            tabIndex={0}
+            onKeyDown={handlePanelKeyDown}
+            className="fixed z-50 w-[400px] max-h-[80vh] overflow-y-auto rounded-xl bg-popover ring-1 ring-foreground/10 shadow-xl print:hidden outline-none"
+            style={{ left: panelPos.x, top: panelPos.y }}
+          >
+            {/* ドラッグハンドル */}
+            <div
+              className="flex items-center justify-between px-4 py-2 border-b bg-muted/50 rounded-t-xl cursor-grab active:cursor-grabbing select-none"
+              onMouseDown={onDragStart}
+            >
+              <div className="flex items-center gap-2">
+                <GripHorizontal className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">備品の流れ</span>
               </div>
-
-              <div className="space-y-2">
-                <p className="text-sm font-medium">転送先を選択（複数可）</p>
-                <div className="flex flex-wrap gap-2">
-                  {getDestinations(dialogEvent).map((dest) => {
-                    const isSelected = selectedDests.has(dest.label);
-                    return (
-                      <Badge
-                        key={dest.label}
-                        variant={isSelected ? "default" : "outline"}
-                        className="cursor-pointer text-xs"
-                        onClick={() => toggleDest(dest.label, dest.type)}
-                      >
-                        {dest.type === "return" ? "← " : "→ "}{dest.label}
-                      </Badge>
-                    );
-                  })}
-                </div>
-                {selectedDests.size > 0 && (
-                  <div className="text-xs text-muted-foreground pt-1">
-                    {selectedDests.size}件選択中
-                  </div>
-                )}
-              </div>
+              <button onClick={cancelPanel} className="p-1 rounded hover:bg-red-100 hover:text-red-600 transition-colors">
+                <X className="h-4 w-4" />
+              </button>
             </div>
-          )}
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">キャンセル</Button>
-            </DialogClose>
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? "保存中..." : "保存する"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+
+            {(() => {
+              const editColorIdx = eventColorMap.get(editEvent.id) ?? 0;
+              const editColor = barColors[editColorIdx];
+              // ガントチャートの時系列順で候補を生成（自分を除く）
+              const venueOptions = sortedEvents
+                .filter((e) => e.id !== editEvent.id)
+                .map((e) => getVenueLabel(e))
+                .filter((v, i, arr) => arr.indexOf(v) === i); // 重複排除
+              // 各催事会場のバッジ色を取得するヘルパー
+              const getBadgeColorForVenue = (v: string, selected: boolean) => {
+                if (v === HONSHA) return selected ? "bg-black border-black text-white" : "border-gray-300 text-gray-500 bg-white hover:bg-gray-100 hover:text-black hover:border-gray-500";
+                const matchEvt = sortedEvents.find((e) => getVenueLabel(e) === v);
+                if (!matchEvt) return "bg-white";
+                const c = barColors[eventColorMap.get(matchEvt.id) ?? 0];
+                return selected ? c.badgeFill : `${c.badge} ${c.badgeHover}`;
+              };
+              return (
+                <div className="p-4 space-y-4">
+                  <div className="text-sm">
+                    <span className={`inline-block font-bold text-base px-2 py-0.5 rounded border ${editColor.badge}`}>{venueLabel}</span>
+                    <span className="text-muted-foreground ml-2">{editEvent.name}</span>
+                    <div className="text-xs text-muted-foreground mt-0.5">{editEvent.start_date} 〜 {editEvent.end_date}</div>
+                  </div>
+
+                  {/* 搬入元 */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-amber-700 font-medium">搬入元</span>
+                      <span className="text-muted-foreground">→</span>
+                      <Badge variant="outline" className={`text-xs ${editColor.badge}`}>{venueLabel}</Badge>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      <Badge
+                        variant="outline"
+                        className={`cursor-pointer text-xs transition-colors ${getBadgeColorForVenue(HONSHA, draftFrom === HONSHA)} ${draftFrom === HONSHA ? "font-bold" : ""}`}
+                        onClick={() => { setDraftFrom(draftFrom === HONSHA ? null : HONSHA); setPanelDirty(true); }}
+                      >
+                        本社（安岡蒲鉾）
+                      </Badge>
+                      {venueOptions.map((v) => {
+                        const selected = draftFrom === v;
+                        const vColor = getBadgeColorForVenue(v, selected);
+                        return (
+                          <Badge
+                            key={v}
+                            variant="outline"
+                            className={`cursor-pointer text-xs transition-colors ${vColor} ${selected ? "font-bold" : ""}`}
+                            onClick={() => { setDraftFrom(selected ? null : v); setPanelDirty(true); }}
+                          >
+                            {v}
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 搬出先 */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-sm">
+                      <Badge variant="outline" className={`text-xs ${editColor.badge}`}>{venueLabel}</Badge>
+                      <span className="text-muted-foreground">→</span>
+                      <span className="text-amber-700 font-medium">搬出先</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      <Badge
+                        variant="outline"
+                        className={`cursor-pointer text-xs transition-colors ${getBadgeColorForVenue(HONSHA, draftTo === HONSHA)} ${draftTo === HONSHA ? "font-bold" : ""}`}
+                        onClick={() => { setDraftTo(draftTo === HONSHA ? null : HONSHA); setPanelDirty(true); }}
+                      >
+                        本社（安岡蒲鉾）
+                      </Badge>
+                      {venueOptions.map((v) => {
+                        const selected = draftTo === v;
+                        const vColor = getBadgeColorForVenue(v, selected);
+                        return (
+                          <Badge
+                            key={v}
+                            variant="outline"
+                            className={`cursor-pointer text-xs transition-colors ${vColor} ${selected ? "font-bold" : ""}`}
+                            onClick={() => { setDraftTo(selected ? null : v); setPanelDirty(true); }}
+                          >
+                            {v}
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 保存・キャンセル */}
+                  <div className="flex justify-end gap-2 pt-2 border-t">
+                    <Button variant="outline" size="sm" onClick={cancelPanel}>キャンセル</Button>
+                    <Button size="sm" onClick={savePanel} disabled={!panelDirty}>保存する</Button>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        );
+      })()}
     </div>
   );
 }

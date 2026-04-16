@@ -9,8 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -26,7 +25,7 @@ import {
   DialogFooter,
   DialogClose,
 } from "@/components/ui/dialog";
-import { Pencil, Trash2, ArrowLeft, X } from "lucide-react";
+import { Trash2, ArrowLeft, X, Building2 } from "lucide-react";
 import Link from "next/link";
 import { prefectures, eventStatuses } from "@/lib/prefectures";
 import { ArrangementEditor } from "@/components/arrangements/ArrangementEditor";
@@ -44,6 +43,8 @@ type EventData = {
   person_in_charge: string | null;
   status: string;
   application_status: string | null;
+  application_submitted_date: string | null;
+  application_method: string | null;
   notes: string | null;
 };
 
@@ -66,7 +67,6 @@ export default function EventDetailPage({
   type Employee = { id: string; name: string };
   const [event, setEvent] = useState<EventData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
@@ -82,6 +82,8 @@ export default function EventDetailPage({
     person_in_charge: "",
     status: "",
     application_status: "未提出",
+    application_submitted_date: "",
+    application_method: "",
     notes: "",
   });
 
@@ -104,6 +106,8 @@ export default function EventDetailPage({
         person_in_charge: eventRes.data.person_in_charge || "",
         status: eventRes.data.status,
         application_status: eventRes.data.application_status || "未提出",
+        application_submitted_date: eventRes.data.application_submitted_date || "",
+        application_method: eventRes.data.application_method || "",
         notes: eventRes.data.notes || "",
       });
     }
@@ -177,6 +181,8 @@ export default function EventDetailPage({
         person_in_charge: allNames.length > 0 ? allNames.join("、") : null,
         status: form.status,
         application_status: form.application_status,
+        application_submitted_date: form.application_submitted_date || null,
+        application_method: form.application_method || null,
         notes: form.notes.trim() || null,
       })
       .eq("id", id);
@@ -201,7 +207,6 @@ export default function EventDetailPage({
       );
     }
 
-    setEditOpen(false);
     fetchEvent();
   };
 
@@ -244,10 +249,6 @@ export default function EventDetailPage({
           >
             {event.status}
           </Badge>
-          <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
-            <Pencil className="h-4 w-4 mr-1" />
-            編集
-          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -259,235 +260,88 @@ export default function EventDetailPage({
         </div>
       </div>
 
-      {/* タブ */}
-      <Tabs defaultValue="prep">
-        <TabsList className="flex-wrap h-auto gap-1">
-          <TabsTrigger value="prep">手配状況</TabsTrigger>
-          <TabsTrigger value="staff">社員配置</TabsTrigger>
-          <TabsTrigger value="info">基本情報</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="prep">
-          <ArrangementEditor eventId={id} venue={event?.venue || ""} storeName={event?.store_name || null} startDate={event.start_date} endDate={event.end_date} />
-        </TabsContent>
-
-        <TabsContent value="staff">
-          <StaffTab eventId={id} startDate={event.start_date} endDate={event.end_date} />
-        </TabsContent>
-
-        <TabsContent value="info">
-          <Card>
-            <CardHeader>
-              <CardTitle>基本情報</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="text-muted-foreground">催事名</span>
-                  <p className="font-medium">{event.name}</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">百貨店名</span>
-                  <p className="font-medium">{event.venue}</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">店舗名</span>
-                  <p className="font-medium">{event.store_name || "—"}</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">開催地</span>
-                  <p className="font-medium">{event.prefecture}</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">ステータス</span>
-                  <p className="font-medium">{event.status}</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">開始日</span>
-                  <p className="font-medium">{event.start_date}</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">終了日</span>
-                  <p className="font-medium">{event.end_date}</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">最終日 閉場時間</span>
-                  <p className="font-medium">{event.closing_time || "—"}</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">担当者</span>
-                  <p className="font-medium">{event.person_in_charge || "—"}</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">出店申込書</span>
-                  <p className="font-medium">
-                    <Badge variant="outline" className={event.application_status === "提出済" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}>
-                      {event.application_status || "未提出"}
-                    </Badge>
-                  </p>
-                </div>
-              </div>
-              {event.notes && (
-                <div className="text-sm">
-                  <span className="text-muted-foreground">備考</span>
-                  <p className="font-medium whitespace-pre-wrap">{event.notes}</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-
-      {/* 編集ダイアログ */}
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" preventBackdropClose>
-          <DialogHeader>
-            <DialogTitle>催事情報を編集</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>百貨店名 *</Label>
-                <Input
-                  value={form.venue}
-                  onChange={(e) => setForm({ ...form, venue: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>店舗名</Label>
-                <Input
-                  value={form.store_name}
-                  onChange={(e) => setForm({ ...form, store_name: e.target.value })}
-                />
-              </div>
+      {/* 基本情報 */}
+      <Card className="border-l-4 border-l-slate-500 bg-slate-50/50">
+        <CardContent className="pt-4 pb-4 space-y-4">
+          <div className="flex items-center gap-2">
+            <Building2 className="h-4 w-4 text-slate-600" />
+            <span className="text-sm font-bold text-slate-800">基本情報</span>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>百貨店名 *</Label>
+              <Input value={form.venue} onChange={(e) => setForm({ ...form, venue: e.target.value })} />
             </div>
             <div className="space-y-2">
+              <Label>店舗名</Label>
+              <Input value={form.store_name} onChange={(e) => setForm({ ...form, store_name: e.target.value })} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
               <Label>催事名 *</Label>
-              <Input
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-              />
+              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </div>
             <div className="space-y-2">
               <Label>開催地 *</Label>
-              <Select
-                value={form.prefecture}
-                onValueChange={(v) => v && setForm({ ...form, prefecture: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {prefectures.map((p) => (
-                    <SelectItem key={p} value={p}>{p}</SelectItem>
-                  ))}
-                </SelectContent>
+              <Select value={form.prefecture} onValueChange={(v) => v && setForm({ ...form, prefecture: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>{prefectures.map((p) => (<SelectItem key={p} value={p}>{p}</SelectItem>))}</SelectContent>
               </Select>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>開始日 *</Label>
-                <Input
-                  type="date"
-                  value={form.start_date}
-                  onChange={(e) => setForm({ ...form, start_date: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>終了日 *</Label>
-                <Input
-                  type="date"
-                  value={form.end_date}
-                  onChange={(e) => setForm({ ...form, end_date: e.target.value })}
-                />
-              </div>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label>開始日 *</Label>
+              <Input type="date" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} />
             </div>
             <div className="space-y-2">
-              <Label>最終日 閉場時間</Label>
-              <Input
-                type="time"
-                value={form.closing_time}
-                onChange={(e) => setForm({ ...form, closing_time: e.target.value })}
-              />
+              <Label>終了日 *</Label>
+              <Input type="date" value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} />
             </div>
             <div className="space-y-2">
-              <Label>担当者</Label>
-              <Input
-                value={buildPersonInCharge()}
-                readOnly
-                className="bg-muted/50"
-              />
-              <div className="flex flex-wrap gap-2">
-                {employees.map((emp) => {
-                  const selected = selectedEmployeeIds.includes(emp.id);
-                  return (
-                    <Badge
-                      key={emp.id}
-                      variant={selected ? "default" : "outline"}
-                      className="cursor-pointer"
-                      onClick={() => toggleEmployee(emp.id)}
-                    >
-                      {emp.name}
-                      {selected && <X className="h-3 w-3 ml-1" />}
-                    </Badge>
-                  );
-                })}
-              </div>
-              <Input
-                value={form.person_in_charge}
-                onChange={(e) => setForm({ ...form, person_in_charge: e.target.value })}
-                placeholder="その他（社員マスターにない人がいれば入力）"
-              />
+              <Label>閉場時間</Label>
+              <Input type="time" value={form.closing_time} onChange={(e) => setForm({ ...form, closing_time: e.target.value })} />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>ステータス</Label>
-                <Select
-                  value={form.status}
-                  onValueChange={(v) => v && setForm({ ...form, status: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {eventStatuses.map((s) => (
-                      <SelectItem key={s} value={s}>{s}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>出店申込書</Label>
-                <Select
-                  value={form.application_status}
-                  onValueChange={(v) => v && setForm({ ...form, application_status: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="未提出">未提出</SelectItem>
-                    <SelectItem value="提出済">提出済</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+          </div>
+          <div className="space-y-2">
+            <Label>担当者</Label>
+            <div className="flex flex-wrap gap-2">
+              {employees.map((emp) => {
+                const selected = selectedEmployeeIds.includes(emp.id);
+                return (
+                  <Badge key={emp.id} variant={selected ? "default" : "outline"} className="cursor-pointer" onClick={() => toggleEmployee(emp.id)}>
+                    {emp.name}{selected && <X className="h-3 w-3 ml-1" />}
+                  </Badge>
+                );
+              })}
+            </div>
+            <Input value={form.person_in_charge} onChange={(e) => setForm({ ...form, person_in_charge: e.target.value })} placeholder="その他（社員マスターにない人がいれば入力）" />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>ステータス</Label>
+              <Select value={form.status} onValueChange={(v) => v && setForm({ ...form, status: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>{eventStatuses.map((s) => (<SelectItem key={s} value={s}>{s}</SelectItem>))}</SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label>備考</Label>
-              <Textarea
-                value={form.notes}
-                onChange={(e) => setForm({ ...form, notes: e.target.value })}
-              />
+              <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} />
             </div>
           </div>
-          <DialogFooter>
-            <DialogClose>
-              <Button variant="outline">キャンセル</Button>
-            </DialogClose>
-            <Button onClick={handleUpdate}>更新する</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div className="flex justify-end">
+            <Button onClick={handleUpdate}>基本情報を保存</Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 手配状況 */}
+      <ArrangementEditor eventId={id} venue={event?.venue || ""} storeName={event?.store_name || null} startDate={event.start_date} endDate={event.end_date} />
+
+      {/* 社員配置 */}
+      <StaffTab eventId={id} startDate={event.start_date} endDate={event.end_date} />
 
       {/* 削除確認ダイアログ */}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>

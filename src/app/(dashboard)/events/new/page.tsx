@@ -55,6 +55,8 @@ export default function NewEventPage() {
     application_status: "未提出",
     dm_status: "",
     notes: "",
+    equipment_from: "",
+    equipment_to: "",
   });
 
   const fetchData = useCallback(async () => {
@@ -176,6 +178,8 @@ export default function NewEventPage() {
       application_status: form.application_status,
       dm_status: form.dm_status && form.dm_status !== "none" ? form.dm_status : null,
       notes: form.notes.trim() || null,
+      equipment_from: form.equipment_from || null,
+      equipment_to: form.equipment_to || null,
     }).select("id").single();
 
     if (!error && data) {
@@ -554,43 +558,69 @@ export default function NewEventPage() {
         </CardContent>
       </Card>
 
-      {/* ===== 備品転送 ===== */}
+      {/* ===== 備品の流れ ===== */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            <Package className="h-4 w-4" />備品転送
+            <Package className="h-4 w-4" />備品の流れ
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-xs text-muted-foreground">転送先を選択してください</p>
-          <div className="flex flex-wrap gap-2">
-            {shipmentDestinations.map((dest) => {
-              const alreadyAdded = shipmentEntries.some((e) => e.recipient_name === dest.label);
-              return (
+        <CardContent className="space-y-4">
+          {/* 搬入元 */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-sm">
+              <span className="font-medium text-amber-700">搬入元</span>
+              <span className="text-muted-foreground">→</span>
+              <span className="text-sm">{currentVenueLabel || "（百貨店名を入力してください）"}</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              <Badge
+                variant={form.equipment_from === "本社（安岡蒲鉾）" ? "default" : "outline"}
+                className={`cursor-pointer text-xs ${form.equipment_from !== "本社（安岡蒲鉾）" ? "bg-white" : ""}`}
+                onClick={() => setForm({ ...form, equipment_from: form.equipment_from === "本社（安岡蒲鉾）" ? "" : "本社（安岡蒲鉾）" })}
+              >
+                本社（安岡蒲鉾）
+              </Badge>
+              {pastVenues.filter((v) => v.label !== currentVenueLabel).map((v) => (
                 <Badge
-                  key={dest.label}
-                  variant={alreadyAdded ? "default" : "outline"}
-                  className={`cursor-pointer text-xs ${alreadyAdded ? "" : "hover:bg-muted"}`}
-                  onClick={() => alreadyAdded ? undefined : addShipmentTo(dest)}
+                  key={v.label}
+                  variant={form.equipment_from === v.label ? "default" : "outline"}
+                  className={`cursor-pointer text-xs ${form.equipment_from !== v.label ? "bg-white" : ""}`}
+                  onClick={() => setForm({ ...form, equipment_from: form.equipment_from === v.label ? "" : v.label })}
                 >
-                  {dest.type === "return" ? "← " : "→ "}{dest.label}
-                  {alreadyAdded && <X className="h-3 w-3 ml-1" onClick={(ev) => { ev.stopPropagation(); setShipmentEntries((prev) => prev.filter((e) => e.recipient_name !== dest.label)); }} />}
+                  {v.label}
                 </Badge>
-              );
-            })}
-          </div>
-          {shipmentEntries.length > 0 && (
-            <div className="space-y-1 pt-1">
-              {shipmentEntries.map((s, i) => (
-                <div key={i} className="flex items-center gap-2 text-sm">
-                  <span className={s.direction === "return" ? "text-orange-600" : "text-blue-600"}>
-                    {s.direction === "return" ? "← 返送:" : "→ 発送:"}
-                  </span>
-                  <span>{s.recipient_name}</span>
-                </div>
               ))}
             </div>
-          )}
+          </div>
+
+          {/* 搬出先 */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-sm">{currentVenueLabel || "（百貨店名を入力してください）"}</span>
+              <span className="text-muted-foreground">→</span>
+              <span className="font-medium text-amber-700">搬出先</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              <Badge
+                variant={form.equipment_to === "本社（安岡蒲鉾）" ? "default" : "outline"}
+                className={`cursor-pointer text-xs ${form.equipment_to !== "本社（安岡蒲鉾）" ? "bg-white" : ""}`}
+                onClick={() => setForm({ ...form, equipment_to: form.equipment_to === "本社（安岡蒲鉾）" ? "" : "本社（安岡蒲鉾）" })}
+              >
+                本社（安岡蒲鉾）
+              </Badge>
+              {pastVenues.filter((v) => v.label !== currentVenueLabel).map((v) => (
+                <Badge
+                  key={v.label}
+                  variant={form.equipment_to === v.label ? "default" : "outline"}
+                  className={`cursor-pointer text-xs ${form.equipment_to !== v.label ? "bg-white" : ""}`}
+                  onClick={() => setForm({ ...form, equipment_to: form.equipment_to === v.label ? "" : v.label })}
+                >
+                  {v.label}
+                </Badge>
+              ))}
+            </div>
+          </div>
         </CardContent>
       </Card>
 

@@ -33,7 +33,7 @@ const navItems = [
   { label: "社員スケジュール", href: "/schedule", icon: CalendarClock },
   { label: "ホテル手配", href: "/hotels", icon: Hotel },
   { label: "交通手配", href: "/transports", icon: Train },
-  { label: "備品転送", href: "/shipments", icon: Package },
+  { label: "備品の流れ", href: "/shipments", icon: Package },
   { label: "出店申込書", href: "/applications", icon: FileText },
   { label: "DMハガキ", href: "/dm", icon: Mail },
   { label: "ホテルマスター", href: "/hotel-master", icon: Hotel },

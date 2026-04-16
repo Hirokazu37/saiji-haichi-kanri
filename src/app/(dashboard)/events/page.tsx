@@ -16,13 +16,12 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, MapPin, Calendar, Printer, ImageDown, ChevronLeft, ChevronRight, LayoutGrid, CalendarDays } from "lucide-react";
+import { Plus, MapPin, Calendar, Printer, ImageDown, ChevronLeft, ChevronRight, LayoutGrid, CalendarDays, X } from "lucide-react";
 import Link from "next/link";
 import { eventStatuses } from "@/lib/prefectures";
 import { getHolidaysForRange } from "@/lib/holidays";
 
 type VenueOption = { label: string };
-type ShipmentRecord = { id: string; event_id: string; item_name: string; recipient_name: string };
 type MannequinSummary = { event_id: string; arrangement_status: string | null };
 type StaffWithArrangement = {
   id: string;
@@ -57,6 +56,8 @@ type Event = {
   application_status: string | null;
   dm_status: string | null;
   dm_count: number | null;
+  equipment_from: string | null;
+  equipment_to: string | null;
 };
 
 const statusColor: Record<string, string> = {
@@ -121,7 +122,6 @@ export default function EventsPage() {
   const listRef = useRef<HTMLDivElement>(null);
 
   // 手配データ
-  const [shipments, setShipments] = useState<ShipmentRecord[]>([]);
   const [allStaff, setAllStaff] = useState<StaffWithArrangement[]>([]);
   const [mannequinSummaries, setMannequinSummaries] = useState<MannequinSummary[]>([]);
   const [pastVenues, setPastVenues] = useState<VenueOption[]>([]);
@@ -131,7 +131,6 @@ export default function EventsPage() {
   // 全手配ダイアログ
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogEvent, setDialogEvent] = useState<Event | null>(null);
-  const [selectedDests, setSelectedDests] = useState<Map<string, "send" | "return">>(new Map());
   const [dialogSaving, setDialogSaving] = useState(false);
   const [dialogStaff, setDialogStaff] = useState<StaffWithArrangement[]>([]);
 
@@ -159,27 +158,26 @@ export default function EventsPage() {
   const handlePrint = () => window.print();
   const handleSaveJpg = async () => {
     if (!listRef.current) return;
-    const html2canvas = (await import("html2canvas")).default;
-    const canvas = await html2canvas(listRef.current, { scale: 2, useCORS: true, scrollX: 0, scrollY: -window.scrollY });
-    const ctx = canvas.getContext("2d");
-    if (ctx) {
-      ctx.save(); ctx.globalAlpha = 0.08;
-      ctx.font = `bold ${Math.floor(canvas.height / 5)}px sans-serif`;
-      ctx.fillStyle = "#000";
-      ctx.translate(canvas.width / 2, canvas.height / 2);
-      ctx.rotate(-Math.PI / 6); ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText("社外秘", 0, 0); ctx.restore();
+    try {
+      const { toJpeg } = await import("html-to-image");
+      const dataUrl = await toJpeg(listRef.current, {
+        quality: 0.92,
+        pixelRatio: 2,
+        backgroundColor: "#ffffff",
+      });
+      const link = document.createElement("a");
+      link.download = `日程表_${calYear}年${calMonth}月.jpg`;
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      console.error("JPG保存エラー:", err);
+      alert("JPG保存に失敗しました。");
     }
-    const link = document.createElement("a");
-    link.download = `日程表_${calYear}年${calMonth}月.jpg`;
-    link.href = canvas.toDataURL("image/jpeg", 0.95);
-    link.click();
   };
 
   const fetchEvents = useCallback(async () => {
-    const [evtRes, shipRes, staffRes, mannRes, venueRes, hmRes, hvlRes] = await Promise.all([
+    const [evtRes, staffRes, mannRes, venueRes, hmRes, hvlRes] = await Promise.all([
       supabase.from("events").select("*").order("start_date", { ascending: true }),
-      supabase.from("shipments").select("id, event_id, item_name, recipient_name"),
       supabase.from("event_staff").select("id, event_id, employee_id, start_date, end_date, role, hotel_name, hotel_check_in, hotel_check_out, hotel_status, transport_type, transport_from, transport_to, transport_status, transport_outbound_status, transport_return_status, employees(name)"),
       supabase.from("mannequins").select("event_id, arrangement_status"),
       supabase.from("events").select("venue, store_name").order("created_at", { ascending: false }).limit(100),
@@ -187,7 +185,6 @@ export default function EventsPage() {
       supabase.from("hotel_venue_links").select("hotel_id, venue_name"),
     ]);
     setEvents(evtRes.data || []);
-    setShipments((shipRes.data || []) as ShipmentRecord[]);
     setAllStaff((staffRes.data || []) as unknown as StaffWithArrangement[]);
     setMannequinSummaries((mannRes.data || []) as MannequinSummary[]);
     setHotelMasters((hmRes.data || []) as { id: string; name: string }[]);
@@ -219,7 +216,6 @@ export default function EventsPage() {
   // --- 手配状況ヘルパー ---
   const getArrangementStatus = (evt: Event) => {
     const staff = allStaff.filter((s) => s.event_id === evt.id);
-    const ships = shipments.filter((s) => s.event_id === evt.id);
 
     const hotelCount = staff.filter((s) => s.hotel_name).length;
     const hotelOk = staff.length > 0 && staff.every((s) => s.hotel_name);
@@ -229,14 +225,18 @@ export default function EventsPage() {
     const manns = mannequinSummaries.filter((m) => m.event_id === evt.id);
     const mannOk = manns.length > 0 && manns.every((m) => m.arrangement_status === "手配済");
 
+    const equipOk = !!evt.equipment_from && !!evt.equipment_to;
+    const equipPartial = !!evt.equipment_from || !!evt.equipment_to;
+
     return {
       hotel: staff.length === 0 ? "未登録" : hotelOk ? "設定済" : hotelCount > 0 ? "一部未設定" : "未設定",
       transport: staff.length === 0 ? "未登録" : transportOk ? "設定済" : transportCount > 0 ? "一部未設定" : "未設定",
-      shipment: ships.length === 0 ? "未設定" : "設定済",
+      shipment: equipOk ? "設定済" : equipPartial ? "一部未設定" : "未設定",
       application: evt.application_status || "未提出",
       dm: evt.dm_status || null,
       mannequin: manns.length === 0 ? "na" : mannOk ? "ok" : "ng",
-      shipDetails: ships,
+      equipmentFrom: evt.equipment_from,
+      equipmentTo: evt.equipment_to,
       staff,
     };
   };
@@ -244,21 +244,8 @@ export default function EventsPage() {
   // --- 全手配ダイアログ ---
   const openDialog = (evt: Event) => {
     setDialogEvent(evt);
-    const existing = new Map<string, "send" | "return">();
-    shipments.filter((s) => s.event_id === evt.id).forEach((s) => {
-      existing.set(s.recipient_name, s.item_name === "返送備品" ? "return" : "send");
-    });
-    setSelectedDests(existing);
     setDialogStaff(allStaff.filter((s) => s.event_id === evt.id).map((s) => ({ ...s })));
     setDialogOpen(true);
-  };
-
-  const toggleDest = (label: string, type: "send" | "return") => {
-    setSelectedDests((prev) => {
-      const next = new Map(prev);
-      if (next.has(label)) { next.delete(label); } else { next.set(label, type); }
-      return next;
-    });
   };
 
   const toggleApplicationStatus = async (e: React.MouseEvent, evtId: string, current: string | null) => {
@@ -280,18 +267,7 @@ export default function EventsPage() {
     if (!dialogEvent) return;
     setDialogSaving(true);
 
-    // 備品転送
-    await supabase.from("shipments").delete().eq("event_id", dialogEvent.id);
-    if (selectedDests.size > 0) {
-      await supabase.from("shipments").insert(
-        Array.from(selectedDests.entries()).map(([name, type]) => ({
-          event_id: dialogEvent.id,
-          item_name: type === "return" ? "返送備品" : "備品一式",
-          recipient_name: name, recipient_address: "",
-          ship_date: dialogEvent.start_date, shipment_status: "未発送",
-        }))
-      );
-    }
+    // 備品の流れ（equipment_from/toはupdateEventFieldで即時保存済み）
 
     // 社員ごとのホテル・交通を更新
     for (const s of dialogStaff) {
@@ -305,15 +281,6 @@ export default function EventsPage() {
     setDialogSaving(false);
     setDialogOpen(false);
     fetchEvents();
-  };
-
-  const getDestinations = (evt: Event) => {
-    const venueLabel = evt.store_name ? `${evt.venue} ${evt.store_name}` : evt.venue;
-    return [
-      { label: "本社（安岡蒲鉾）", type: "return" as const },
-      { label: venueLabel, type: "send" as const },
-      ...pastVenues.filter((v) => v.label !== venueLabel).map((v) => ({ label: v.label, type: "send" as const })),
-    ];
   };
 
   const prevMonth = () => {
@@ -360,33 +327,43 @@ export default function EventsPage() {
         <p className="text-muted-foreground">読み込み中...</p>
       ) : viewMode === "calendar" ? (
         /* ===== ガントチャート日程表 ===== */
-        <div ref={listRef}>
-          <div className="flex items-center gap-3 mb-4 print:hidden">
-            <Button variant="outline" size="icon" onClick={prevMonth}><ChevronLeft className="h-4 w-4" /></Button>
-            <span className="text-lg font-semibold min-w-[200px] text-center">{spanLabel}</span>
-            <Button variant="outline" size="icon" onClick={nextMonth}><ChevronRight className="h-4 w-4" /></Button>
-            <Button variant="ghost" size="sm" onClick={() => { setCalYear(today.getFullYear()); setCalMonth(today.getMonth() + 1); }}>今月</Button>
-            <Select value={String(calSpan)} onValueChange={(v) => v && setCalSpan(parseInt(v))}>
-              <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="3">3ヶ月</SelectItem>
-                <SelectItem value="6">6ヶ月</SelectItem>
-                <SelectItem value="12">12ヶ月</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+        <>
+        <div className="flex items-center gap-3 mb-4 print:hidden">
+          <Button variant="outline" size="icon" onClick={prevMonth}><ChevronLeft className="h-4 w-4" /></Button>
+          <span className="text-lg font-semibold min-w-[200px] text-center">{spanLabel}</span>
+          <Button variant="outline" size="icon" onClick={nextMonth}><ChevronRight className="h-4 w-4" /></Button>
+          <Button variant="ghost" size="sm" onClick={() => { setCalYear(today.getFullYear()); setCalMonth(today.getMonth() + 1); }}>今月</Button>
+          <Select value={String(calSpan)} onValueChange={(v) => v && setCalSpan(parseInt(v))}>
+            <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="3">3ヶ月</SelectItem>
+              <SelectItem value="6">6ヶ月</SelectItem>
+              <SelectItem value="12">12ヶ月</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
 
+        <div ref={listRef}>
           {/* 印刷用タイトル */}
           <div className="hidden print:block text-center mb-2">
             <h2 className="text-base font-bold">日程表　{spanLabel}</h2>
             <p className="text-xs text-muted-foreground">印刷日時 {new Date().toLocaleString("ja-JP")}</p>
           </div>
 
-          <style>{`@media print { @page { size: landscape; margin: 5mm; } body { -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 9px; } }`}</style>
+          <style>{`
+            @media print {
+              @page { size: A4 portrait; margin: 8mm; }
+              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 8px; }
+              nav, aside, header { display: none !important; }
+              main, [data-slot="main"] { margin: 0 !important; padding: 0 !important; max-width: 100% !important; }
+              .print\\:overflow-visible { overflow: visible !important; }
+              .print\\:page-break { page-break-before: always; break-before: page; }
+            }
+          `}</style>
 
           <TooltipProvider>
             <div className="space-y-4">
-              {calMonths.map((cm) => {
+              {calMonths.map((cm, cmIdx) => {
                 const daysInMonth = new Date(cm.year, cm.month, 0).getDate();
                 const trackMap = assignTracks(filtered, cm.year, cm.month);
                 const maxTrack = trackMap.size > 0 ? Math.max(...Array.from(trackMap.values())) : -1;
@@ -398,7 +375,7 @@ export default function EventsPage() {
                 const monthEvents = filtered.filter((e) => e.start_date <= monthEnd && e.end_date >= monthStart);
 
                 return (
-                  <Card key={`${cm.year}-${cm.month}`} className="overflow-hidden">
+                  <Card key={`${cm.year}-${cm.month}`} className={`overflow-hidden ${cmIdx > 0 && cmIdx % 2 === 0 ? "print:page-break" : ""}`}>
                     <CardContent className="p-0 overflow-x-auto print:overflow-visible">
                       <div className="min-w-[800px]">
                         {/* 月タイトル */}
@@ -515,9 +492,9 @@ export default function EventsPage() {
                                                 ))}
                                               </span>
                                             </div>
-                                            {arr.shipDetails.length > 0 && (
+                                            {(arr.equipmentFrom || arr.equipmentTo) && (
                                               <div className="truncate text-[10px] text-black/70 mt-0.5">
-                                                {arr.shipDetails.map((s) => `${s.item_name === "返送備品" ? "←" : "→"}${s.recipient_name}`).join(" ")}
+                                                {arr.equipmentFrom ? `←${arr.equipmentFrom}` : ""}{arr.equipmentFrom && arr.equipmentTo ? " " : ""}{arr.equipmentTo ? `→${arr.equipmentTo}` : ""}
                                               </div>
                                             )}
                                           </div>
@@ -549,6 +526,7 @@ export default function EventsPage() {
             </div>
           </TooltipProvider>
         </div>
+        </>
       ) : (
         /* ===== カード表示 ===== */
         filtered.length === 0 ? (
@@ -582,10 +560,15 @@ export default function EventsPage() {
       )}
 
       {/* 全手配ダイアログ */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <Dialog open={dialogOpen} onOpenChange={(open) => { if (open) setDialogOpen(open); }}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" showCloseButton={false} onKeyDown={(e: React.KeyboardEvent) => { if (e.key === "Escape") setDialogOpen(false); }}>
           <DialogHeader>
-            <DialogTitle>手配設定</DialogTitle>
+            <div className="flex items-center justify-between">
+              <DialogTitle>手配設定</DialogTitle>
+              <button onClick={() => setDialogOpen(false)} className="p-1 rounded hover:bg-red-100 hover:text-red-600 transition-colors">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           </DialogHeader>
           {dialogEvent && (() => {
             const venueLabel = dialogEvent.store_name ? `${dialogEvent.venue} ${dialogEvent.store_name}` : dialogEvent.venue;
@@ -664,7 +647,7 @@ export default function EventsPage() {
                           <span className="text-[10px] text-muted-foreground">行き</span>
                           <button
                             type="button"
-                            className={`relative inline-flex h-5 w-20 items-center rounded-full transition-colors ${s.transport_outbound_status === "手配済" ? "bg-green-500" : "bg-gray-300"}`}
+                            className={`relative inline-flex h-5 w-20 items-center rounded-full transition-colors ${s.transport_outbound_status === "手配済" ? "bg-green-700" : "bg-gray-300"}`}
                             onClick={() => updateStaff("transport_outbound_status", s.transport_outbound_status === "手配済" ? "未手配" : "手配済")}
                           >
                             <span className={`absolute text-[9px] font-medium ${s.transport_outbound_status === "手配済" ? "left-1.5 text-white" : "right-1.5 text-gray-600"}`}>
@@ -675,7 +658,7 @@ export default function EventsPage() {
                           <span className="text-[10px] text-muted-foreground">帰り</span>
                           <button
                             type="button"
-                            className={`relative inline-flex h-5 w-20 items-center rounded-full transition-colors ${s.transport_return_status === "手配済" ? "bg-green-500" : "bg-gray-300"}`}
+                            className={`relative inline-flex h-5 w-20 items-center rounded-full transition-colors ${s.transport_return_status === "手配済" ? "bg-green-700" : "bg-gray-300"}`}
                             onClick={() => updateStaff("transport_return_status", s.transport_return_status === "手配済" ? "未手配" : "手配済")}
                           >
                             <span className={`absolute text-[9px] font-medium ${s.transport_return_status === "手配済" ? "left-1.5 text-white" : "right-1.5 text-gray-600"}`}>
@@ -709,25 +692,9 @@ export default function EventsPage() {
                   </div>
                 </div>
 
-                {/* 備品転送 */}
-                <div className="rounded-md border-l-4 border-l-amber-500 bg-amber-50/50 p-3 space-y-2">
-                  <span className="text-sm font-bold text-amber-800">備品転送</span>
-                  <div className="flex flex-wrap gap-2">
-                    {getDestinations(dialogEvent).map((dest) => {
-                      const isSelected = selectedDests.has(dest.label);
-                      return (
-                        <Badge key={dest.label} variant={isSelected ? "default" : "outline"} className="cursor-pointer text-xs"
-                          onClick={() => toggleDest(dest.label, dest.type)}>
-                          {dest.type === "return" ? "← " : "→ "}{dest.label}
-                        </Badge>
-                      );
-                    })}
-                  </div>
-                </div>
-
                 {/* 催事詳細リンク */}
-                <div className="pt-2 border-t">
-                  <Link href={`/events/${dialogEvent.id}`} className="text-xs text-primary hover:underline">
+                <div className="pt-3 border-t text-center">
+                  <Link href={`/events/${dialogEvent.id}`} className="inline-block px-4 py-2 text-sm font-bold rounded-full bg-red-600 text-white hover:bg-red-700 transition-colors">
                     催事詳細ページで編集 →
                   </Link>
                 </div>
@@ -735,7 +702,7 @@ export default function EventsPage() {
             );
           })()}
           <DialogFooter>
-            <DialogClose asChild><Button variant="outline">キャンセル</Button></DialogClose>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>キャンセル</Button>
             <Button onClick={handleDialogSave} disabled={dialogSaving}>{dialogSaving ? "保存中..." : "保存する"}</Button>
           </DialogFooter>
         </DialogContent>

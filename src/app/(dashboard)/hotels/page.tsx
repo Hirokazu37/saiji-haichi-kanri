@@ -12,7 +12,7 @@ import {
 import {
   Tooltip, TooltipTrigger, TooltipContent,
 } from "@/components/ui/tooltip";
-import { ChevronLeft, ChevronRight, ChevronDown, Hotel, Train, ExternalLink } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronDown, Hotel, Train, ExternalLink, Printer, ImageDown } from "lucide-react";
 import Link from "next/link";
 import { getHolidaysForRange } from "@/lib/holidays";
 
@@ -88,6 +88,7 @@ export default function HotelTransportPage() {
   const [filter, setFilter] = useState<"all" | "incomplete">("all");
   const [hotelMasters, setHotelMasters] = useState<{ id: string; name: string }[]>([]);
   const [hotelVenueLinks, setHotelVenueLinks] = useState<{ hotel_id: string; venue_name: string }[]>([]);
+  const chartRef = useRef<HTMLDivElement>(null);
 
   // ガントチャート
   const today = new Date();
@@ -195,41 +196,68 @@ export default function HotelTransportPage() {
 
   const lastMonth = calMonths[calMonths.length - 1];
 
+  const handlePrint = () => { window.print(); };
+  const handleSaveJpg = async () => {
+    if (!chartRef.current) return;
+    try {
+      const { toJpeg } = await import("html-to-image");
+      const dataUrl = await toJpeg(chartRef.current, { quality: 0.92, pixelRatio: 2, backgroundColor: "#ffffff" });
+      const link = document.createElement("a");
+      link.download = `ホテル交通_${calYear}年${calMonth}月.jpg`;
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      console.error("JPG保存エラー:", err);
+      alert("JPG保存に失敗しました。");
+    }
+  };
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Hotel className="h-6 w-6" />
-          ホテル・交通手配
-        </h1>
+      <style>{`
+        @media print {
+          @page { size: A4 portrait; margin: 8mm; }
+          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 8px; }
+          nav, aside, header { display: none !important; }
+          main, [data-slot="main"] { margin: 0 !important; padding: 0 !important; max-width: 100% !important; }
+          .print\\:overflow-visible { overflow: visible !important; }
+        }
+      `}</style>
+
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h1 className="text-2xl font-bold">ホテル・交通手配</h1>
+        <div className="flex gap-2 print:hidden">
+          <Button variant="outline" size="sm" onClick={handlePrint}><Printer className="h-4 w-4 mr-1" />印刷</Button>
+          <Button variant="outline" size="sm" onClick={handleSaveJpg}><ImageDown className="h-4 w-4 mr-1" />JPG保存</Button>
+        </div>
       </div>
 
-      {/* フィルタ＋ナビ */}
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex gap-2">
-          <Button variant={filter === "all" ? "default" : "outline"} size="sm" onClick={() => setFilter("all")}>すべて</Button>
-          <Button variant={filter === "incomplete" ? "default" : "outline"} size="sm" onClick={() => setFilter("incomplete")}>未手配あり</Button>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" onClick={prevMonth}><ChevronLeft className="h-4 w-4" /></Button>
-          <span className="text-sm font-medium min-w-[180px] text-center">
-            {calYear}年 {calMonth}月 〜 {lastMonth.year}年 {lastMonth.month}月
-          </span>
-          <Button variant="outline" size="icon" onClick={nextMonth}><ChevronRight className="h-4 w-4" /></Button>
-          <Button variant="outline" size="sm" onClick={goToday}>今月</Button>
-          <Select value={String(calSpan)} onValueChange={(v) => setCalSpan(Number(v))}>
-            <SelectTrigger className="w-16 h-8"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="3">3</SelectItem>
-              <SelectItem value="6">6</SelectItem>
-              <SelectItem value="12">12</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+      {/* フィルタ */}
+      <div className="flex gap-2 print:hidden">
+        <Button variant={filter === "all" ? "default" : "outline"} size="sm" onClick={() => setFilter("all")}>すべて</Button>
+        <Button variant={filter === "incomplete" ? "default" : "outline"} size="sm" onClick={() => setFilter("incomplete")}>未手配あり</Button>
+      </div>
+
+      {/* 月ナビ */}
+      <div className="flex items-center gap-3 flex-wrap print:hidden">
+        <Button variant="outline" size="icon" onClick={prevMonth}><ChevronLeft className="h-4 w-4" /></Button>
+        <span className="text-lg font-semibold min-w-[180px] text-center">
+          {calYear}年 {calMonth}月 〜 {lastMonth.year}年 {lastMonth.month}月
+        </span>
+        <Button variant="outline" size="icon" onClick={nextMonth}><ChevronRight className="h-4 w-4" /></Button>
+        <Button variant="ghost" size="sm" onClick={goToday}>今月</Button>
+        <Select value={String(calSpan)} onValueChange={(v) => setCalSpan(Number(v))}>
+          <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="3">3ヶ月</SelectItem>
+            <SelectItem value="6">6ヶ月</SelectItem>
+            <SelectItem value="12">12ヶ月</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* ガントチャート */}
-      <div className="space-y-4 overflow-x-auto">
+      <div ref={chartRef} className="space-y-4 overflow-x-auto print:overflow-visible">
         {calMonths.map((cm) => {
           const daysInMonth = new Date(cm.year, cm.month, 0).getDate();
           const trackMap = assignTracks(filtered, cm.year, cm.month);
@@ -275,7 +303,7 @@ export default function HotelTransportPage() {
                   {Array.from({ length: trackCount }, (_, trackIdx) => {
                     const trackEvents = monthEvents.filter((e) => trackMap.get(e.id) === trackIdx);
                     return (
-                      <div key={trackIdx} className={`flex border-b last:border-b-0 ${trackIdx % 2 === 1 ? "bg-slate-50/50" : "bg-white"}`} style={{ minHeight: 48 }}>
+                      <div key={trackIdx} className={`flex border-b last:border-b-0 ${trackIdx % 2 === 1 ? "bg-slate-50/50" : "bg-white"}`} style={{ minHeight: 54 }}>
                         <div className="w-12 shrink-0 border-r flex items-center justify-center text-[10px] font-bold text-muted-foreground">
                           {TRACK_LABELS[trackIdx] || ""}
                         </div>
@@ -324,12 +352,12 @@ export default function HotelTransportPage() {
                               <TooltipTrigger
                                 render={
                                   <div
-                                    className={`absolute top-0.5 rounded border text-[11px] leading-snug px-1 overflow-hidden hover:opacity-80 transition-opacity z-[1] cursor-pointer ${barColor} ${isSelected ? "ring-2 ring-primary ring-offset-1" : ""} ${status.hasIncomplete ? "border-orange-400 border-2" : ""}`}
-                                    style={{ left: `${left}%`, width: `${width}%`, height: 44 }}
+                                    className={`absolute top-0.5 rounded border text-sm leading-snug px-1.5 overflow-hidden hover:opacity-80 transition-opacity z-[1] cursor-pointer ${barColor} ${isSelected ? "ring-2 ring-primary ring-offset-1" : ""} ${status.hasIncomplete ? "border-orange-400 border-2" : ""}`}
+                                    style={{ left: `${left}%`, width: `${width}%`, height: 50 }}
                                     onClick={() => selectEvent(evt)}
                                   >
                                     <div className="flex items-center gap-1 whitespace-nowrap">
-                                      <span className="truncate font-medium">{label}</span>
+                                      <span className="truncate font-bold">{label}</span>
                                       <span className="flex gap-0.5 ml-auto shrink-0">
                                         {icons.map((ic) => (
                                           <span key={ic.label} className={`inline-block text-[11px] leading-none px-1 py-0.5 rounded font-bold ${ic.na ? "bg-gray-200 text-gray-500" : ic.ok ? "bg-green-600 text-white" : "bg-red-500 text-white"}`}>
@@ -338,7 +366,7 @@ export default function HotelTransportPage() {
                                         ))}
                                       </span>
                                     </div>
-                                    <div className="truncate text-[10px] text-black/60 mt-0.5">
+                                    <div className="truncate text-xs text-black/70 mt-0.5">
                                       {allStaff.filter((s) => s.event_id === evt.id).map((s) => s.employees?.name || "").filter(Boolean).join(", ") || "社員未配置"}
                                     </div>
                                   </div>
@@ -436,7 +464,7 @@ export default function HotelTransportPage() {
                     <div className="px-3 py-2">
                       <button
                         type="button"
-                        className={`relative inline-flex h-7 w-[110px] items-center rounded-full transition-colors ${s.transport_outbound_status === "手配済" ? "bg-green-500" : "bg-gray-300"}`}
+                        className={`relative inline-flex h-7 w-[110px] items-center rounded-full transition-colors ${s.transport_outbound_status === "手配済" ? "bg-green-700" : "bg-gray-300"}`}
                         onClick={() => updateStaffField(s.id, "transport_outbound_status", s.transport_outbound_status === "手配済" ? "未手配" : "手配済")}
                       >
                         <span className={`absolute text-[10px] font-medium ${s.transport_outbound_status === "手配済" ? "left-2 text-white" : "right-2 text-gray-600"}`}>
@@ -448,7 +476,7 @@ export default function HotelTransportPage() {
                     <div className="px-3 py-2">
                       <button
                         type="button"
-                        className={`relative inline-flex h-7 w-[110px] items-center rounded-full transition-colors ${s.transport_return_status === "手配済" ? "bg-green-500" : "bg-gray-300"}`}
+                        className={`relative inline-flex h-7 w-[110px] items-center rounded-full transition-colors ${s.transport_return_status === "手配済" ? "bg-green-700" : "bg-gray-300"}`}
                         onClick={() => updateStaffField(s.id, "transport_return_status", s.transport_return_status === "手配済" ? "未手配" : "手配済")}
                       >
                         <span className={`absolute text-[10px] font-medium ${s.transport_return_status === "手配済" ? "left-2 text-white" : "right-2 text-gray-600"}`}>
