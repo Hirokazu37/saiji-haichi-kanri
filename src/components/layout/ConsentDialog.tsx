@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -14,44 +13,15 @@ import {
 import { ShieldCheck } from "lucide-react";
 
 export function ConsentDialog() {
-  const [open, setOpen] = useState(false);
+  // セッション中の同意状態（sessionStorageで管理、タブを閉じるとリセット）
+  const [open, setOpen] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return sessionStorage.getItem("consent_agreed") !== "true";
+  });
   const [checked, setChecked] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const supabase = createClient();
 
-  useEffect(() => {
-    (async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data } = await supabase
-        .from("user_profiles")
-        .select("agreed_at")
-        .eq("id", user.id)
-        .single();
-
-      // 未同意なら表示
-      if (data && !data.agreed_at) {
-        setOpen(true);
-      }
-    })();
-  }, [supabase]);
-
-  const handleAgree = async () => {
-    setSaving(true);
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return;
-
-    await supabase
-      .from("user_profiles")
-      .update({ agreed_at: new Date().toISOString() })
-      .eq("id", user.id);
-
-    setSaving(false);
+  const handleAgree = () => {
+    sessionStorage.setItem("consent_agreed", "true");
     setOpen(false);
   };
 
@@ -99,10 +69,10 @@ export function ConsentDialog() {
         <DialogFooter>
           <Button
             onClick={handleAgree}
-            disabled={!checked || saving}
+            disabled={!checked}
             className="w-full bg-green-700 hover:bg-green-800"
           >
-            {saving ? "処理中..." : "同意して利用開始"}
+            同意して利用開始
           </Button>
         </DialogFooter>
       </DialogContent>
