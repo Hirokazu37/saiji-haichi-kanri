@@ -388,7 +388,7 @@ export default function VenueMasterPage() {
                   <Input value={form.store_name} onChange={(e) => setForm({ ...form, store_name: e.target.value })} placeholder="例: 新宿店" className="h-8 text-sm" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-[1fr_2fr] gap-3">
                 <div className="space-y-1">
                   <Label className="text-xs">都道府県</Label>
                   <Select value={form.prefecture} onValueChange={(v) => setForm({ ...form, prefecture: v })}>
