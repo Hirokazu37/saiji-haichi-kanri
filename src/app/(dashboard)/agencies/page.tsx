@@ -68,6 +68,9 @@ type MannequinHistory = {
   work_end_date: string | null;
 };
 
+type AreaItem = { id: string; name: string; region: string | null };
+type MannequinAreaLink = { mannequin_id: string; area_id: string };
+
 const emptyPersonForm = {
   name: "", phone: "", mobile_phone: "", skills: "", notes: "",
   area: "", evaluation: "", daily_rate: "", agency_id: "" as string,
@@ -153,6 +156,9 @@ export default function AgenciesPage() {
   const supabase = createClient();
   const [agencies, setAgencies] = useState<Agency[]>([]);
   const [people, setPeople] = useState<MannequinPerson[]>([]);
+  const [areas, setAreas] = useState<AreaItem[]>([]);
+  const [areaLinks, setAreaLinks] = useState<MannequinAreaLink[]>([]);
+  const [selectedAreaIds, setSelectedAreaIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
   // 検索
@@ -184,12 +190,16 @@ export default function AgenciesPage() {
   const [deletingAgency, setDeletingAgency] = useState<Agency | null>(null);
 
   const fetchData = useCallback(async () => {
-    const [agencyRes, peopleRes] = await Promise.all([
+    const [agencyRes, peopleRes, areaRes, areaLinkRes] = await Promise.all([
       supabase.from("mannequin_agencies").select("*").order("name"),
       supabase.from("mannequin_people").select("*").order("name"),
+      supabase.from("area_master").select("id, name, region").order("sort_order"),
+      supabase.from("mannequin_area_links").select("mannequin_id, area_id"),
     ]);
     setAgencies(agencyRes.data || []);
     setPeople(peopleRes.data || []);
+    setAreas((areaRes.data || []) as AreaItem[]);
+    setAreaLinks((areaLinkRes.data || []) as MannequinAreaLink[]);
     setLoading(false);
   }, [supabase]);
 
@@ -199,6 +209,11 @@ export default function AgenciesPage() {
 
   const getAgencyName = (agencyId: string | null) =>
     agencies.find((a) => a.id === agencyId)?.name || "—";
+
+  const getAreaNamesForPerson = (personId: string) => {
+    const ids = areaLinks.filter((l) => l.mannequin_id === personId).map((l) => l.area_id);
+    return areas.filter((a) => ids.includes(a.id)).map((a) => a.name);
+  };
 
   // --- 会社CRUD ---
   const openAgencyEdit = (a: Agency) => {
@@ -250,6 +265,7 @@ export default function AgenciesPage() {
   const openCreate = () => {
     setEditingPersonId(null);
     setPersonForm(emptyPersonForm);
+    setSelectedAreaIds(new Set());
     setAgencyMode("existing");
     setPersonDialogOpen(true);
   };
@@ -265,6 +281,8 @@ export default function AgenciesPage() {
       agency_id: p.agency_id || "",
       new_agency_name: "", new_agency_phone: "", new_agency_contact: "",
     });
+    const linkedAreaIds = new Set(areaLinks.filter((l) => l.mannequin_id === p.id).map((l) => l.area_id));
+    setSelectedAreaIds(linkedAreaIds);
     setAgencyMode(p.agency_id ? "existing" : "new");
     setPersonDialogOpen(true);
   };
@@ -297,11 +315,24 @@ export default function AgenciesPage() {
       daily_rate: personForm.daily_rate ? parseInt(personForm.daily_rate) : null,
     };
 
+    let personId = editingPersonId;
     if (editingPersonId) {
       await supabase.from("mannequin_people").update(payload).eq("id", editingPersonId);
     } else {
-      await supabase.from("mannequin_people").insert(payload);
+      const { data } = await supabase.from("mannequin_people").insert(payload).select("id").single();
+      personId = data?.id || null;
     }
+
+    // エリアリンク更新
+    if (personId) {
+      await supabase.from("mannequin_area_links").delete().eq("mannequin_id", personId);
+      if (selectedAreaIds.size > 0) {
+        await supabase.from("mannequin_area_links").insert(
+          Array.from(selectedAreaIds).map((areaId) => ({ mannequin_id: personId, area_id: areaId }))
+        );
+      }
+    }
+
     setPersonDialogOpen(false);
     fetchData();
   };
@@ -485,7 +516,16 @@ export default function AgenciesPage() {
                 <TableRow key={person.id}>
                   <TableCell className="font-medium">{person.name}</TableCell>
                   <TableCell>{getAgencyName(person.agency_id)}</TableCell>
-                  <TableCell className="hidden md:table-cell">{person.area || "—"}</TableCell>
+                  <TableCell className="hidden md:table-cell">
+                    {(() => {
+                      const names = getAreaNamesForPerson(person.id);
+                      return names.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {names.map((n) => <Badge key={n} variant="outline" className="text-xs">{n}</Badge>)}
+                        </div>
+                      ) : "—";
+                    })()}
+                  </TableCell>
                   <TableCell className="hidden md:table-cell">
                     {person.daily_rate ? `¥${person.daily_rate.toLocaleString()}` : "—"}
                   </TableCell>
@@ -602,10 +642,43 @@ export default function AgenciesPage() {
               )}
             </div>
 
-            <AreaPicker
-              value={personForm.area}
-              onChange={(v) => setPersonForm({ ...personForm, area: v })}
-            />
+            <div className="space-y-2">
+              <Label>対応エリア</Label>
+              {areas.length === 0 ? (
+                <p className="text-xs text-muted-foreground">エリアマスターに登録がありません</p>
+              ) : (
+                <>
+                  {(() => {
+                    const grouped = new Map<string, AreaItem[]>();
+                    areas.forEach((a) => { const key = a.region || "未分類"; if (!grouped.has(key)) grouped.set(key, []); grouped.get(key)!.push(a); });
+                    return Array.from(grouped.entries()).map(([region, items]) => (
+                      <div key={region} className="space-y-1">
+                        <p className="text-[10px] text-muted-foreground font-medium">{region}</p>
+                        <div className="flex flex-wrap gap-1">
+                          {items.map((a) => (
+                            <Badge
+                              key={a.id}
+                              variant={selectedAreaIds.has(a.id) ? "default" : "outline"}
+                              className="cursor-pointer text-xs"
+                              onClick={() => setSelectedAreaIds((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(a.id)) next.delete(a.id); else next.add(a.id);
+                                return next;
+                              })}
+                            >
+                              {a.name}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    ));
+                  })()}
+                  {selectedAreaIds.size > 0 && (
+                    <p className="text-xs text-green-600">{selectedAreaIds.size}エリア選択中</p>
+                  )}
+                </>
+              )}
+            </div>
 
             <div className="space-y-2">
               <Label>日当の目安（円）</Label>
