@@ -18,6 +18,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel,
 } from "@/components/ui/select";
 import { Plus, Pencil, Trash2, Search, X, Store, PlusCircle } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { prefectures } from "@/lib/prefectures";
 import { getAreaForPrefecture } from "@/lib/areas";
 import { usePermission } from "@/hooks/usePermission";
@@ -347,10 +348,12 @@ export default function VenueMasterPage() {
                     </TableCell>
                     {canEdit && (
                       <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Badge variant="outline" className={`cursor-pointer text-xs ${v.is_active ? "text-green-700" : "text-gray-500"}`} onClick={() => toggleActive(v)}>
-                            {v.is_active ? "使用中" : "停止"}
-                          </Badge>
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={v.is_active}
+                            onCheckedChange={() => toggleActive(v)}
+                            className="data-[state=checked]:bg-green-700 scale-90"
+                          />
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(v)}><Pencil className="h-3 w-3" /></Button>
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(v.id)}><Trash2 className="h-3 w-3" /></Button>
                         </div>
