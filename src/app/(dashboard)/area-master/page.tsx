@@ -219,7 +219,7 @@ export default function AreaMasterPage() {
   });
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 max-w-2xl mx-auto">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <MapPin className="h-6 w-6" />エリアマスター
@@ -230,7 +230,7 @@ export default function AreaMasterPage() {
       {areas.length === 0 ? (
         <p className="text-muted-foreground">エリアが登録されていません。「新規登録」から追加してください。</p>
       ) : (
-        <div className="rounded-md border max-w-2xl mx-auto">
+        <div className="rounded-md border">
           <Table>
             <TableHeader>
               <TableRow>
