@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, Fragment } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +35,7 @@ type VenueMaster = {
   sanchoku_code_3: string | null;
   sanchoku_memo_3: string | null;
   notes: string | null;
+  reading: string | null;
   is_active: boolean;
   area_id: string | null;
 };
@@ -46,7 +47,7 @@ type MannequinPerson = { id: string; name: string; agency_name: string | null };
 type VenueMannequinLink = { id: string; venue_id: string; mannequin_person_id: string | null; mannequin_agency_id: string | null };
 
 const emptyForm = {
-  venue_name: "", store_name: "", prefecture: "", area_id: "",
+  venue_name: "", store_name: "", prefecture: "", area_id: "", reading: "",
   sanchoku_code_1: "", sanchoku_memo_1: "",
   sanchoku_code_2: "", sanchoku_memo_2: "",
   sanchoku_code_3: "", sanchoku_memo_3: "",
@@ -126,10 +127,33 @@ export default function VenueMasterPage() {
     if (search) {
       const s = search.toLowerCase();
       const label = getVenueLabel(v).toLowerCase();
-      return label.includes(s);
+      const reading = (v.reading || "").toLowerCase();
+      return label.includes(s) || reading.includes(s);
     }
     return true;
   });
+
+  // エリア別グループ+50音順ソート
+  const grouped = (() => {
+    const areaOrder = areas.map((a) => a.id);
+    const sorted = [...filtered].sort((a, b) => {
+      // エリア順
+      const ai = a.area_id ? areaOrder.indexOf(a.area_id) : 9999;
+      const bi = b.area_id ? areaOrder.indexOf(b.area_id) : 9999;
+      if (ai !== bi) return ai - bi;
+      // 50音順（readingがあればreading、なければvenue_name）
+      const ar = a.reading || a.venue_name;
+      const br = b.reading || b.venue_name;
+      return ar.localeCompare(br, "ja");
+    });
+    const groups = new Map<string, VenueMaster[]>();
+    sorted.forEach((v) => {
+      const areaName = areas.find((a) => a.id === v.area_id)?.name || "未分類";
+      if (!groups.has(areaName)) groups.set(areaName, []);
+      groups.get(areaName)!.push(v);
+    });
+    return groups;
+  })();
 
   // ダイアログ操作
   const resetAreaForm = () => {
@@ -191,6 +215,7 @@ export default function VenueMasterPage() {
       sanchoku_code_3: v.sanchoku_code_3 || "",
       sanchoku_memo_3: v.sanchoku_memo_3 || "",
       notes: v.notes || "",
+      reading: v.reading || "",
     });
     const label = getVenueLabel(v);
     const hids = new Set(hotelLinks.filter((l) => l.venue_name === label).map((l) => l.hotel_id));
@@ -218,6 +243,7 @@ export default function VenueMasterPage() {
       sanchoku_code_3: form.sanchoku_code_3.trim() || null,
       sanchoku_memo_3: form.sanchoku_memo_3.trim() || null,
       notes: form.notes.trim() || null,
+      reading: form.reading.trim() || null,
     };
 
     let venueId = editingId;
@@ -266,8 +292,9 @@ export default function VenueMasterPage() {
   };
 
   const toggleActive = async (v: VenueMaster) => {
+    // 楽観的更新（即消えを防止）
+    setVenues((prev) => prev.map((x) => x.id === v.id ? { ...x, is_active: !x.is_active } : x));
     await supabase.from("venue_master").update({ is_active: !v.is_active }).eq("id", v.id);
-    fetchData();
   };
 
   // 検索付きコンボ: ホテル候補
@@ -308,7 +335,6 @@ export default function VenueMasterPage() {
                 <TableHead>百貨店名</TableHead>
                 <TableHead>店舗名</TableHead>
                 <TableHead className="hidden md:table-cell">都道府県</TableHead>
-                <TableHead className="hidden md:table-cell">エリア</TableHead>
                 <TableHead className="hidden lg:table-cell">産直くん①</TableHead>
                 <TableHead className="hidden lg:table-cell">産直くん②</TableHead>
                 <TableHead className="hidden lg:table-cell">産直くん③</TableHead>
@@ -318,7 +344,14 @@ export default function VenueMasterPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((v) => {
+              {Array.from(grouped.entries()).map(([areaName, venueList]) => (
+                <Fragment key={areaName}>
+                  <TableRow className="bg-muted/60 hover:bg-muted/60">
+                    <TableCell colSpan={canEdit ? 9 : 8} className="py-1.5 font-semibold text-xs text-muted-foreground">
+                      {areaName}（{venueList.length}件）
+                    </TableCell>
+                  </TableRow>
+                  {venueList.map((v) => {
                 const hotels = getHotelsForVenue(v);
                 const mannequins = getMannequinsForVenue(v);
                 return (
@@ -326,7 +359,6 @@ export default function VenueMasterPage() {
                     <TableCell className="font-medium">{v.venue_name}</TableCell>
                     <TableCell className="text-sm">{v.store_name || "—"}</TableCell>
                     <TableCell className="text-sm hidden md:table-cell">{v.prefecture || "—"}</TableCell>
-                    <TableCell className="text-sm hidden md:table-cell">{areas.find((a) => a.id === v.area_id)?.name || "—"}</TableCell>
                     <TableCell className="text-sm hidden lg:table-cell">
                       {v.sanchoku_code_1 ? <span>{v.sanchoku_code_1}{v.sanchoku_memo_1 ? <span className="text-muted-foreground text-xs ml-1">({v.sanchoku_memo_1})</span> : ""}</span> : "—"}
                     </TableCell>
@@ -362,8 +394,10 @@ export default function VenueMasterPage() {
                   </TableRow>
                 );
               })}
+                </Fragment>
+              ))}
               {filtered.length === 0 && (
-                <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">百貨店が登録されていません</TableCell></TableRow>
+                <TableRow><TableCell colSpan={canEdit ? 9 : 8} className="text-center text-muted-foreground py-8">百貨店が登録されていません</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
@@ -390,6 +424,10 @@ export default function VenueMasterPage() {
                   <Label className="text-xs">店舗名</Label>
                   <Input value={form.store_name} onChange={(e) => setForm({ ...form, store_name: e.target.value })} placeholder="例: 新宿店" className="h-8 text-sm" />
                 </div>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">ふりがな（並び替え用）</Label>
+                <Input value={form.reading} onChange={(e) => setForm({ ...form, reading: e.target.value })} placeholder="例: いせたん しんじゅくてん" className="h-8 text-sm" />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">都道府県</Label>
