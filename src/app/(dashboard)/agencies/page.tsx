@@ -175,6 +175,14 @@ export default function AgenciesPage() {
   const [historyPerson, setHistoryPerson] = useState<MannequinPerson | null>(null);
   const [history, setHistory] = useState<MannequinHistory[]>([]);
 
+  // 会社編集
+  const [agencyDialogOpen, setAgencyDialogOpen] = useState(false);
+  const [editingAgencyId, setEditingAgencyId] = useState<string | null>(null);
+  const [agencyForm, setAgencyForm] = useState({ name: "", phone: "", email: "", contact_person: "", notes: "" });
+  const [savingAgency, setSavingAgency] = useState(false);
+  const [deleteAgencyDialogOpen, setDeleteAgencyDialogOpen] = useState(false);
+  const [deletingAgency, setDeletingAgency] = useState<Agency | null>(null);
+
   const fetchData = useCallback(async () => {
     const [agencyRes, peopleRes] = await Promise.all([
       supabase.from("mannequin_agencies").select("*").order("name"),
@@ -191,6 +199,52 @@ export default function AgenciesPage() {
 
   const getAgencyName = (agencyId: string | null) =>
     agencies.find((a) => a.id === agencyId)?.name || "—";
+
+  // --- 会社CRUD ---
+  const openAgencyEdit = (a: Agency) => {
+    setEditingAgencyId(a.id);
+    setAgencyForm({ name: a.name, phone: a.phone || "", email: a.email || "", contact_person: a.contact_person || "", notes: a.notes || "" });
+    setAgencyDialogOpen(true);
+  };
+
+  const openAgencyCreate = () => {
+    setEditingAgencyId(null);
+    setAgencyForm({ name: "", phone: "", email: "", contact_person: "", notes: "" });
+    setAgencyDialogOpen(true);
+  };
+
+  const handleAgencySave = async () => {
+    if (!agencyForm.name.trim()) return;
+    setSavingAgency(true);
+    const row = {
+      name: agencyForm.name.trim(),
+      phone: agencyForm.phone.trim() || null,
+      email: agencyForm.email.trim() || null,
+      contact_person: agencyForm.contact_person.trim() || null,
+      notes: agencyForm.notes.trim() || null,
+    };
+    if (editingAgencyId) {
+      await supabase.from("mannequin_agencies").update(row).eq("id", editingAgencyId);
+    } else {
+      await supabase.from("mannequin_agencies").insert(row);
+    }
+    setSavingAgency(false);
+    setAgencyDialogOpen(false);
+    fetchData();
+  };
+
+  const handleAgencyDelete = async () => {
+    if (!deletingAgency) return;
+    // 所属マネキンのagency_idをnullに
+    await supabase.from("mannequin_people").update({ agency_id: null }).eq("agency_id", deletingAgency.id);
+    await supabase.from("mannequin_agencies").delete().eq("id", deletingAgency.id);
+    setDeleteAgencyDialogOpen(false);
+    setDeletingAgency(null);
+    fetchData();
+  };
+
+  const getPeopleCountForAgency = (agencyId: string) =>
+    people.filter((p) => p.agency_id === agencyId).length;
 
   // マネキン追加
   const openCreate = () => {
@@ -311,6 +365,51 @@ export default function AgenciesPage() {
           </Button>
         )}
       </div>
+
+      {/* マネキン会社一覧 */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">マネキン会社（{agencies.length}社）</CardTitle>
+            {canEdit && (
+              <Button variant="outline" size="sm" onClick={openAgencyCreate}>
+                <Plus className="h-3 w-3 mr-1" />会社追加
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {agencies.length === 0 ? (
+            <p className="text-sm text-muted-foreground">会社が登録されていません</p>
+          ) : (
+            <div className="space-y-1">
+              {agencies.map((a) => {
+                const count = getPeopleCountForAgency(a.id);
+                return (
+                  <div key={a.id} className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-muted/50 text-sm">
+                    <div className="flex items-center gap-3">
+                      <span className="font-medium">{a.name}</span>
+                      {a.contact_person && <span className="text-muted-foreground text-xs">担当: {a.contact_person}</span>}
+                      {a.phone && <span className="text-muted-foreground text-xs">{a.phone}</span>}
+                      <Badge variant="outline" className="text-[10px]">{count}名</Badge>
+                    </div>
+                    {canEdit && (
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openAgencyEdit(a)}>
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setDeletingAgency(a); setDeleteAgencyDialogOpen(true); }}>
+                          <Trash2 className="h-3 w-3 text-destructive" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* 検索 */}
       <Card>
@@ -585,6 +684,61 @@ export default function AgenciesPage() {
           )}
           <DialogFooter>
             <DialogClose><Button variant="outline">閉じる</Button></DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 会社編集ダイアログ */}
+      <Dialog open={agencyDialogOpen} onOpenChange={setAgencyDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingAgencyId ? "マネキン会社を編集" : "マネキン会社を追加"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1">
+              <Label className="text-xs">会社名 *</Label>
+              <Input value={agencyForm.name} onChange={(e) => setAgencyForm({ ...agencyForm, name: e.target.value })} placeholder="会社名" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">電話番号</Label>
+                <Input value={agencyForm.phone} onChange={(e) => setAgencyForm({ ...agencyForm, phone: e.target.value })} placeholder="03-1234-5678" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">担当者名</Label>
+                <Input value={agencyForm.contact_person} onChange={(e) => setAgencyForm({ ...agencyForm, contact_person: e.target.value })} placeholder="担当者名" />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">メールアドレス</Label>
+              <Input value={agencyForm.email} onChange={(e) => setAgencyForm({ ...agencyForm, email: e.target.value })} placeholder="info@example.com" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">備考</Label>
+              <Textarea value={agencyForm.notes} onChange={(e) => setAgencyForm({ ...agencyForm, notes: e.target.value })} rows={2} />
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose><Button variant="outline">キャンセル</Button></DialogClose>
+            <Button onClick={handleAgencySave} disabled={!agencyForm.name.trim() || savingAgency}>
+              {savingAgency ? "保存中..." : editingAgencyId ? "更新" : "追加"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 会社削除確認ダイアログ */}
+      <Dialog open={deleteAgencyDialogOpen} onOpenChange={setDeleteAgencyDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>マネキン会社を削除しますか？</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            「{deletingAgency?.name}」を削除します。所属マネキンは「個人」に変更されます。
+          </p>
+          <DialogFooter>
+            <DialogClose><Button variant="outline">キャンセル</Button></DialogClose>
+            <Button variant="destructive" onClick={handleAgencyDelete}>削除する</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
