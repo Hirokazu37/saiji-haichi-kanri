@@ -33,7 +33,11 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // ログインページへのアクセスは許可
+  // ログイン・登録ページ・登録APIへのアクセスは許可
+  if (request.nextUrl.pathname === "/register" || request.nextUrl.pathname === "/api/register") {
+    return supabaseResponse;
+  }
+
   if (request.nextUrl.pathname === "/login") {
     if (user) {
       // ログイン済みならダッシュボードへリダイレクト

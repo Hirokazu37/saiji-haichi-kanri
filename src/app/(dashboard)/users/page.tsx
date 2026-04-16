@@ -16,7 +16,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Pencil, Trash2, UserCog } from "lucide-react";
+import { Pencil, Trash2, UserCog, Link2, Copy, Check } from "lucide-react";
 
 type UserProfile = {
   id: string;
@@ -26,153 +26,141 @@ type UserProfile = {
   created_at: string;
 };
 
-const emptyForm = { username: "", display_name: "", password: "", password_confirm: "", can_edit: false };
+type InviteToken = {
+  id: string;
+  token: string;
+  used_at: string | null;
+  expires_at: string;
+  created_at: string;
+};
+
+const emptyForm = { display_name: "", password: "", password_confirm: "", can_edit: false };
 
 export default function UsersPage() {
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [invites, setInvites] = useState<InviteToken[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingUsername, setEditingUsername] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [inviteUrl, setInviteUrl] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [generatingInvite, setGeneratingInvite] = useState(false);
 
   const supabase = createClient();
 
-  const fetchUsers = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
-    const res = await fetch("/api/users");
-    if (res.ok) {
-      setUsers(await res.json());
-    }
+    const [usersRes, invitesRes] = await Promise.all([
+      fetch("/api/users"),
+      fetch("/api/invites"),
+    ]);
+    if (usersRes.ok) setUsers(await usersRes.json());
+    if (invitesRes.ok) setInvites(await invitesRes.json());
     setLoading(false);
   }, []);
 
   useEffect(() => {
-    fetchUsers();
+    fetchData();
     supabase.auth.getUser().then(({ data }) => {
       setCurrentUserId(data.user?.id ?? null);
     });
-  }, [fetchUsers, supabase.auth]);
+  }, [fetchData, supabase.auth]);
 
-  const openCreate = () => {
-    setEditingId(null);
-    setForm(emptyForm);
-    setError("");
-    setDialogOpen(true);
+  // 招待リンク生成
+  const handleGenerateInvite = async () => {
+    setGeneratingInvite(true);
+    const res = await fetch("/api/invites", { method: "POST" });
+    if (res.ok) {
+      const data = await res.json();
+      const url = `${window.location.origin}/register?token=${data.token}`;
+      setInviteUrl(url);
+      setCopied(false);
+      setInviteDialogOpen(true);
+      fetchData();
+    }
+    setGeneratingInvite(false);
   };
 
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(inviteUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  // 編集
   const openEdit = (user: UserProfile) => {
     setEditingId(user.id);
-    setForm({ username: user.username, display_name: user.display_name, password: "", password_confirm: "", can_edit: user.can_edit });
+    setEditingUsername(user.username);
+    setForm({ display_name: user.display_name, password: "", password_confirm: "", can_edit: user.can_edit });
     setError("");
-    setDialogOpen(true);
+    setEditDialogOpen(true);
   };
 
-  const openDelete = (id: string) => {
-    setDeletingId(id);
-    setDeleteDialogOpen(true);
+  const handleSave = async () => {
+    setError("");
+    if (form.password && form.password !== form.password_confirm) {
+      setError("パスワードが一致しません");
+      return;
+    }
+
+    setSaving(true);
+    const body: Record<string, unknown> = { display_name: form.display_name, can_edit: form.can_edit };
+    if (form.password) body.password = form.password;
+
+    const res = await fetch(`/api/users/${editingId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const data = await res.json();
+      setError(data.error || "更新に失敗しました");
+      setSaving(false);
+      return;
+    }
+
+    setSaving(false);
+    setEditDialogOpen(false);
+    fetchData();
   };
 
-  // 編集権限トグルの即時切替
+  // 編集権限トグル
   const handleToggleCanEdit = async (userId: string, newValue: boolean) => {
-    // 楽観的更新
-    setUsers((prev) =>
-      prev.map((u) => (u.id === userId ? { ...u, can_edit: newValue } : u))
-    );
-
+    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, can_edit: newValue } : u)));
     const res = await fetch(`/api/users/${userId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ can_edit: newValue }),
     });
-
     if (!res.ok) {
-      // 失敗時はロールバック
-      setUsers((prev) =>
-        prev.map((u) => (u.id === userId ? { ...u, can_edit: !newValue } : u))
-      );
+      setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, can_edit: !newValue } : u)));
     }
   };
 
-  const handleSave = async () => {
-    setError("");
-
-    if (!editingId) {
-      if (!form.username || !form.display_name || !form.password) {
-        setError("すべての項目を入力してください");
-        return;
-      }
-      if (form.password !== form.password_confirm) {
-        setError("パスワードが一致しません");
-        return;
-      }
-    } else {
-      if (form.password && form.password !== form.password_confirm) {
-        setError("パスワードが一致しません");
-        return;
-      }
-    }
-
-    setSaving(true);
-
-    if (editingId) {
-      const body: Record<string, unknown> = { display_name: form.display_name, can_edit: form.can_edit };
-      if (form.password) body.password = form.password;
-
-      const res = await fetch(`/api/users/${editingId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.error || "更新に失敗しました");
-        setSaving(false);
-        return;
-      }
-    } else {
-      const res = await fetch("/api/users", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: form.username,
-          display_name: form.display_name,
-          password: form.password,
-          can_edit: form.can_edit,
-        }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.error || "作成に失敗しました");
-        setSaving(false);
-        return;
-      }
-    }
-
-    setSaving(false);
-    setDialogOpen(false);
-    fetchUsers();
-  };
-
+  // 削除
   const handleDelete = async () => {
     if (!deletingId) return;
-
     const res = await fetch(`/api/users/${deletingId}`, { method: "DELETE" });
     if (!res.ok) {
       const data = await res.json();
       alert(data.error || "削除に失敗しました");
     }
-
     setDeleteDialogOpen(false);
     setDeletingId(null);
-    fetchUsers();
+    fetchData();
   };
+
+  // 未使用の招待リンク
+  const pendingInvites = invites.filter((i) => !i.used_at && new Date(i.expires_at) > new Date());
 
   return (
     <div className="space-y-6">
@@ -181,12 +169,40 @@ export default function UsersPage() {
           <UserCog className="h-6 w-6" />
           <h1 className="text-2xl font-bold">ユーザー管理</h1>
         </div>
-        <Button onClick={openCreate}>
-          <Plus className="h-4 w-4 mr-2" />
-          ユーザー追加
+        <Button onClick={handleGenerateInvite} disabled={generatingInvite} className="bg-green-700 hover:bg-green-800">
+          <Link2 className="h-4 w-4 mr-2" />
+          招待リンクを生成
         </Button>
       </div>
 
+      {/* 未使用の招待リンク */}
+      {pendingInvites.length > 0 && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-3 space-y-2">
+          <p className="text-xs font-semibold text-amber-700">未使用の招待リンク（{pendingInvites.length}件）</p>
+          {pendingInvites.map((inv) => (
+            <div key={inv.id} className="flex items-center gap-2 text-xs">
+              <code className="bg-white dark:bg-gray-800 px-2 py-1 rounded border text-[10px] flex-1 truncate">
+                {window.location.origin}/register?token={inv.token}
+              </code>
+              <span className="text-muted-foreground shrink-0">
+                {new Date(inv.expires_at).toLocaleDateString("ja-JP")}まで
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 text-[10px] shrink-0"
+                onClick={async () => {
+                  await navigator.clipboard.writeText(`${window.location.origin}/register?token=${inv.token}`);
+                }}
+              >
+                <Copy className="h-3 w-3" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ユーザー一覧 */}
       {loading ? (
         <p className="text-muted-foreground">読み込み中...</p>
       ) : users.length === 0 ? (
@@ -210,9 +226,7 @@ export default function UsersPage() {
                   <TableCell className="font-medium">
                     {user.display_name}
                     {user.id === currentUserId && (
-                      <span className="ml-2 text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                        自分
-                      </span>
+                      <span className="ml-2 text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">自分</span>
                     )}
                   </TableCell>
                   <TableCell className="text-center">
@@ -230,12 +244,7 @@ export default function UsersPage() {
                       <Button variant="ghost" size="icon" onClick={() => openEdit(user)}>
                         <Pencil className="h-4 w-4" />
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => openDelete(user.id)}
-                        disabled={user.id === currentUserId}
-                      >
+                      <Button variant="ghost" size="icon" onClick={() => { setDeletingId(user.id); setDeleteDialogOpen(true); }} disabled={user.id === currentUserId}>
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
                     </div>
@@ -247,27 +256,37 @@ export default function UsersPage() {
         </div>
       )}
 
-      {/* 作成/編集ダイアログ */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      {/* 招待リンク生成ダイアログ */}
+      <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>招待リンクを生成しました</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">
+              以下のリンクを共有してください。リンクは7日間有効です。
+            </p>
+            <div className="flex gap-2">
+              <Input value={inviteUrl} readOnly className="text-xs font-mono" />
+              <Button variant="outline" size="sm" onClick={handleCopy} className="shrink-0">
+                {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+              </Button>
+            </div>
+            {copied && <p className="text-xs text-green-600">コピーしました</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setInviteDialogOpen(false)}>閉じる</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 編集ダイアログ */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editingId ? "ユーザー編集" : "ユーザー追加"}</DialogTitle>
+            <DialogTitle>ユーザー編集（{editingUsername}）</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="username">ユーザー名（ログインID）</Label>
-              <Input
-                id="username"
-                placeholder="hirokazu"
-                value={form.username}
-                onChange={(e) => setForm({ ...form, username: e.target.value })}
-                disabled={!!editingId}
-                className={editingId ? "bg-muted" : ""}
-              />
-              {!editingId && (
-                <p className="text-xs text-muted-foreground">半角英数字・ハイフン・アンダースコアのみ</p>
-              )}
-            </div>
             <div className="space-y-2">
               <Label htmlFor="display_name">表示名</Label>
               <Input
@@ -278,9 +297,7 @@ export default function UsersPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">
-                パスワード{editingId && "（変更する場合のみ入力）"}
-              </Label>
+              <Label htmlFor="password">パスワード（変更する場合のみ入力）</Label>
               <Input
                 id="password"
                 type="password"
