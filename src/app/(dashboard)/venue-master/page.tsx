@@ -388,17 +388,16 @@ export default function VenueMasterPage() {
                   <Input value={form.store_name} onChange={(e) => setForm({ ...form, store_name: e.target.value })} placeholder="例: 新宿店" className="h-8 text-sm" />
                 </div>
               </div>
-              <div className="grid grid-cols-[1fr_2fr] gap-3">
-                <div className="space-y-1">
-                  <Label className="text-xs">都道府県</Label>
-                  <Select value={form.prefecture} onValueChange={(v) => setForm({ ...form, prefecture: v })}>
-                    <SelectTrigger><SelectValue placeholder="選択" /></SelectTrigger>
-                    <SelectContent>
-                      {prefectures.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1">
+              <div className="space-y-1">
+                <Label className="text-xs">都道府県</Label>
+                <Select value={form.prefecture} onValueChange={(v) => setForm({ ...form, prefecture: v })}>
+                  <SelectTrigger><SelectValue placeholder="選択" /></SelectTrigger>
+                  <SelectContent>
+                    {prefectures.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
                   <div className="flex items-center justify-between">
                     <Label className="text-xs">エリア</Label>
                     {!showNewArea && (
@@ -442,7 +441,6 @@ export default function VenueMasterPage() {
                     </div>
                   )}
                 </div>
-              </div>
               <div className="space-y-1">
                 <Label className="text-xs">メモ</Label>
                 <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} className="text-sm" />
