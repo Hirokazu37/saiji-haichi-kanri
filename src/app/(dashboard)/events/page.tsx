@@ -20,6 +20,7 @@ import { Plus, MapPin, Calendar, Printer, ImageDown, ChevronLeft, ChevronRight, 
 import Link from "next/link";
 import { eventStatuses } from "@/lib/prefectures";
 import { getHolidaysForRange } from "@/lib/holidays";
+import { usePermission } from "@/hooks/usePermission";
 
 type VenueOption = { label: string };
 type MannequinSummary = { event_id: string; arrangement_status: string | null };
@@ -114,6 +115,7 @@ function assignTracks(evts: Event[], y: number, m: number): Map<string, number> 
 }
 
 export default function EventsPage() {
+  const { canEdit } = usePermission();
   const supabase = createClient();
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
@@ -309,9 +311,11 @@ export default function EventsPage() {
           </div>
           <Button variant="outline" size="sm" onClick={handlePrint} className="print:hidden"><Printer className="h-4 w-4 mr-1" />印刷</Button>
           <Button variant="outline" size="sm" onClick={handleSaveJpg} className="print:hidden"><ImageDown className="h-4 w-4 mr-1" />JPG保存</Button>
-          <Link href="/events/new" className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 print:hidden">
-            <Plus className="h-4 w-4" />新規作成
-          </Link>
+          {canEdit && (
+            <Link href="/events/new" className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 print:hidden">
+              <Plus className="h-4 w-4" />新規作成
+            </Link>
+          )}
         </div>
       </div>
 

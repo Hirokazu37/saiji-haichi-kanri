@@ -9,6 +9,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import Link from "next/link";
+import { usePermission } from "@/hooks/usePermission";
 
 type EventApp = {
   id: string;
@@ -24,6 +25,7 @@ type EventApp = {
 };
 
 export default function ApplicationsListPage() {
+  const { canEdit } = usePermission();
   const supabase = createClient();
   const [events, setEvents] = useState<EventApp[]>([]);
   const [loading, setLoading] = useState(true);
@@ -107,41 +109,55 @@ export default function ApplicationsListPage() {
                     <TableCell className="text-sm">{e.name}</TableCell>
                     <TableCell className="text-sm hidden md:table-cell">{e.start_date} 〜 {e.end_date}</TableCell>
                     <TableCell>
-                      <button
-                        type="button"
-                        className={`relative inline-flex h-6 w-24 items-center rounded-full transition-colors ${isSubmitted ? "bg-green-700" : "bg-gray-300"}`}
-                        onClick={() => toggleApplication(e.id, e.application_status)}
-                      >
-                        <span className={`absolute text-[10px] font-medium ${isSubmitted ? "left-2 text-white" : "right-2 text-gray-600"}`}>
+                      {canEdit ? (
+                        <button
+                          type="button"
+                          className={`relative inline-flex h-6 w-24 items-center rounded-full transition-colors ${isSubmitted ? "bg-green-700" : "bg-gray-300"}`}
+                          onClick={() => toggleApplication(e.id, e.application_status)}
+                        >
+                          <span className={`absolute text-[10px] font-medium ${isSubmitted ? "left-2 text-white" : "right-2 text-gray-600"}`}>
+                            {isSubmitted ? "提出済" : "未提出"}
+                          </span>
+                          <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${isSubmitted ? "translate-x-[72px]" : "translate-x-0.5"}`} />
+                        </button>
+                      ) : (
+                        <span className={`text-xs font-medium ${isSubmitted ? "text-green-700" : "text-gray-500"}`}>
                           {isSubmitted ? "提出済" : "未提出"}
                         </span>
-                        <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${isSubmitted ? "translate-x-[72px]" : "translate-x-0.5"}`} />
-                      </button>
+                      )}
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
-                      <Input
-                        type="date"
-                        value={e.application_submitted_date || ""}
-                        onChange={(ev) => updateField(e.id, "application_submitted_date", ev.target.value)}
-                        className="h-8 text-sm w-36"
-                      />
+                      {canEdit ? (
+                        <Input
+                          type="date"
+                          value={e.application_submitted_date || ""}
+                          onChange={(ev) => updateField(e.id, "application_submitted_date", ev.target.value)}
+                          className="h-8 text-sm w-36"
+                        />
+                      ) : (
+                        <span className="text-sm">{e.application_submitted_date || "—"}</span>
+                      )}
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
-                      <div className="flex gap-1">
-                        {["郵送", "FAX", "メール"].map((m) => (
-                          <button
-                            key={m}
-                            type="button"
-                            className={`px-2 py-1 text-xs rounded border transition-colors ${e.application_method === m ? "bg-green-700 text-white border-green-700 font-bold" : "bg-white text-gray-500 border-gray-300 hover:bg-green-50 hover:text-green-700"}`}
-                            onClick={() => updateField(e.id, "application_method", e.application_method === m ? null : m)}
-                          >
-                            {m}
-                          </button>
-                        ))}
-                        {savedId === e.id && (
-                          <span className="text-[10px] text-green-600 font-medium whitespace-nowrap">✓ 保存済み</span>
-                        )}
-                      </div>
+                      {canEdit ? (
+                        <div className="flex gap-1">
+                          {["郵送", "FAX", "メール"].map((m) => (
+                            <button
+                              key={m}
+                              type="button"
+                              className={`px-2 py-1 text-xs rounded border transition-colors ${e.application_method === m ? "bg-green-700 text-white border-green-700 font-bold" : "bg-white text-gray-500 border-gray-300 hover:bg-green-50 hover:text-green-700"}`}
+                              onClick={() => updateField(e.id, "application_method", e.application_method === m ? null : m)}
+                            >
+                              {m}
+                            </button>
+                          ))}
+                          {savedId === e.id && (
+                            <span className="text-[10px] text-green-600 font-medium whitespace-nowrap">✓ 保存済み</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-sm">{e.application_method || "—"}</span>
+                      )}
                     </TableCell>
                   </TableRow>
                 );

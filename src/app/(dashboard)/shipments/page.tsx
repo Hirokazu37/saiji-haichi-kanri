@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/tooltip";
 import { ChevronLeft, ChevronRight, Printer, ImageDown, AlertTriangle, Warehouse, GripHorizontal, X } from "lucide-react";
 import { getHolidaysForRange } from "@/lib/holidays";
+import { usePermission } from "@/hooks/usePermission";
 
 type EventRecord = {
   id: string;
@@ -40,6 +41,7 @@ const barColors = [
 ];
 
 export default function ShipmentsPage() {
+  const { canEdit } = usePermission();
   const supabase = createClient();
   const [events, setEvents] = useState<EventRecord[]>([]);
   const [pastVenues, setPastVenues] = useState<string[]>([]);
@@ -458,8 +460,8 @@ export default function ShipmentsPage() {
                       <div key={evt.id} className={`flex border-b last:border-b-0 ${idx % 2 === 1 ? "bg-muted/20" : ""}`} style={{ height: ROW_HEIGHT }}>
                         {/* 左パネル */}
                         <div
-                          className="w-48 print:w-32 shrink-0 p-1.5 border-r text-xs hover:bg-muted/50 transition-colors cursor-pointer overflow-hidden"
-                          onClick={() => openEditPanel(evt)}
+                          className={`w-48 print:w-32 shrink-0 p-1.5 border-r text-xs overflow-hidden ${canEdit ? "hover:bg-muted/50 transition-colors cursor-pointer" : ""}`}
+                          onClick={canEdit ? () => openEditPanel(evt) : undefined}
                         >
                           <div className="font-bold text-sm truncate text-black flex items-center gap-1">
                             {venueLabel}
@@ -545,9 +547,9 @@ export default function ShipmentsPage() {
                               <TooltipTrigger
                                 render={
                                   <div
-                                    className={`absolute rounded border-2 text-xs leading-snug px-1.5 flex items-center overflow-hidden whitespace-nowrap z-[2] hover:opacity-80 transition-opacity cursor-pointer ${color.bar}`}
+                                    className={`absolute rounded border-2 text-xs leading-snug px-1.5 flex items-center overflow-hidden whitespace-nowrap z-[2] hover:opacity-80 transition-opacity ${canEdit ? "cursor-pointer" : ""} ${color.bar}`}
                                     style={{ left: barPos.left, width: barPos.width, top: 28, height: 40 }}
-                                    onClick={() => openEditPanel(evt)}
+                                    onClick={canEdit ? () => openEditPanel(evt) : undefined}
                                   >
                                     <div className="truncate">
                                       <div className="font-bold flex items-center gap-1">
@@ -650,7 +652,7 @@ export default function ShipmentsPage() {
       </div>
 
       {/* 備品の流れ編集パネル（ドラッグ移動可能・背景ぼかしなし） */}
-      {editEvent && (() => {
+      {canEdit && editEvent && (() => {
         const venueLabel = getVenueLabel(editEvent);
         return (
           <div

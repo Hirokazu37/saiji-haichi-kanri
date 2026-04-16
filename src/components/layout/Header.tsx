@@ -26,7 +26,8 @@ import {
   UserCog,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { usePermission } from "@/hooks/usePermission";
 
 const navItems = [
   { label: "ダッシュボード", href: "/", icon: LayoutDashboard },
@@ -48,21 +49,7 @@ export function Header() {
   const pathname = usePathname();
   const supabase = createClient();
   const [open, setOpen] = useState(false);
-  const [displayName, setDisplayName] = useState("");
-
-  useEffect(() => {
-    (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data } = await supabase
-          .from("user_profiles")
-          .select("display_name")
-          .eq("id", user.id)
-          .single();
-        if (data) setDisplayName(data.display_name);
-      }
-    })();
-  }, [supabase]);
+  const { displayName } = usePermission();
 
   const handleLogout = async () => {
     await supabase.auth.signOut();

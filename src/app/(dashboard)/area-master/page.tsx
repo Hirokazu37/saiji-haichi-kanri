@@ -34,6 +34,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { areaMap, areaNames, getAreaForPrefecture } from "@/lib/areas";
 import { prefectures } from "@/lib/prefectures";
+import { usePermission } from "@/hooks/usePermission";
 
 type Area = {
   id: string;
@@ -51,12 +52,14 @@ function SortableRow({
   venueCount,
   onEdit,
   onDelete,
+  canEdit,
 }: {
   area: Area;
   hotelCount: number;
   venueCount: number;
   onEdit: (a: Area) => void;
   onDelete: (a: Area) => void;
+  canEdit: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: area.id });
   const style = {
@@ -68,30 +71,35 @@ function SortableRow({
   return (
     <TableRow ref={setNodeRef} style={style}>
       <TableCell className="w-10">
-        <button {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing p-1 text-muted-foreground hover:text-foreground">
-          <GripVertical className="h-4 w-4" />
-        </button>
+        {canEdit && (
+          <button {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing p-1 text-muted-foreground hover:text-foreground">
+            <GripVertical className="h-4 w-4" />
+          </button>
+        )}
       </TableCell>
       <TableCell className="text-xs text-muted-foreground">{area.region || "—"}</TableCell>
       <TableCell className="text-xs text-muted-foreground">{area.prefecture || "—"}</TableCell>
       <TableCell className="font-medium">{area.name}</TableCell>
       <TableCell className="text-sm">{hotelCount}件</TableCell>
       <TableCell className="text-sm">{venueCount}件</TableCell>
-      <TableCell>
-        <div className="flex gap-1">
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(area)}>
-            <Pencil className="h-3 w-3" />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onDelete(area)}>
-            <Trash2 className="h-3 w-3" />
-          </Button>
-        </div>
-      </TableCell>
+      {canEdit && (
+        <TableCell>
+          <div className="flex gap-1">
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(area)}>
+              <Pencil className="h-3 w-3" />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onDelete(area)}>
+              <Trash2 className="h-3 w-3" />
+            </Button>
+          </div>
+        </TableCell>
+      )}
     </TableRow>
   );
 }
 
 export default function AreaMasterPage() {
+  const { canEdit } = usePermission();
   const supabase = createClient();
   const [areas, setAreas] = useState<Area[]>([]);
   const [hotelCounts, setHotelCounts] = useState<Record<string, number>>({});
@@ -203,7 +211,7 @@ export default function AreaMasterPage() {
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <MapPin className="h-6 w-6" />エリアマスター
         </h1>
-        <Button onClick={openCreate}><Plus className="h-4 w-4 mr-1" />新規登録</Button>
+        {canEdit && <Button onClick={openCreate}><Plus className="h-4 w-4 mr-1" />新規登録</Button>}
       </div>
 
       {areas.length === 0 ? (
@@ -219,7 +227,7 @@ export default function AreaMasterPage() {
                 <TableHead>エリア名</TableHead>
                 <TableHead className="w-20">ホテル数</TableHead>
                 <TableHead className="w-20">百貨店数</TableHead>
-                <TableHead className="w-24">操作</TableHead>
+                {canEdit && <TableHead className="w-24">操作</TableHead>}
               </TableRow>
             </TableHeader>
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -233,6 +241,7 @@ export default function AreaMasterPage() {
                       venueCount={venueCounts[area.id] || 0}
                       onEdit={openEdit}
                       onDelete={setDeleteTarget}
+                      canEdit={canEdit}
                     />
                   ))}
                 </TableBody>

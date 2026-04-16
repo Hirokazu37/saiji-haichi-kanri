@@ -30,6 +30,7 @@ import Link from "next/link";
 import { prefectures, eventStatuses } from "@/lib/prefectures";
 import { ArrangementEditor } from "@/components/arrangements/ArrangementEditor";
 import { StaffTab } from "@/components/arrangements/StaffTab";
+import { usePermission } from "@/hooks/usePermission";
 
 type EventData = {
   id: string;
@@ -62,6 +63,7 @@ export default function EventDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const { canEdit } = usePermission();
   const supabase = createClient();
   const router = useRouter();
   type Employee = { id: string; name: string };
@@ -249,14 +251,16 @@ export default function EventDetailPage({
           >
             {event.status}
           </Badge>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setDeleteOpen(true)}
-          >
-            <Trash2 className="h-4 w-4 mr-1 text-destructive" />
-            削除
-          </Button>
+          {canEdit && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDeleteOpen(true)}
+            >
+              <Trash2 className="h-4 w-4 mr-1 text-destructive" />
+              削除
+            </Button>
+          )}
         </div>
       </div>
 
@@ -331,9 +335,11 @@ export default function EventDetailPage({
               <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} />
             </div>
           </div>
-          <div className="flex justify-end">
-            <Button onClick={handleUpdate}>基本情報を保存</Button>
-          </div>
+          {canEdit && (
+            <div className="flex justify-end">
+              <Button onClick={handleUpdate}>基本情報を保存</Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 

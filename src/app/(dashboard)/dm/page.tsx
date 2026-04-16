@@ -9,6 +9,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import Link from "next/link";
+import { usePermission } from "@/hooks/usePermission";
 
 type EventDM = {
   id: string;
@@ -23,6 +24,7 @@ type EventDM = {
 };
 
 export default function DMListPage() {
+  const { canEdit } = usePermission();
   const supabase = createClient();
   const [events, setEvents] = useState<EventDM[]>([]);
   const [loading, setLoading] = useState(true);
@@ -101,45 +103,59 @@ export default function DMListPage() {
                     <TableCell className="text-sm">{e.name}</TableCell>
                     <TableCell className="text-sm hidden md:table-cell">{e.start_date} 〜 {e.end_date}</TableCell>
                     <TableCell>
-                      <button
-                        type="button"
-                        className={`relative inline-flex h-6 w-24 items-center rounded-full transition-colors ${isDone ? "bg-green-700" : "bg-gray-300"}`}
-                        onClick={() => toggleDmStatus(e.id, e.dm_status)}
-                      >
-                        <span className={`absolute text-[10px] font-medium ${isDone ? "left-2 text-white" : "right-2 text-gray-600"}`}>
+                      {canEdit ? (
+                        <button
+                          type="button"
+                          className={`relative inline-flex h-6 w-24 items-center rounded-full transition-colors ${isDone ? "bg-green-700" : "bg-gray-300"}`}
+                          onClick={() => toggleDmStatus(e.id, e.dm_status)}
+                        >
+                          <span className={`absolute text-[10px] font-medium ${isDone ? "left-2 text-white" : "right-2 text-gray-600"}`}>
+                            {isDone ? "印刷済み" : "未完了"}
+                          </span>
+                          <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${isDone ? "translate-x-[72px]" : "translate-x-0.5"}`} />
+                        </button>
+                      ) : (
+                        <span className={`text-xs font-medium ${isDone ? "text-green-700" : "text-gray-500"}`}>
                           {isDone ? "印刷済み" : "未完了"}
                         </span>
-                        <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${isDone ? "translate-x-[72px]" : "translate-x-0.5"}`} />
-                      </button>
+                      )}
                     </TableCell>
                     <TableCell>
-                      <div className="flex gap-1">
-                        {["未着手", "校正中", "印刷済み"].map((s) => (
-                          <button
-                            key={s}
-                            type="button"
-                            className={`px-2 py-1 text-xs rounded border transition-colors ${e.dm_status === s ? "bg-green-700 text-white border-green-700 font-bold" : "bg-white text-gray-500 border-gray-300 hover:bg-green-50 hover:text-green-700"}`}
-                            onClick={() => updateField(e.id, "dm_status", e.dm_status === s ? null : s)}
-                          >
-                            {s}
-                          </button>
-                        ))}
-                      </div>
+                      {canEdit ? (
+                        <div className="flex gap-1">
+                          {["未着手", "校正中", "印刷済み"].map((s) => (
+                            <button
+                              key={s}
+                              type="button"
+                              className={`px-2 py-1 text-xs rounded border transition-colors ${e.dm_status === s ? "bg-green-700 text-white border-green-700 font-bold" : "bg-white text-gray-500 border-gray-300 hover:bg-green-50 hover:text-green-700"}`}
+                              onClick={() => updateField(e.id, "dm_status", e.dm_status === s ? null : s)}
+                            >
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-sm">{e.dm_status || "—"}</span>
+                      )}
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-1">
-                        <Input
-                          type="number"
-                          value={e.dm_count ?? ""}
-                          onChange={(ev) => updateField(e.id, "dm_count", ev.target.value ? parseInt(ev.target.value) : null)}
-                          placeholder="枚数"
-                          className="h-8 text-sm w-20 bg-white"
-                          min="0"
-                        />
-                        {savedId === e.id && (
-                          <span className="text-[10px] text-green-600 font-medium whitespace-nowrap animate-in fade-in">✓ 保存済み</span>
-                        )}
-                      </div>
+                      {canEdit ? (
+                        <div className="flex items-center gap-1">
+                          <Input
+                            type="number"
+                            value={e.dm_count ?? ""}
+                            onChange={(ev) => updateField(e.id, "dm_count", ev.target.value ? parseInt(ev.target.value) : null)}
+                            placeholder="枚数"
+                            className="h-8 text-sm w-20 bg-white"
+                            min="0"
+                          />
+                          {savedId === e.id && (
+                            <span className="text-[10px] text-green-600 font-medium whitespace-nowrap animate-in fade-in">✓ 保存済み</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-sm">{e.dm_count ?? "—"}</span>
+                      )}
                     </TableCell>
                   </TableRow>
                 );

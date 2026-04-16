@@ -15,6 +15,7 @@ import {
 import { ChevronLeft, ChevronRight, ChevronDown, Hotel, Train, ExternalLink, Printer, ImageDown } from "lucide-react";
 import Link from "next/link";
 import { getHolidaysForRange } from "@/lib/holidays";
+import { usePermission } from "@/hooks/usePermission";
 
 type StaffRow = {
   id: string;
@@ -81,6 +82,7 @@ function assignTracks(evts: Event[], y: number, m: number): Map<string, number> 
 }
 
 export default function HotelTransportPage() {
+  const { canEdit } = usePermission();
   const supabase = createClient();
   const [events, setEvents] = useState<Event[]>([]);
   const [allStaff, setAllStaff] = useState<StaffRow[]>([]);
@@ -443,47 +445,65 @@ export default function HotelTransportPage() {
                       <div className="text-[10px] text-muted-foreground mt-0.5">{s.start_date}〜{s.end_date}</div>
                     </div>
                     <div className="px-3 py-2 space-y-1">
-                      <Input
-                        value={s.hotel_name || ""}
-                        onChange={(e) => setPanelStaff((prev) => prev.map((ps) => ps.id === s.id ? { ...ps, hotel_name: e.target.value } : ps))}
-                        onBlur={(e) => updateStaffField(s.id, "hotel_name", e.target.value || null)}
-                        placeholder="ホテル名を入力"
-                        className={`h-8 text-sm ${saving === s.id ? "opacity-50" : ""}`}
-                      />
-                      {hotelCandidates.length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                          {hotelCandidates.map((h) => (
-                            <Badge key={h.id} variant={s.hotel_name === h.name ? "default" : "outline"}
-                              className="cursor-pointer text-[10px] hover:bg-primary/10"
-                              onClick={() => { setPanelStaff((prev) => prev.map((ps) => ps.id === s.id ? { ...ps, hotel_name: h.name } : ps)); updateStaffField(s.id, "hotel_name", h.name); }}
-                            >{h.name}</Badge>
-                          ))}
-                        </div>
+                      {canEdit ? (
+                        <>
+                          <Input
+                            value={s.hotel_name || ""}
+                            onChange={(e) => setPanelStaff((prev) => prev.map((ps) => ps.id === s.id ? { ...ps, hotel_name: e.target.value } : ps))}
+                            onBlur={(e) => updateStaffField(s.id, "hotel_name", e.target.value || null)}
+                            placeholder="ホテル名を入力"
+                            className={`h-8 text-sm ${saving === s.id ? "opacity-50" : ""}`}
+                          />
+                          {hotelCandidates.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {hotelCandidates.map((h) => (
+                                <Badge key={h.id} variant={s.hotel_name === h.name ? "default" : "outline"}
+                                  className="cursor-pointer text-[10px] hover:bg-primary/10"
+                                  onClick={() => { setPanelStaff((prev) => prev.map((ps) => ps.id === s.id ? { ...ps, hotel_name: h.name } : ps)); updateStaffField(s.id, "hotel_name", h.name); }}
+                                >{h.name}</Badge>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-sm">{s.hotel_name || "—"}</span>
                       )}
                     </div>
                     <div className="px-3 py-2">
-                      <button
-                        type="button"
-                        className={`relative inline-flex h-7 w-[110px] items-center rounded-full transition-colors ${s.transport_outbound_status === "手配済" ? "bg-green-700" : "bg-gray-300"}`}
-                        onClick={() => updateStaffField(s.id, "transport_outbound_status", s.transport_outbound_status === "手配済" ? "未手配" : "手配済")}
-                      >
-                        <span className={`absolute text-[10px] font-medium ${s.transport_outbound_status === "手配済" ? "left-2 text-white" : "right-2 text-gray-600"}`}>
+                      {canEdit ? (
+                        <button
+                          type="button"
+                          className={`relative inline-flex h-7 w-[110px] items-center rounded-full transition-colors ${s.transport_outbound_status === "手配済" ? "bg-green-700" : "bg-gray-300"}`}
+                          onClick={() => updateStaffField(s.id, "transport_outbound_status", s.transport_outbound_status === "手配済" ? "未手配" : "手配済")}
+                        >
+                          <span className={`absolute text-[10px] font-medium ${s.transport_outbound_status === "手配済" ? "left-2 text-white" : "right-2 text-gray-600"}`}>
+                            {s.transport_outbound_status === "手配済" ? "手配済" : "未手配"}
+                          </span>
+                          <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${s.transport_outbound_status === "手配済" ? "translate-x-[84px]" : "translate-x-0.5"}`} />
+                        </button>
+                      ) : (
+                        <span className={`text-xs font-medium ${s.transport_outbound_status === "手配済" ? "text-green-700" : "text-gray-500"}`}>
                           {s.transport_outbound_status === "手配済" ? "手配済" : "未手配"}
                         </span>
-                        <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${s.transport_outbound_status === "手配済" ? "translate-x-[84px]" : "translate-x-0.5"}`} />
-                      </button>
+                      )}
                     </div>
                     <div className="px-3 py-2">
-                      <button
-                        type="button"
-                        className={`relative inline-flex h-7 w-[110px] items-center rounded-full transition-colors ${s.transport_return_status === "手配済" ? "bg-green-700" : "bg-gray-300"}`}
-                        onClick={() => updateStaffField(s.id, "transport_return_status", s.transport_return_status === "手配済" ? "未手配" : "手配済")}
-                      >
-                        <span className={`absolute text-[10px] font-medium ${s.transport_return_status === "手配済" ? "left-2 text-white" : "right-2 text-gray-600"}`}>
+                      {canEdit ? (
+                        <button
+                          type="button"
+                          className={`relative inline-flex h-7 w-[110px] items-center rounded-full transition-colors ${s.transport_return_status === "手配済" ? "bg-green-700" : "bg-gray-300"}`}
+                          onClick={() => updateStaffField(s.id, "transport_return_status", s.transport_return_status === "手配済" ? "未手配" : "手配済")}
+                        >
+                          <span className={`absolute text-[10px] font-medium ${s.transport_return_status === "手配済" ? "left-2 text-white" : "right-2 text-gray-600"}`}>
+                            {s.transport_return_status === "手配済" ? "手配済" : "未手配"}
+                          </span>
+                          <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${s.transport_return_status === "手配済" ? "translate-x-[84px]" : "translate-x-0.5"}`} />
+                        </button>
+                      ) : (
+                        <span className={`text-xs font-medium ${s.transport_return_status === "手配済" ? "text-green-700" : "text-gray-500"}`}>
                           {s.transport_return_status === "手配済" ? "手配済" : "未手配"}
                         </span>
-                        <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${s.transport_return_status === "手配済" ? "translate-x-[84px]" : "translate-x-0.5"}`} />
-                      </button>
+                      )}
                     </div>
                   </div>
                 ))}

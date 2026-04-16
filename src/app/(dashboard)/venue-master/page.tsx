@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { Plus, Pencil, Trash2, Search, X, Store } from "lucide-react";
 import { prefectures } from "@/lib/prefectures";
+import { usePermission } from "@/hooks/usePermission";
 
 type VenueMaster = {
   id: string;
@@ -51,6 +52,7 @@ const emptyForm = {
 };
 
 export default function VenueMasterPage() {
+  const { canEdit } = usePermission();
   const supabase = createClient();
   const [venues, setVenues] = useState<VenueMaster[]>([]);
   const [areas, setAreas] = useState<AreaItem[]>([]);
@@ -240,7 +242,7 @@ export default function VenueMasterPage() {
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Store className="h-6 w-6" />百貨店マスター
         </h1>
-        <Button onClick={openCreate}><Plus className="h-4 w-4 mr-1" />新規登録</Button>
+        {canEdit && <Button onClick={openCreate}><Plus className="h-4 w-4 mr-1" />新規登録</Button>}
       </div>
 
       {/* 検索 */}
@@ -270,7 +272,7 @@ export default function VenueMasterPage() {
                 <TableHead className="hidden lg:table-cell">産直くん③</TableHead>
                 <TableHead className="hidden md:table-cell">ホテル</TableHead>
                 <TableHead className="hidden md:table-cell">マネキン</TableHead>
-                <TableHead>操作</TableHead>
+                {canEdit && <TableHead>操作</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -302,15 +304,17 @@ export default function VenueMasterPage() {
                         {mannequins.length > 0 ? mannequins.map((m) => <Badge key={m.id} variant="outline" className="text-xs">{m.name}</Badge>) : <span className="text-xs text-muted-foreground">—</span>}
                       </div>
                     </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1">
-                        <Badge variant="outline" className={`cursor-pointer text-xs ${v.is_active ? "text-green-700" : "text-gray-500"}`} onClick={() => toggleActive(v)}>
-                          {v.is_active ? "使用中" : "停止"}
-                        </Badge>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(v)}><Pencil className="h-3 w-3" /></Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(v.id)}><Trash2 className="h-3 w-3" /></Button>
-                      </div>
-                    </TableCell>
+                    {canEdit && (
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Badge variant="outline" className={`cursor-pointer text-xs ${v.is_active ? "text-green-700" : "text-gray-500"}`} onClick={() => toggleActive(v)}>
+                            {v.is_active ? "使用中" : "停止"}
+                          </Badge>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(v)}><Pencil className="h-3 w-3" /></Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(v.id)}><Trash2 className="h-3 w-3" /></Button>
+                        </div>
+                      </TableCell>
+                    )}
                   </TableRow>
                 );
               })}

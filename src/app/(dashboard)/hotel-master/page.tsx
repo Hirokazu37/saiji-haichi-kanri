@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { Plus, Pencil, Trash2, Search } from "lucide-react";
 import { prefectures } from "@/lib/prefectures";
+import { usePermission } from "@/hooks/usePermission";
 
 type HotelMaster = {
   id: string;
@@ -44,6 +45,7 @@ type VenueOption = string;
 const emptyForm = { name: "", phone: "", price_per_night: "", prefecture: "", area_id: "", notes: "" };
 
 export default function HotelMasterPage() {
+  const { canEdit } = usePermission();
   const supabase = createClient();
   const [hotels, setHotels] = useState<HotelMaster[]>([]);
   const [areas, setAreas] = useState<AreaItem[]>([]);
@@ -180,7 +182,7 @@ export default function HotelMasterPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-2xl font-bold">ホテルマスター</h1>
-        <Button onClick={openCreate}><Plus className="h-4 w-4 mr-1" />新規登録</Button>
+        {canEdit && <Button onClick={openCreate}><Plus className="h-4 w-4 mr-1" />新規登録</Button>}
       </div>
 
       {/* 検索・フィルタ */}
@@ -213,7 +215,7 @@ export default function HotelMasterPage() {
                 <TableHead>エリア</TableHead>
                 <TableHead>近くの百貨店</TableHead>
                 <TableHead className="hidden md:table-cell">メモ</TableHead>
-                <TableHead className="w-20">操作</TableHead>
+                {canEdit && <TableHead className="w-20">操作</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -234,15 +236,17 @@ export default function HotelMasterPage() {
                       </div>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground hidden md:table-cell truncate max-w-[150px]">{h.notes || "—"}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-1 items-center">
-                        <Button variant="ghost" size="sm" className={`h-6 text-[10px] px-1.5 ${h.is_active ? "text-green-600" : "text-red-500"}`} onClick={() => toggleActive(h.id, h.is_active)}>
-                          {h.is_active ? "使用中" : "停止"}
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(h)}><Pencil className="h-3 w-3" /></Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setDeleteId(h.id)}><Trash2 className="h-3 w-3 text-destructive" /></Button>
-                      </div>
-                    </TableCell>
+                    {canEdit && (
+                      <TableCell>
+                        <div className="flex gap-1 items-center">
+                          <Button variant="ghost" size="sm" className={`h-6 text-[10px] px-1.5 ${h.is_active ? "text-green-600" : "text-red-500"}`} onClick={() => toggleActive(h.id, h.is_active)}>
+                            {h.is_active ? "使用中" : "停止"}
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(h)}><Pencil className="h-3 w-3" /></Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setDeleteId(h.id)}><Trash2 className="h-3 w-3 text-destructive" /></Button>
+                        </div>
+                      </TableCell>
+                    )}
                   </TableRow>
                 );
               })}

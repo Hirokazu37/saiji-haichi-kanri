@@ -9,15 +9,19 @@ export async function PATCH(
 ) {
   const { id } = await params;
   const body = await request.json();
-  const { display_name, password } = body;
+  const { display_name, password, can_edit } = body;
 
   const admin = createAdminClient();
 
-  // 表示名の更新
-  if (display_name !== undefined) {
+  // プロフィールの更新（表示名・編集権限）
+  const profileUpdate: Record<string, unknown> = {};
+  if (display_name !== undefined) profileUpdate.display_name = display_name;
+  if (can_edit !== undefined) profileUpdate.can_edit = can_edit;
+
+  if (Object.keys(profileUpdate).length > 0) {
     const { error } = await admin
       .from("user_profiles")
-      .update({ display_name })
+      .update(profileUpdate)
       .eq("id", id);
 
     if (error) {

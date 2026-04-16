@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -21,10 +22,11 @@ type UserProfile = {
   id: string;
   username: string;
   display_name: string;
+  can_edit: boolean;
   created_at: string;
 };
 
-const emptyForm = { username: "", display_name: "", password: "", password_confirm: "" };
+const emptyForm = { username: "", display_name: "", password: "", password_confirm: "", can_edit: false };
 
 export default function UsersPage() {
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -51,7 +53,6 @@ export default function UsersPage() {
 
   useEffect(() => {
     fetchUsers();
-    // 現在のユーザーIDを取得
     supabase.auth.getUser().then(({ data }) => {
       setCurrentUserId(data.user?.id ?? null);
     });
@@ -66,7 +67,7 @@ export default function UsersPage() {
 
   const openEdit = (user: UserProfile) => {
     setEditingId(user.id);
-    setForm({ username: user.username, display_name: user.display_name, password: "", password_confirm: "" });
+    setForm({ username: user.username, display_name: user.display_name, password: "", password_confirm: "", can_edit: user.can_edit });
     setError("");
     setDialogOpen(true);
   };
@@ -76,11 +77,31 @@ export default function UsersPage() {
     setDeleteDialogOpen(true);
   };
 
+  // 編集権限トグルの即時切替
+  const handleToggleCanEdit = async (userId: string, newValue: boolean) => {
+    // 楽観的更新
+    setUsers((prev) =>
+      prev.map((u) => (u.id === userId ? { ...u, can_edit: newValue } : u))
+    );
+
+    const res = await fetch(`/api/users/${userId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ can_edit: newValue }),
+    });
+
+    if (!res.ok) {
+      // 失敗時はロールバック
+      setUsers((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, can_edit: !newValue } : u))
+      );
+    }
+  };
+
   const handleSave = async () => {
     setError("");
 
     if (!editingId) {
-      // 新規作成時のバリデーション
       if (!form.username || !form.display_name || !form.password) {
         setError("すべての項目を入力してください");
         return;
@@ -90,7 +111,6 @@ export default function UsersPage() {
         return;
       }
     } else {
-      // 編集時：パスワードが入力されている場合のみ確認
       if (form.password && form.password !== form.password_confirm) {
         setError("パスワードが一致しません");
         return;
@@ -100,8 +120,7 @@ export default function UsersPage() {
     setSaving(true);
 
     if (editingId) {
-      // 更新
-      const body: Record<string, string> = { display_name: form.display_name };
+      const body: Record<string, unknown> = { display_name: form.display_name, can_edit: form.can_edit };
       if (form.password) body.password = form.password;
 
       const res = await fetch(`/api/users/${editingId}`, {
@@ -117,7 +136,6 @@ export default function UsersPage() {
         return;
       }
     } else {
-      // 作成
       const res = await fetch("/api/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -125,6 +143,7 @@ export default function UsersPage() {
           username: form.username,
           display_name: form.display_name,
           password: form.password,
+          can_edit: form.can_edit,
         }),
       });
 
@@ -179,6 +198,7 @@ export default function UsersPage() {
               <TableRow>
                 <TableHead>ユーザー名</TableHead>
                 <TableHead>表示名</TableHead>
+                <TableHead className="text-center">編集権限</TableHead>
                 <TableHead className="hidden md:table-cell">作成日</TableHead>
                 <TableHead className="w-24">操作</TableHead>
               </TableRow>
@@ -194,6 +214,13 @@ export default function UsersPage() {
                         自分
                       </span>
                     )}
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <Switch
+                      checked={user.can_edit}
+                      onCheckedChange={(v) => handleToggleCanEdit(user.id, v)}
+                      className="data-[state=checked]:bg-green-700"
+                    />
                   </TableCell>
                   <TableCell className="hidden md:table-cell text-muted-foreground">
                     {new Date(user.created_at).toLocaleDateString("ja-JP")}
@@ -245,7 +272,7 @@ export default function UsersPage() {
               <Label htmlFor="display_name">表示名</Label>
               <Input
                 id="display_name"
-                placeholder="安岡 宏和"
+                placeholder="安岡 弘和"
                 value={form.display_name}
                 onChange={(e) => setForm({ ...form, display_name: e.target.value })}
               />
@@ -270,6 +297,18 @@ export default function UsersPage() {
                 onChange={(e) => setForm({ ...form, password_confirm: e.target.value })}
               />
             </div>
+            <div className="flex items-center justify-between py-2">
+              <Label htmlFor="can_edit">編集権限</Label>
+              <Switch
+                id="can_edit"
+                checked={form.can_edit}
+                onCheckedChange={(v) => setForm({ ...form, can_edit: v })}
+                className="data-[state=checked]:bg-green-700"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              ONにすると催事・マスターデータの追加・編集・削除ができます。OFFの場合は閲覧のみです。
+            </p>
             {error && <p className="text-sm text-destructive">{error}</p>}
           </div>
           <DialogFooter>

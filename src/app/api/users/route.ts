@@ -19,7 +19,7 @@ export async function GET() {
 // POST /api/users — ユーザー作成
 export async function POST(request: Request) {
   const body = await request.json();
-  const { username, display_name, password } = body;
+  const { username, display_name, password, can_edit } = body;
 
   if (!username || !display_name || !password) {
     return NextResponse.json(
@@ -70,6 +70,7 @@ export async function POST(request: Request) {
       id: authUser.user.id,
       username,
       display_name,
+      can_edit: can_edit ?? false,
     })
     .select()
     .single();

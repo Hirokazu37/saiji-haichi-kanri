@@ -13,7 +13,9 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { prefectures, eventStatuses } from "@/lib/prefectures";
-import { X, Plus, Hotel, Train, UserCheck, Package } from "lucide-react";
+import { X, Plus, Hotel, Train, UserCheck, Package, ArrowLeft } from "lucide-react";
+import { usePermission } from "@/hooks/usePermission";
+import Link from "next/link";
 
 type Employee = { id: string; name: string };
 type StaffEntry = { employee_id: string; start_date: string; end_date: string; role: string };
@@ -31,6 +33,7 @@ const closingTimes = [
 const transportTypes = ["新幹線", "飛行機", "レンタカー", "社用車", "その他"];
 
 export default function NewEventPage() {
+  const { canEdit } = usePermission();
   const supabase = createClient();
   const router = useRouter();
   const [saving, setSaving] = useState(false);
@@ -266,6 +269,17 @@ export default function NewEventPage() {
   };
 
   const isValid = form.name && form.venue && form.prefecture && form.start_date && form.end_date;
+
+  if (!canEdit) {
+    return (
+      <div className="max-w-2xl mx-auto space-y-4 py-12 text-center">
+        <p className="text-lg text-muted-foreground">閲覧権限のみのため、催事の新規作成はできません</p>
+        <Link href="/events" className="inline-flex items-center gap-1 text-primary hover:underline">
+          <ArrowLeft className="h-4 w-4" />催事一覧に戻る
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl mx-auto space-y-4 md:space-y-6">

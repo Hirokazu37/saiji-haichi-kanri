@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { areaMap, areaNames, allPrefectures, matchesArea } from "@/lib/areas";
+import { usePermission } from "@/hooks/usePermission";
 
 type Agency = {
   id: string;
@@ -148,6 +149,7 @@ function AreaPicker({ value, onChange }: { value: string; onChange: (v: string) 
 }
 
 export default function AgenciesPage() {
+  const { canEdit } = usePermission();
   const supabase = createClient();
   const [agencies, setAgencies] = useState<Agency[]>([]);
   const [people, setPeople] = useState<MannequinPerson[]>([]);
@@ -302,10 +304,12 @@ export default function AgenciesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">マネキン</h1>
-        <Button onClick={openCreate}>
-          <Plus className="h-4 w-4 mr-2" />
-          マネキン追加
-        </Button>
+        {canEdit && (
+          <Button onClick={openCreate}>
+            <Plus className="h-4 w-4 mr-2" />
+            マネキン追加
+          </Button>
+        )}
       </div>
 
       {/* 検索 */}
@@ -367,7 +371,7 @@ export default function AgenciesPage() {
               <TableHead className="hidden md:table-cell">エリア</TableHead>
               <TableHead className="hidden md:table-cell">日当目安</TableHead>
               <TableHead className="hidden lg:table-cell">評価</TableHead>
-              <TableHead className="w-28">操作</TableHead>
+              {canEdit && <TableHead className="w-28">操作</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -391,19 +395,21 @@ export default function AgenciesPage() {
                       <span className="text-xs">{person.evaluation.substring(0, 20)}{person.evaluation.length > 20 ? "..." : ""}</span>
                     ) : "—"}
                   </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button variant="ghost" size="icon" onClick={() => openHistory(person)} title="催事履歴">
-                        <History className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => openEdit(person)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => openDelete(person.id, person.name)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
-                  </TableCell>
+                  {canEdit && (
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => openHistory(person)} title="催事履歴">
+                          <History className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => openEdit(person)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => openDelete(person.id, person.name)}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))
             )}

@@ -30,6 +30,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { usePermission } from "@/hooks/usePermission";
 
 type Employee = {
   id: string;
@@ -47,10 +48,12 @@ function SortableRow({
   emp,
   onEdit,
   onDelete,
+  canEdit,
 }: {
   emp: Employee;
   onEdit: (emp: Employee) => void;
   onDelete: (id: string) => void;
+  canEdit: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: emp.id });
 
@@ -63,29 +66,34 @@ function SortableRow({
   return (
     <TableRow ref={setNodeRef} style={style}>
       <TableCell className="w-10">
-        <button {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing p-1 text-muted-foreground hover:text-foreground">
-          <GripVertical className="h-4 w-4" />
-        </button>
+        {canEdit && (
+          <button {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing p-1 text-muted-foreground hover:text-foreground">
+            <GripVertical className="h-4 w-4" />
+          </button>
+        )}
       </TableCell>
       <TableCell className="font-medium">{emp.name}</TableCell>
       <TableCell className="hidden md:table-cell">{emp.position || "—"}</TableCell>
       <TableCell className="hidden md:table-cell">{emp.phone || "—"}</TableCell>
       <TableCell className="hidden lg:table-cell">{emp.email || "—"}</TableCell>
-      <TableCell>
-        <div className="flex gap-1">
-          <Button variant="ghost" size="icon" onClick={() => onEdit(emp)}>
-            <Pencil className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="icon" onClick={() => onDelete(emp.id)}>
-            <Trash2 className="h-4 w-4 text-destructive" />
-          </Button>
-        </div>
-      </TableCell>
+      {canEdit && (
+        <TableCell>
+          <div className="flex gap-1">
+            <Button variant="ghost" size="icon" onClick={() => onEdit(emp)}>
+              <Pencil className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => onDelete(emp.id)}>
+              <Trash2 className="h-4 w-4 text-destructive" />
+            </Button>
+          </div>
+        </TableCell>
+      )}
     </TableRow>
   );
 }
 
 export default function EmployeesPage() {
+  const { canEdit } = usePermission();
   const supabase = createClient();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
@@ -168,10 +176,12 @@ export default function EmployeesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">社員マスター</h1>
-        <Button onClick={openCreate}>
-          <Plus className="h-4 w-4 mr-2" />
-          社員追加
-        </Button>
+        {canEdit && (
+          <Button onClick={openCreate}>
+            <Plus className="h-4 w-4 mr-2" />
+            社員追加
+          </Button>
+        )}
       </div>
 
       {loading ? (
@@ -190,14 +200,14 @@ export default function EmployeesPage() {
                 <TableHead className="hidden md:table-cell">役職・部署</TableHead>
                 <TableHead className="hidden md:table-cell">電話番号</TableHead>
                 <TableHead className="hidden lg:table-cell">メール</TableHead>
-                <TableHead className="w-24">操作</TableHead>
+                {canEdit && <TableHead className="w-24">操作</TableHead>}
               </TableRow>
             </TableHeader>
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={employees.map((e) => e.id)} strategy={verticalListSortingStrategy}>
                 <TableBody>
                   {employees.map((emp) => (
-                    <SortableRow key={emp.id} emp={emp} onEdit={openEdit} onDelete={openDelete} />
+                    <SortableRow key={emp.id} emp={emp} onEdit={openEdit} onDelete={openDelete} canEdit={canEdit} />
                   ))}
                 </TableBody>
               </SortableContext>
