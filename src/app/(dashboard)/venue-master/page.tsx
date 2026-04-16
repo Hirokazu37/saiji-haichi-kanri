@@ -17,8 +17,9 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel,
 } from "@/components/ui/select";
-import { Plus, Pencil, Trash2, Search, X, Store } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, X, Store, PlusCircle } from "lucide-react";
 import { prefectures } from "@/lib/prefectures";
+import { areaNames, getAreaForPrefecture } from "@/lib/areas";
 import { usePermission } from "@/hooks/usePermission";
 
 type VenueMaster = {
@@ -74,6 +75,13 @@ export default function VenueMasterPage() {
   const [mannequinSearch, setMannequinSearch] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // エリア新規作成
+  const [showNewArea, setShowNewArea] = useState(false);
+  const [newAreaName, setNewAreaName] = useState("");
+  const [newAreaRegion, setNewAreaRegion] = useState("");
+  const [newAreaPrefecture, setNewAreaPrefecture] = useState("");
+  const [savingArea, setSavingArea] = useState(false);
+
   // 削除
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
@@ -125,6 +133,37 @@ export default function VenueMasterPage() {
   });
 
   // ダイアログ操作
+  const resetAreaForm = () => {
+    setShowNewArea(false);
+    setNewAreaName("");
+    setNewAreaRegion("");
+    setNewAreaPrefecture("");
+  };
+
+  const handleCreateArea = async () => {
+    if (!newAreaName.trim()) return;
+    setSavingArea(true);
+
+    // sort_orderは既存エリアの最大値+1
+    const maxOrder = areas.length > 0 ? Math.max(...areas.map((a) => (a as unknown as { sort_order?: number }).sort_order ?? 0)) + 1 : 0;
+
+    const { data } = await supabase.from("area_master").insert({
+      name: newAreaName.trim(),
+      region: newAreaRegion || null,
+      prefecture: newAreaPrefecture || null,
+      sort_order: maxOrder,
+    }).select("id, name, region, prefecture").single();
+
+    if (data) {
+      setAreas((prev) => [...prev, data as AreaItem]);
+      setForm((prev) => ({ ...prev, area_id: data.id }));
+      setSelectedHotelIds(new Set());
+    }
+
+    setSavingArea(false);
+    resetAreaForm();
+  };
+
   const openCreate = () => {
     setEditingId(null);
     setForm(emptyForm);
@@ -132,11 +171,13 @@ export default function VenueMasterPage() {
     setSelectedMannequinIds(new Set());
     setHotelSearch("");
     setMannequinSearch("");
+    resetAreaForm();
     setDialogOpen(true);
   };
 
   const openEdit = (v: VenueMaster) => {
     setEditingId(v.id);
+    resetAreaForm();
     setForm({
       venue_name: v.venue_name,
       store_name: v.store_name || "",
@@ -358,22 +399,55 @@ export default function VenueMasterPage() {
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">エリア</Label>
-                  <Select value={form.area_id} onValueChange={(v) => { setForm({ ...form, area_id: v }); setSelectedHotelIds(new Set()); }}>
-                    <SelectTrigger><SelectValue placeholder="エリア選択">{form.area_id ? (() => { const a = areas.find((x) => x.id === form.area_id); return a ? (a.prefecture ? `${a.prefecture} / ${a.name}` : a.name) : ""; })() : undefined}</SelectValue></SelectTrigger>
-                    <SelectContent>
-                      {(() => {
-                        const grouped = new Map<string, AreaItem[]>();
-                        areas.forEach((a) => { const key = a.region || "未分類"; if (!grouped.has(key)) grouped.set(key, []); grouped.get(key)!.push(a); });
-                        return Array.from(grouped.entries()).map(([region, items]) => (
-                          <SelectGroup key={region}>
-                            <SelectLabel className="text-xs text-muted-foreground">{region}</SelectLabel>
-                            {items.map((a) => <SelectItem key={a.id} value={a.id}>{a.prefecture ? `${a.prefecture} / ${a.name}` : a.name}</SelectItem>)}
-                          </SelectGroup>
-                        ));
-                      })()}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">エリア</Label>
+                    {!showNewArea && (
+                      <button type="button" onClick={() => setShowNewArea(true)} className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5">
+                        <PlusCircle className="h-3 w-3" />新規エリア
+                      </button>
+                    )}
+                  </div>
+                  {!showNewArea ? (
+                    <Select value={form.area_id} onValueChange={(v) => { setForm({ ...form, area_id: v }); setSelectedHotelIds(new Set()); }}>
+                      <SelectTrigger><SelectValue placeholder="エリア選択">{form.area_id ? (() => { const a = areas.find((x) => x.id === form.area_id); return a ? (a.prefecture ? `${a.prefecture} / ${a.name}` : a.name) : ""; })() : undefined}</SelectValue></SelectTrigger>
+                      <SelectContent>
+                        {(() => {
+                          const grouped = new Map<string, AreaItem[]>();
+                          areas.forEach((a) => { const key = a.region || "未分類"; if (!grouped.has(key)) grouped.set(key, []); grouped.get(key)!.push(a); });
+                          return Array.from(grouped.entries()).map(([region, items]) => (
+                            <SelectGroup key={region}>
+                              <SelectLabel className="text-xs text-muted-foreground">{region}</SelectLabel>
+                              {items.map((a) => <SelectItem key={a.id} value={a.id}>{a.prefecture ? `${a.prefecture} / ${a.name}` : a.name}</SelectItem>)}
+                            </SelectGroup>
+                          ));
+                        })()}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <div className="rounded border border-blue-300 bg-blue-50 dark:bg-blue-950/30 p-2 space-y-2">
+                      <Input value={newAreaName} onChange={(e) => setNewAreaName(e.target.value)} placeholder="エリア名（例: 梅田）" className="h-7 text-xs" />
+                      <div className="grid grid-cols-2 gap-2">
+                        <Select value={newAreaRegion} onValueChange={(v) => setNewAreaRegion(v)}>
+                          <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="地方" /></SelectTrigger>
+                          <SelectContent>
+                            {areaNames.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                        <Select value={newAreaPrefecture} onValueChange={(v) => { setNewAreaPrefecture(v); if (!newAreaRegion) { const r = getAreaForPrefecture(v); if (r) setNewAreaRegion(r); } }}>
+                          <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="都道府県" /></SelectTrigger>
+                          <SelectContent>
+                            {prefectures.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button type="button" size="sm" variant="outline" className="h-7 text-xs flex-1" onClick={resetAreaForm}>キャンセル</Button>
+                        <Button type="button" size="sm" className="h-7 text-xs flex-1 bg-blue-600 hover:bg-blue-700" onClick={handleCreateArea} disabled={!newAreaName.trim() || savingArea}>
+                          {savingArea ? "作成中..." : "エリア作成"}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="space-y-1">
