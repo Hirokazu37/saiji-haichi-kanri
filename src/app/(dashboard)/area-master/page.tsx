@@ -41,10 +41,17 @@ type Area = {
   name: string;
   region: string | null;
   prefecture: string | null;
+  color: string | null;
   sort_order: number;
 };
 
-const emptyForm = { name: "", region: "", prefecture: "" };
+const emptyForm = { name: "", region: "", prefecture: "", color: "" };
+
+const regionColors: Record<string, string> = {
+  "北海道": "#EF4444", "東北": "#8B5CF6", "関東": "#F97316", "北陸": "#06B6D4",
+  "中部": "#10B981", "関西": "#F59E0B", "中国": "#EC4899", "四国": "#3B82F6",
+  "九州": "#14B8A6", "沖縄": "#6366F1",
+};
 
 function SortableRow({
   area,
@@ -77,7 +84,12 @@ function SortableRow({
           </button>
         )}
       </TableCell>
-      <TableCell className="text-xs text-muted-foreground">{area.region || "—"}</TableCell>
+      <TableCell className="text-xs text-muted-foreground">
+        <div className="flex items-center gap-1.5">
+          <span className="inline-block w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: area.color || "#ccc" }} />
+          {area.region || "—"}
+        </div>
+      </TableCell>
       <TableCell className="text-xs text-muted-foreground">{area.prefecture || "—"}</TableCell>
       <TableCell className="font-medium">{area.name}</TableCell>
       <TableCell className="text-sm">{hotelCount}件</TableCell>
@@ -155,14 +167,14 @@ export default function AreaMasterPage() {
   const openCreate = () => { setEditingId(null); setForm(emptyForm); setDialogOpen(true); };
   const openEdit = (a: Area) => {
     setEditingId(a.id);
-    setForm({ name: a.name, region: a.region || "", prefecture: a.prefecture || "" });
+    setForm({ name: a.name, region: a.region || "", prefecture: a.prefecture || "", color: a.color || "" });
     setDialogOpen(true);
   };
 
   // 都道府県変更時に地方を自動セット
   const handlePrefectureChange = (pref: string) => {
     const region = getAreaForPrefecture(pref) || "";
-    setForm({ ...form, prefecture: pref, region });
+    setForm({ ...form, prefecture: pref, region, color: form.color || regionColors[region] || "" });
   };
 
   const handleSave = async () => {
@@ -172,6 +184,7 @@ export default function AreaMasterPage() {
       name: form.name.trim(),
       region: form.region || null,
       prefecture: form.prefecture || null,
+      color: form.color || null,
     };
     if (editingId) {
       await supabase.from("area_master").update(payload).eq("id", editingId);
@@ -262,7 +275,7 @@ export default function AreaMasterPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>地方</Label>
-                <Select value={form.region} onValueChange={(v) => setForm({ ...form, region: v, prefecture: "" })}>
+                <Select value={form.region} onValueChange={(v) => setForm({ ...form, region: v, prefecture: "", color: form.color || regionColors[v] || "" })}>
                   <SelectTrigger><SelectValue placeholder="地方選択" /></SelectTrigger>
                   <SelectContent>
                     {areaNames.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
@@ -283,6 +296,13 @@ export default function AreaMasterPage() {
               <Label>エリア名 *</Label>
               <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="例: 宇和島、新宿、梅田" onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }} />
               <p className="text-xs text-muted-foreground">ホテルを探すときの地域名を入力してください</p>
+            </div>
+            <div className="space-y-2">
+              <Label>色</Label>
+              <div className="flex items-center gap-2">
+                <input type="color" value={form.color || "#cccccc"} onChange={(e) => setForm({ ...form, color: e.target.value })} className="w-8 h-8 rounded cursor-pointer border-0 p-0" />
+                <span className="text-xs text-muted-foreground">{form.color || "自動（地方で決定）"}</span>
+              </div>
             </div>
           </div>
           <DialogFooter>
