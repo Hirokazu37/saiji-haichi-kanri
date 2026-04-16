@@ -161,7 +161,7 @@ export default function NewEventPage() {
 
   // --- 保存 ---
   const handleSave = async () => {
-    if (!form.name || !form.venue || !form.prefecture || !form.start_date || !form.end_date) return;
+    if (!form.venue || !form.prefecture || !form.start_date || !form.end_date) return;
     setSaving(true);
 
     const staffNames = [...new Set(staffEntries.map((e) => employees.find((emp) => emp.id === e.employee_id)?.name || ""))].filter(Boolean);
@@ -169,7 +169,7 @@ export default function NewEventPage() {
     const allNames = [...staffNames, ...(extraText ? [extraText] : [])];
 
     const { data, error } = await supabase.from("events").insert({
-      name: form.name.trim(),
+      name: form.name.trim() || null,
       venue: form.venue.trim(),
       store_name: form.store_name.trim() || null,
       prefecture: form.prefecture,
@@ -268,7 +268,7 @@ export default function NewEventPage() {
     return [...staffNames, ...(extra ? [extra] : [])].join("、");
   };
 
-  const isValid = form.name && form.venue && form.prefecture && form.start_date && form.end_date;
+  const isValid = form.venue && form.prefecture && form.start_date && form.end_date;
 
   if (!canEdit) {
     return (
@@ -301,7 +301,7 @@ export default function NewEventPage() {
           </div>
 
           <div className="space-y-2">
-            <Label>催事名 *</Label>
+            <Label>催事名</Label>
             <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="元祖有名駅弁と全国うまいもの大会" />
           </div>
 

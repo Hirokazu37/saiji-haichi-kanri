@@ -506,8 +506,9 @@ export default function EventsPage() {
                                       />
                                       <TooltipContent side="bottom">
                                         <div className="space-y-0.5">
-                                          <div className="font-medium">{evt.name}</div>
-                                          <div>{label}（{evt.prefecture}）</div>
+                                          <div className="font-medium">{evt.name || label}</div>
+                                          {evt.name && <div>{label}（{evt.prefecture}）</div>}
+                                          {!evt.name && <div>{evt.prefecture}</div>}
                                           <div className="text-muted-foreground">{evt.start_date} 〜 {evt.end_date}</div>
                                           {evt.person_in_charge && <div>担当: {evt.person_in_charge}</div>}
                                           <div>ホテル: {arr.hotel} / 交通: {arr.transport}</div>
@@ -549,7 +550,7 @@ export default function EventsPage() {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-1 text-sm text-muted-foreground">
-                    <div className="flex items-center gap-1"><MapPin className="h-3 w-3" />{event.name}（{event.prefecture}）</div>
+                    <div className="flex items-center gap-1"><MapPin className="h-3 w-3" />{event.name || `${event.venue}${event.store_name ? ` ${event.store_name}` : ""}`}（{event.prefecture}）</div>
                     <div className="flex items-center gap-1"><Calendar className="h-3 w-3" />{event.start_date} 〜 {event.end_date}</div>
                     {event.person_in_charge && <div>担当: {event.person_in_charge}</div>}
                     <Badge variant="outline" className={event.application_status === "提出済" ? "bg-green-100 text-green-800 text-xs" : "bg-red-100 text-red-800 text-xs"}>
@@ -581,7 +582,8 @@ export default function EventsPage() {
                 {/* 催事情報 */}
                 <div className="text-sm border-b pb-3">
                   <div className="font-bold text-base">{venueLabel}</div>
-                  <div className="text-muted-foreground">{dialogEvent.name}（{dialogEvent.prefecture}）</div>
+                  {dialogEvent.name && <div className="text-muted-foreground">{dialogEvent.name}（{dialogEvent.prefecture}）</div>}
+                  {!dialogEvent.name && <div className="text-muted-foreground">{dialogEvent.prefecture}</div>}
                   <div className="text-muted-foreground text-xs">{dialogEvent.start_date} 〜 {dialogEvent.end_date}</div>
                 </div>
 

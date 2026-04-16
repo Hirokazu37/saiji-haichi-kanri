@@ -173,7 +173,7 @@ export default function EventDetailPage({
     await supabase
       .from("events")
       .update({
-        name: form.name.trim(),
+        name: form.name.trim() || null,
         venue: form.venue.trim(),
         store_name: form.store_name.trim() || null,
         prefecture: form.prefecture,
@@ -283,7 +283,7 @@ export default function EventDetailPage({
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>催事名 *</Label>
+              <Label>催事名</Label>
               <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </div>
             <div className="space-y-2">
