@@ -65,7 +65,6 @@ export default function VenueMasterPage() {
   const [mannequinLinks, setMannequinLinks] = useState<VenueMannequinLink[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [showInactive, setShowInactive] = useState(false);
 
   // ダイアログ
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -121,12 +120,8 @@ export default function VenueMasterPage() {
     return mannequinPeople.filter((p) => pids.includes(p.id));
   };
 
-  // トグル直後に消えないよう、最近トグルしたIDを保持
-  const [recentToggledIds, setRecentToggledIds] = useState<Set<string>>(new Set());
-
-  // フィルタ
+  // フィルタ（停止も常に表示）
   const filtered = venues.filter((v) => {
-    if (!showInactive && !v.is_active && !recentToggledIds.has(v.id)) return false;
     if (search) {
       const s = search.toLowerCase();
       const label = getVenueLabel(v).toLowerCase();
@@ -136,10 +131,12 @@ export default function VenueMasterPage() {
     return true;
   });
 
-  // エリア別グループ+50音順ソート
+  // エリア別グループ+50音順ソート（停止は各グループ内の下に沈む）
   const grouped = (() => {
     const areaOrder = areas.map((a) => a.id);
     const sorted = [...filtered].sort((a, b) => {
+      // 使用中が先、停止が後
+      if (a.is_active !== b.is_active) return a.is_active ? -1 : 1;
       // エリア順
       const ai = a.area_id ? areaOrder.indexOf(a.area_id) : 9999;
       const bi = b.area_id ? areaOrder.indexOf(b.area_id) : 9999;
@@ -149,12 +146,18 @@ export default function VenueMasterPage() {
       const br = b.reading || b.venue_name;
       return ar.localeCompare(br, "ja");
     });
+    // 使用中と停止を分けてグループ化
+    const activeVenues = sorted.filter((v) => v.is_active);
+    const inactiveVenues = sorted.filter((v) => !v.is_active);
     const groups = new Map<string, VenueMaster[]>();
-    sorted.forEach((v) => {
+    activeVenues.forEach((v) => {
       const areaName = areas.find((a) => a.id === v.area_id)?.name || "未分類";
       if (!groups.has(areaName)) groups.set(areaName, []);
       groups.get(areaName)!.push(v);
     });
+    if (inactiveVenues.length > 0) {
+      groups.set("使用停止", inactiveVenues);
+    }
     return groups;
   })();
 
@@ -295,15 +298,7 @@ export default function VenueMasterPage() {
   };
 
   const toggleActive = async (v: VenueMaster) => {
-    // 楽観的更新
     setVenues((prev) => prev.map((x) => x.id === v.id ? { ...x, is_active: !x.is_active } : x));
-    // 停止にした場合、3秒間はフィルタから除外しない
-    if (v.is_active) {
-      setRecentToggledIds((prev) => new Set(prev).add(v.id));
-      setTimeout(() => {
-        setRecentToggledIds((prev) => { const next = new Set(prev); next.delete(v.id); return next; });
-      }, 3000);
-    }
     await supabase.from("venue_master").update({ is_active: !v.is_active }).eq("id", v.id);
   };
 
@@ -325,15 +320,9 @@ export default function VenueMasterPage() {
       </div>
 
       {/* 検索 */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="百貨店名で検索" className="pl-9" />
-        </div>
-        <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
-          <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
-          使用停止も表示
-        </label>
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="百貨店名・ふりがなで検索" className="pl-9" />
       </div>
 
       {/* 一覧テーブル */}
