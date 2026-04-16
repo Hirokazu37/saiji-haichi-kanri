@@ -86,7 +86,7 @@ function SortableRow({
       </TableCell>
       <TableCell className="text-xs text-muted-foreground">
         <div className="flex items-center gap-1.5">
-          <span className="inline-block w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: area.color || "#ccc" }} />
+          <span className="inline-block w-4 h-4 rounded shrink-0" style={{ backgroundColor: area.color || "#ccc" }} />
           {area.region || "—"}
         </div>
       </TableCell>
