@@ -71,6 +71,7 @@ type MannequinHistory = {
 
 type AreaItem = { id: string; name: string; region: string | null };
 type MannequinAreaLink = { mannequin_id: string; area_id: string };
+type AgencyAreaLink = { agency_id: string; area_id: string };
 
 const emptyPersonForm = {
   name: "", phone: "", mobile_phone: "", skills: "", notes: "",
@@ -183,6 +184,8 @@ export default function AgenciesPage() {
   const [history, setHistory] = useState<MannequinHistory[]>([]);
 
   // 会社編集
+  const [agencyAreaLinks, setAgencyAreaLinks] = useState<AgencyAreaLink[]>([]);
+  const [selectedAgencyAreaIds, setSelectedAgencyAreaIds] = useState<Set<string>>(new Set());
   const [agencyDialogOpen, setAgencyDialogOpen] = useState(false);
   const [editingAgencyId, setEditingAgencyId] = useState<string | null>(null);
   const [agencyForm, setAgencyForm] = useState({ name: "", phone: "", email: "", contact_person: "", url: "", notes: "" });
@@ -191,16 +194,18 @@ export default function AgenciesPage() {
   const [deletingAgency, setDeletingAgency] = useState<Agency | null>(null);
 
   const fetchData = useCallback(async () => {
-    const [agencyRes, peopleRes, areaRes, areaLinkRes] = await Promise.all([
+    const [agencyRes, peopleRes, areaRes, areaLinkRes, agencyAreaRes] = await Promise.all([
       supabase.from("mannequin_agencies").select("*").order("name"),
       supabase.from("mannequin_people").select("*").order("name"),
       supabase.from("area_master").select("id, name, region").order("sort_order"),
       supabase.from("mannequin_area_links").select("mannequin_id, area_id"),
+      supabase.from("agency_area_links").select("agency_id, area_id"),
     ]);
     setAgencies(agencyRes.data || []);
     setPeople(peopleRes.data || []);
     setAreas((areaRes.data || []) as AreaItem[]);
     setAreaLinks((areaLinkRes.data || []) as MannequinAreaLink[]);
+    setAgencyAreaLinks((agencyAreaRes.data || []) as AgencyAreaLink[]);
     setLoading(false);
   }, [supabase]);
 
@@ -220,12 +225,14 @@ export default function AgenciesPage() {
   const openAgencyEdit = (a: Agency) => {
     setEditingAgencyId(a.id);
     setAgencyForm({ name: a.name, phone: a.phone || "", email: a.email || "", contact_person: a.contact_person || "", url: a.url || "", notes: a.notes || "" });
+    setSelectedAgencyAreaIds(new Set(agencyAreaLinks.filter((l) => l.agency_id === a.id).map((l) => l.area_id)));
     setAgencyDialogOpen(true);
   };
 
   const openAgencyCreate = () => {
     setEditingAgencyId(null);
     setAgencyForm({ name: "", phone: "", email: "", contact_person: "", url: "", notes: "" });
+    setSelectedAgencyAreaIds(new Set());
     setAgencyDialogOpen(true);
   };
 
@@ -240,11 +247,24 @@ export default function AgenciesPage() {
       url: agencyForm.url.trim() || null,
       notes: agencyForm.notes.trim() || null,
     };
+    let agencyId = editingAgencyId;
     if (editingAgencyId) {
       await supabase.from("mannequin_agencies").update(row).eq("id", editingAgencyId);
     } else {
-      await supabase.from("mannequin_agencies").insert(row);
+      const { data } = await supabase.from("mannequin_agencies").insert(row).select("id").single();
+      agencyId = data?.id || null;
     }
+
+    // エリアリンク更新
+    if (agencyId) {
+      await supabase.from("agency_area_links").delete().eq("agency_id", agencyId);
+      if (selectedAgencyAreaIds.size > 0) {
+        await supabase.from("agency_area_links").insert(
+          Array.from(selectedAgencyAreaIds).map((areaId) => ({ agency_id: agencyId, area_id: areaId }))
+        );
+      }
+    }
+
     setSavingAgency(false);
     setAgencyDialogOpen(false);
     fetchData();
@@ -262,6 +282,11 @@ export default function AgenciesPage() {
 
   const getPeopleCountForAgency = (agencyId: string) =>
     people.filter((p) => p.agency_id === agencyId).length;
+
+  const getAreaNamesForAgency = (agencyId: string) => {
+    const ids = agencyAreaLinks.filter((l) => l.agency_id === agencyId).map((l) => l.area_id);
+    return areas.filter((a) => ids.includes(a.id)).map((a) => a.name);
+  };
 
   // マネキン追加
   const openCreate = () => {
@@ -426,6 +451,7 @@ export default function AgenciesPage() {
                       {a.phone && <span className="text-muted-foreground text-xs">{a.phone}</span>}
                       {a.url && <a href={a.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs">HP</a>}
                       <Badge variant="outline" className="text-[10px]">{count}名</Badge>
+                      {getAreaNamesForAgency(a.id).map((n) => <Badge key={n} variant="secondary" className="text-[10px]">{n}</Badge>)}
                     </div>
                     {canEdit && (
                       <div className="flex gap-1">
@@ -792,6 +818,29 @@ export default function AgenciesPage() {
             <div className="space-y-1">
               <Label className="text-xs">URL</Label>
               <Input value={agencyForm.url} onChange={(e) => setAgencyForm({ ...agencyForm, url: e.target.value })} placeholder="https://example.com" />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">対応エリア</Label>
+              {areas.length === 0 ? (
+                <p className="text-xs text-muted-foreground">エリアマスターに登録がありません</p>
+              ) : (
+                <div className="flex flex-wrap gap-1">
+                  {areas.map((a) => (
+                    <Badge
+                      key={a.id}
+                      variant={selectedAgencyAreaIds.has(a.id) ? "default" : "outline"}
+                      className="cursor-pointer text-xs"
+                      onClick={() => setSelectedAgencyAreaIds((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(a.id)) next.delete(a.id); else next.add(a.id);
+                        return next;
+                      })}
+                    >
+                      {a.name}
+                    </Badge>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="space-y-1">
               <Label className="text-xs">備考</Label>
