@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { Combobox, type ComboboxItem } from "@/components/ui/combobox";
 import { prefectures, eventStatuses } from "@/lib/prefectures";
+import { getAreaForPrefecture } from "@/lib/areas";
 import { X, Plus, Hotel, Train, UserCheck, Package, ArrowLeft } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
 import Link from "next/link";
@@ -174,24 +175,43 @@ export default function NewEventPage() {
   const currentVenueLabel = form.venue ? (form.store_name ? `${form.venue} ${form.store_name}` : form.venue) : "";
 
   // --- 百貨店Combobox項目 ---
+  //   地方（region）→エリア(area_id)順→50音 でソートし、地方ごとにグループ表示
   const venueItems: ComboboxItem[] = useMemo(() => {
-    const items = venueMasters.map((v) => {
+    const regionOrder = ["北海道", "東北", "関東", "北陸", "中部", "関西", "中国", "四国", "九州", "沖縄"];
+    const areaIdOrder = new Map(areaMasters.map((a, i) => [a.id, i] as const));
+    const getRegion = (v: VenueMaster): string => {
+      // area_master は id/name のみ取得中。prefecture → region で判定
+      return getAreaForPrefecture(v.prefecture || "") || "その他";
+    };
+    const sorted = [...venueMasters].sort((a, b) => {
+      // 地方順
+      const ra = getRegion(a);
+      const rb = getRegion(b);
+      const ri = regionOrder.indexOf(ra);
+      const rj = regionOrder.indexOf(rb);
+      const riSafe = ri < 0 ? 999 : ri;
+      const rjSafe = rj < 0 ? 999 : rj;
+      if (riSafe !== rjSafe) return riSafe - rjSafe;
+      // エリア順（area_master の sort_order）
+      const ai = a.area_id ? (areaIdOrder.get(a.area_id) ?? 9999) : 9999;
+      const bi = b.area_id ? (areaIdOrder.get(b.area_id) ?? 9999) : 9999;
+      if (ai !== bi) return ai - bi;
+      // 50音順
+      const read_a = a.reading || a.venue_name;
+      const read_b = b.reading || b.venue_name;
+      return read_a.localeCompare(read_b, "ja");
+    });
+    return sorted.map((v) => {
       const label = v.store_name ? `${v.venue_name} ${v.store_name}` : v.venue_name;
       return {
         value: `${v.id}`,
         label,
         reading: v.reading ?? "",
         sublabel: v.prefecture ?? "",
+        group: getRegion(v),
       } as ComboboxItem;
     });
-    // 50音（ふりがな）でソート
-    items.sort((a, b) => {
-      const ra = a.reading || a.label;
-      const rb = b.reading || b.label;
-      return ra.localeCompare(rb, "ja");
-    });
-    return items;
-  }, [venueMasters]);
+  }, [venueMasters, areaMasters]);
 
   // 百貨店選択時のハンドラ（Combobox value=id形式。id→マスター情報で自動入力）
   const handleVenueSelect = (id: string) => {
@@ -296,7 +316,7 @@ export default function NewEventPage() {
       const eventId = data.id;
 
       // 並列INSERT
-      const inserts: Promise<unknown>[] = [];
+      const inserts: PromiseLike<unknown>[] = [];
 
       if (staffEntries.length > 0) {
         inserts.push(supabase.from("event_staff").insert(
@@ -441,7 +461,7 @@ export default function NewEventPage() {
 
           <div className="space-y-2">
             <Label>最終日 閉場時間</Label>
-            <Select value={form.closing_time} onValueChange={(v) => setForm({ ...form, closing_time: v })}>
+            <Select value={form.closing_time} onValueChange={(v) => setForm({ ...form, closing_time: v ?? "" })}>
               <SelectTrigger><SelectValue placeholder="選択してください" /></SelectTrigger>
               <SelectContent>
                 {closingTimes.map((t) => (<SelectItem key={t} value={t}>{t}</SelectItem>))}
@@ -513,7 +533,7 @@ export default function NewEventPage() {
             </div>
             <div className="space-y-2">
               <Label>DMハガキ</Label>
-              <Select value={form.dm_status} onValueChange={(v) => setForm({ ...form, dm_status: v })}>
+              <Select value={form.dm_status} onValueChange={(v) => setForm({ ...form, dm_status: v ?? "" })}>
                 <SelectTrigger><SelectValue placeholder="なし" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">なし</SelectItem>
@@ -574,7 +594,7 @@ export default function NewEventPage() {
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">予約状態</Label>
-                  <Select value={h.reservation_status} onValueChange={(v) => updateHotel(i, "reservation_status", v)}>
+                  <Select value={h.reservation_status} onValueChange={(v) => updateHotel(i, "reservation_status", v ?? "")}>
                     <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="未予約">未予約</SelectItem>
@@ -607,7 +627,7 @@ export default function NewEventPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label className="text-xs">種別</Label>
-                  <Select value={t.transport_type} onValueChange={(v) => updateTransport(i, "transport_type", v)}>
+                  <Select value={t.transport_type} onValueChange={(v) => updateTransport(i, "transport_type", v ?? "")}>
                     <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {transportTypes.map((tp) => (<SelectItem key={tp} value={tp}>{tp}</SelectItem>))}
@@ -616,7 +636,7 @@ export default function NewEventPage() {
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">予約状態</Label>
-                  <Select value={t.reservation_status} onValueChange={(v) => updateTransport(i, "reservation_status", v)}>
+                  <Select value={t.reservation_status} onValueChange={(v) => updateTransport(i, "reservation_status", v ?? "")}>
                     <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="未予約">未予約</SelectItem>
@@ -689,7 +709,7 @@ export default function NewEventPage() {
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">手配状態</Label>
-                  <Select value={m.arrangement_status} onValueChange={(v) => updateMannequin(i, "arrangement_status", v)}>
+                  <Select value={m.arrangement_status} onValueChange={(v) => updateMannequin(i, "arrangement_status", v ?? "")}>
                     <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="未手配">未手配</SelectItem>
