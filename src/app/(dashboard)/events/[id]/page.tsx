@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { use } from "react";
@@ -29,7 +29,7 @@ import {
 import { Trash2, ArrowLeft, X, Building2, Save, Check } from "lucide-react";
 import Link from "next/link";
 import { prefectures, eventStatuses } from "@/lib/prefectures";
-import { ArrangementEditor } from "@/components/arrangements/ArrangementEditor";
+import { ArrangementEditor, type ArrangementEditorHandle } from "@/components/arrangements/ArrangementEditor";
 import { StaffTab } from "@/components/arrangements/StaffTab";
 import { usePermission } from "@/hooks/usePermission";
 
@@ -72,6 +72,7 @@ export default function EventDetailPage({
   const [loading, setLoading] = useState(true);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const arrangementRef = useRef<ArrangementEditorHandle>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   const [originalStaffRecords, setOriginalStaffRecords] = useState<{ id: string; employee_id: string }[]>([]);
@@ -212,6 +213,9 @@ export default function EventDetailPage({
       );
     }
 
+    // 手配状況（出店申込書・ホテル・交通・マネキン・DM・備品）も一緒に保存
+    await arrangementRef.current?.save();
+
     await fetchEvent();
     setSaveState("saved");
     setTimeout(() => setSaveState("idle"), 2500);
@@ -232,7 +236,7 @@ export default function EventDetailPage({
         ) : isSaved ? (
           <><Check className="h-4 w-4 mr-1" />保存しました</>
         ) : (
-          <><Save className="h-4 w-4 mr-1" />基本情報を保存</>
+          <><Save className="h-4 w-4 mr-1" />このページを保存</>
         )}
       </Button>
     );
@@ -371,7 +375,7 @@ export default function EventDetailPage({
       </Card>
 
       {/* 手配状況 */}
-      <ArrangementEditor eventId={id} venue={event?.venue || ""} storeName={event?.store_name || null} startDate={event.start_date} endDate={event.end_date} />
+      <ArrangementEditor ref={arrangementRef} eventId={id} venue={event?.venue || ""} storeName={event?.store_name || null} startDate={event.start_date} endDate={event.end_date} />
 
       {/* 社員配置 */}
       <StaffTab eventId={id} startDate={event.start_date} endDate={event.end_date} />

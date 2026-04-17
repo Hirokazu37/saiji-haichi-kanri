@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { useEffect, useState, useCallback, useMemo, forwardRef, useImperativeHandle } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose,
-} from "@/components/ui/dialog";
-import { Save, FileText, Hotel, Train, Mail, UserCheck, Package, Trash2 } from "lucide-react";
+import { FileText, Hotel, Train, Mail, UserCheck, Package, Trash2 } from "lucide-react";
+
+export type ArrangementEditorHandle = {
+  save: () => Promise<void>;
+  isDirty: () => boolean;
+};
 
 type StaffRow = {
   id: string;
@@ -42,7 +44,8 @@ type MannequinRow = {
 
 type VenueOption = string;
 
-export function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }: { eventId: string; venue: string; storeName: string | null; startDate: string; endDate: string }) {
+export const ArrangementEditor = forwardRef<ArrangementEditorHandle, { eventId: string; venue: string; storeName: string | null; startDate: string; endDate: string }>(
+function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, ref) {
   const supabase = createClient();
   const [staff, setStaff] = useState<StaffRow[]>([]);
   const [shipments, setShipments] = useState<ShipmentRow[]>([]);
@@ -56,11 +59,7 @@ export function ArrangementEditor({ eventId, venue, storeName, startDate, endDat
   const [appMethod, setAppMethod] = useState<string>("");
   const [dmStatus, setDmStatus] = useState<string | null>(null);
   const [dmCount, setDmCount] = useState<string>("");
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [dirty, setDirty] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const pendingAction = useRef<(() => void) | null>(null);
   const [hotelMasters, setHotelMasters] = useState<{ id: string; name: string }[]>([]);
   const [hotelVenueLinks, setHotelVenueLinks] = useState<{ hotel_id: string; venue_name: string }[]>([]);
 
@@ -112,7 +111,7 @@ export function ArrangementEditor({ eventId, venue, storeName, startDate, endDat
     return () => window.removeEventListener("beforeunload", handler);
   }, [dirty]);
 
-  const markDirty = () => { setDirty(true); setSaved(false); };
+  const markDirty = () => { setDirty(true); };
 
   const hotelCandidates = useMemo(() => {
     const venueLabel = storeName ? `${venue} ${storeName}` : venue;
@@ -140,8 +139,6 @@ export function ArrangementEditor({ eventId, venue, storeName, startDate, endDat
   };
 
   const handleSave = async () => {
-    setSaving(true);
-
     await supabase.from("events").update({ application_status: appStatus, application_submitted_date: appSubmittedDate || null, application_method: appMethod || null, dm_status: dmStatus, dm_count: dmCount ? parseInt(dmCount) : null, equipment_from: equipmentFrom, equipment_to: equipmentTo }).eq("id", eventId);
 
     for (const s of staff) {
@@ -175,11 +172,14 @@ export function ArrangementEditor({ eventId, venue, storeName, startDate, endDat
       );
     }
 
-    setSaving(false);
-    setSaved(true);
     setDirty(false);
     fetchData();
   };
+
+  useImperativeHandle(ref, () => ({
+    save: handleSave,
+    isDirty: () => dirty,
+  }));
 
   const venueLabel = storeName ? `${venue} ${storeName}` : venue;
   const destinations = [
@@ -190,14 +190,6 @@ export function ArrangementEditor({ eventId, venue, storeName, startDate, endDat
 
   return (
     <div className="max-w-3xl mx-auto space-y-4">
-      {/* 保存ボタン */}
-      <div className="flex items-center justify-end gap-2">
-        {dirty && <span className="text-xs text-orange-600 font-medium">未保存の変更があります</span>}
-        <Button size="sm" onClick={handleSave} disabled={saving} variant={dirty ? "default" : "outline"}>
-          <Save className="h-3 w-3 mr-1" />{saving ? "保存中..." : saved ? "保存済み ✓" : "保存する"}
-        </Button>
-      </div>
-
       {/* 出店申込書 */}
       <Card className="border-l-4 border-l-green-500 bg-green-50/50">
         <CardContent className="pt-4 pb-4">
@@ -486,27 +478,6 @@ export function ArrangementEditor({ eventId, venue, storeName, startDate, endDat
         </CardContent>
       </Card>
 
-      {/* 未保存確認ダイアログ */}
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>保存していない変更があります</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">保存しますか？</p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setConfirmOpen(false);
-              setDirty(false);
-              if (pendingAction.current) { pendingAction.current(); pendingAction.current = null; }
-            }}>保存しない</Button>
-            <Button onClick={async () => {
-              await handleSave();
-              setConfirmOpen(false);
-              if (pendingAction.current) { pendingAction.current(); pendingAction.current = null; }
-            }}>保存する</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
-}
+});
