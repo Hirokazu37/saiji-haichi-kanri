@@ -86,14 +86,22 @@ const trackBarColors = [
 
 const TRACK_LABELS = ["A", "B", "C", "D", "E", "F", "G", "H"];
 
+/** ローカル日付を YYYY-MM-DD に（タイムゾーンずれ回避） */
+function fmtLocalYmd(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+}
+
 /** 指定週内の催事をレーンに割り当てる（日曜始まり） */
 function assignWeekLanes(
   evts: Event[],
   weekStart: Date,
   weekEnd: Date
 ): { event: Event; laneIdx: number; startDay: number; endDay: number }[] {
-  const ws = weekStart.toISOString().slice(0, 10);
-  const we = weekEnd.toISOString().slice(0, 10);
+  const ws = fmtLocalYmd(weekStart);
+  const we = fmtLocalYmd(weekEnd);
   const weekEvents = evts
     .filter((e) => e.start_date <= we && e.end_date >= ws)
     .sort((a, b) => a.start_date.localeCompare(b.start_date));
@@ -319,7 +327,7 @@ export default function EventsPage() {
 
   useEffect(() => { fetchEvents(); }, [fetchEvents]);
 
-  const todayIsoStr = new Date().toISOString().slice(0, 10);
+  const todayIsoStr = fmtLocalYmd(new Date());
   const filtered = events.filter((e) => {
     if (!showPast && e.end_date < todayIsoStr) return false;
     if (filterStatus !== "all" && e.status !== filterStatus) return false;
