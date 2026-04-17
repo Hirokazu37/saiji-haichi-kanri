@@ -477,7 +477,7 @@ export default function EventsPage() {
                                       <TooltipTrigger
                                         render={
                                           <div
-                                            className={`absolute top-0.5 rounded border text-[11px] leading-snug px-1 overflow-hidden hover:opacity-80 transition-opacity z-[1] cursor-pointer ${barColor}`}
+                                            className={`absolute top-0.5 rounded border text-[11px] leading-snug px-1 py-0.5 overflow-hidden hover:opacity-80 transition-opacity z-[1] cursor-pointer ${barColor}`}
                                             style={{
                                               left: `${left}%`,
                                               width: `${width}%`,
@@ -485,16 +485,14 @@ export default function EventsPage() {
                                             }}
                                             onClick={() => openDialog(evt)}
                                           >
-                                            <div className="flex items-center gap-1 whitespace-nowrap">
-                                              <span className="truncate font-medium">{label}</span>
-                                              <span className="flex gap-0.5 ml-auto shrink-0">
-                                                {icons.map((ic) => (
-                                                  <span key={ic.label} className={`inline-block text-[11px] leading-none px-1 py-0.5 rounded font-bold ${ic.label === "申込" ? "cursor-pointer hover:opacity-70" : ""} ${ic.na ? "bg-gray-200 text-gray-500" : ic.ok ? "bg-green-600 text-white" : "bg-red-500 text-white"}`}
-                                                    onMouseDown={ic.label === "申込" ? (e) => e.stopPropagation() : undefined}
-                                                    onClick={ic.label === "申込" ? (e) => toggleApplicationStatus(e, evt.id, evt.application_status) : undefined}
-                                                  >{ic.label}{ic.na ? "" : ic.ok ? "✓" : "✗"}</span>
-                                                ))}
-                                              </span>
+                                            <div className="truncate font-semibold leading-tight text-[12px] mb-0.5">{label}</div>
+                                            <div className="flex gap-0.5 flex-wrap">
+                                              {icons.map((ic) => (
+                                                <span key={ic.label} className={`inline-block text-[11px] leading-none px-1 py-0.5 rounded font-bold ${ic.label === "申込" ? "cursor-pointer hover:opacity-70" : ""} ${ic.na ? "bg-gray-200 text-gray-500" : ic.ok ? "bg-green-600 text-white" : "bg-red-500 text-white"}`}
+                                                  onMouseDown={ic.label === "申込" ? (e) => e.stopPropagation() : undefined}
+                                                  onClick={ic.label === "申込" ? (e) => toggleApplicationStatus(e, evt.id, evt.application_status) : undefined}
+                                                >{ic.label}{ic.na ? "" : ic.ok ? "✓" : "✗"}</span>
+                                              ))}
                                             </div>
                                             {(arr.equipmentFrom || arr.equipmentTo) && (
                                               <div className="truncate text-[10px] text-black/70 mt-0.5">
