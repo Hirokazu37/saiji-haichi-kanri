@@ -72,21 +72,32 @@ const statusColor: Record<string, string> = {
 const DEADLINE_DAYS_BEFORE = 60; // 2ヶ月前
 const DEADLINE_WARN_WINDOW = 14; // 締切まで14日以内で警告
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
+const fmtLocalYmd = (d: Date) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+};
+
+const parseLocalYmd = (s: string): Date => {
+  const [y, m, d] = s.split("-").map(Number);
+  return new Date(y, m - 1, d);
+};
+const todayStr = () => fmtLocalYmd(new Date());
 const addDays = (dateStr: string, days: number) => {
-  const d = new Date(dateStr);
+  const d = parseLocalYmd(dateStr);
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return fmtLocalYmd(d);
 };
 const diffDays = (fromStr: string, toStr: string) => {
-  const ms = new Date(toStr).getTime() - new Date(fromStr).getTime();
+  const ms = parseLocalYmd(toStr).getTime() - parseLocalYmd(fromStr).getTime();
   return Math.round(ms / 86400000);
 };
 const fmtDateShort = (s: string) => {
-  const d = new Date(s);
+  const d = parseLocalYmd(s);
   return `${d.getMonth() + 1}/${d.getDate()}`;
 };
-const fmtWeekday = (s: string) => ["日","月","火","水","木","金","土"][new Date(s).getDay()];
+const fmtWeekday = (s: string) => ["日","月","火","水","木","金","土"][parseLocalYmd(s).getDay()];
 
 const venueLabel = (e: { venue: string; store_name: string | null }) =>
   e.store_name ? `${e.venue} ${e.store_name}` : e.venue;
@@ -245,12 +256,14 @@ export default function DashboardPage() {
   const eventsByDate = useMemo(() => {
     const map = new Map<string, Event[]>();
     for (const e of monthEvents) {
-      const start = new Date(e.start_date);
-      const end = new Date(e.end_date);
+      const [ys, ms, ds] = e.start_date.split("-").map(Number);
+      const [ye, me, de] = e.end_date.split("-").map(Number);
+      const start = new Date(ys, ms - 1, ds);
+      const end = new Date(ye, me - 1, de);
       const cur = new Date(start);
       while (cur <= end) {
         if (cur.getFullYear() === calYear && cur.getMonth() + 1 === calMonth) {
-          const key = cur.toISOString().slice(0, 10);
+          const key = fmtLocalYmd(cur);
           if (!map.has(key)) map.set(key, []);
           map.get(key)!.push(e);
         }
@@ -271,7 +284,7 @@ export default function DashboardPage() {
 
   if (loading) return <p className="text-muted-foreground p-4">読み込み中...</p>;
 
-  const todayDate = new Date(today);
+  const todayDate = parseLocalYmd(today);
   const todayFmt = `${todayDate.getFullYear()}年${todayDate.getMonth() + 1}月${todayDate.getDate()}日（${nowWeekday}）`;
 
   return (
@@ -538,7 +551,7 @@ export default function DashboardPage() {
             ))}
             {calendarCells.map((cell, idx) => {
               if (!cell.date) return <div key={idx} />;
-              const dateStr = cell.date.toISOString().slice(0, 10);
+              const dateStr = fmtLocalYmd(cell.date);
               const dayEvents = eventsByDate.get(dateStr) || [];
               const isToday = dateStr === today;
               const isHoliday = holidays.has(dateStr);
