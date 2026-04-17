@@ -16,7 +16,7 @@ import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { Combobox, type ComboboxItem } from "@/components/ui/combobox";
 import { prefectures, eventStatuses } from "@/lib/prefectures";
 import { getAreaForPrefecture } from "@/lib/areas";
-import { X, Plus, Hotel, Train, UserCheck, Package, ArrowLeft } from "lucide-react";
+import { X, Plus, Hotel, Train, UserCheck, Package, ArrowLeft, Building2, FileText, Save } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
 import Link from "next/link";
 
@@ -490,9 +490,36 @@ function NewEventPageInner() {
     );
   }
 
+  const SaveButton = ({ className = "", size = "lg" }: { className?: string; size?: "lg" | "default" }) => (
+    <Button
+      onClick={handleSave}
+      disabled={!isValid || saving}
+      size={size}
+      className={`min-w-[160px] font-bold shadow-md text-white bg-red-600 hover:bg-red-700 ${className}`}
+    >
+      {saving ? <>保存中...</> : <><Save className="h-4 w-4 mr-1" />催事を作成する</>}
+    </Button>
+  );
+
   return (
-    <div className="max-w-2xl mx-auto space-y-4 md:space-y-6">
-      <h1 className="text-xl md:text-2xl font-bold">催事 新規作成</h1>
+    <div className="space-y-6 max-w-3xl mx-auto">
+      {/* ヘッダー */}
+      <div className="flex items-start justify-between flex-wrap gap-2">
+        <div className="space-y-1">
+          <Link
+            href="/events"
+            className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+          >
+            <ArrowLeft className="h-3 w-3" />
+            催事一覧に戻る
+          </Link>
+          <h1 className="text-2xl font-bold">催事 新規作成</h1>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button variant="outline" size="sm" onClick={() => router.push("/events")}>キャンセル</Button>
+          <SaveButton />
+        </div>
+      </div>
 
       {duplicatedFrom && (
         <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm">
@@ -503,9 +530,13 @@ function NewEventPageInner() {
       )}
 
       {/* ===== 基本情報 ===== */}
-      <Card>
-        <CardHeader><CardTitle>基本情報</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
+      <Card className="border-l-4 border-l-slate-500 bg-slate-50/50">
+        <CardContent className="pt-4 pb-4 space-y-4">
+          <div className="flex items-center gap-2">
+            <Building2 className="h-4 w-4 text-slate-600" />
+            <span className="text-sm font-bold text-slate-800">基本情報</span>
+          </div>
+
           <div className="space-y-2">
             <Label>百貨店 *</Label>
             <Combobox
@@ -518,44 +549,46 @@ function NewEventPageInner() {
             />
           </div>
 
-          <div className="space-y-2">
-            <Label>催事名</Label>
-            <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="元祖有名駅弁と全国うまいもの大会" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>催事名</Label>
+              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="元祖有名駅弁と全国うまいもの大会" />
+            </div>
+            <div className="space-y-2">
+              <Label>開催地 *</Label>
+              <Select value={form.prefecture} onValueChange={(v) => v && setForm({ ...form, prefecture: v })}>
+                <SelectTrigger><SelectValue placeholder="都道府県を選択" /></SelectTrigger>
+                <SelectContent>
+                  {prefectures.map((p) => (<SelectItem key={p} value={p}>{p}</SelectItem>))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
-          <div className="space-y-2">
-            <Label>開催地 *</Label>
-            <Select value={form.prefecture} onValueChange={(v) => v && setForm({ ...form, prefecture: v })}>
-              <SelectTrigger><SelectValue placeholder="都道府県を選択" /></SelectTrigger>
-              <SelectContent>
-                {prefectures.map((p) => (<SelectItem key={p} value={p}>{p}</SelectItem>))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label>開催期間 *</Label>
-            <DateRangePicker
-              startDate={form.start_date}
-              endDate={form.end_date}
-              onChange={(start, end) => setForm((prev) => ({ ...prev, start_date: start, end_date: end }))}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label>最終日 閉場時間</Label>
-            <Select value={form.closing_time} onValueChange={(v) => setForm({ ...form, closing_time: v ?? "" })}>
-              <SelectTrigger><SelectValue placeholder="選択してください" /></SelectTrigger>
-              <SelectContent>
-                {closingTimes.map((t) => (<SelectItem key={t} value={t}>{t}</SelectItem>))}
-              </SelectContent>
-            </Select>
+          <div className="grid grid-cols-1 md:grid-cols-[2fr_1fr] gap-4">
+            <div className="space-y-2">
+              <Label>開催期間 *</Label>
+              <DateRangePicker
+                startDate={form.start_date}
+                endDate={form.end_date}
+                onChange={(start, end) => setForm((prev) => ({ ...prev, start_date: start, end_date: end }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>最終日 閉場時間</Label>
+              <Select value={form.closing_time} onValueChange={(v) => setForm({ ...form, closing_time: v ?? "" })}>
+                <SelectTrigger><SelectValue placeholder="選択" /></SelectTrigger>
+                <SelectContent>
+                  {closingTimes.map((t) => (<SelectItem key={t} value={t}>{t}</SelectItem>))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           {/* 担当者 */}
-          <div className="space-y-3">
+          <div className="space-y-2">
             <Label>担当者</Label>
-            <Input value={buildPersonInCharge()} readOnly placeholder="下の社員名をタップして追加" className="bg-muted/50" />
+            <Input value={buildPersonInCharge()} readOnly placeholder="下の社員名をタップして追加" className="bg-white" />
             <div className="flex flex-wrap gap-2">
               {employees.map((emp) => {
                 const hasEntry = staffEntries.some((e) => e.employee_id === emp.id);
@@ -568,7 +601,7 @@ function NewEventPageInner() {
             </div>
 
             {staffEntries.length > 0 && (
-              <div className="space-y-2 rounded-md border p-3">
+              <div className="space-y-2 rounded-md border bg-white p-3">
                 <p className="text-xs text-muted-foreground font-medium">担当期間を設定（同じ人を複数期間で追加可能）</p>
                 {staffEntries.map((entry, i) => {
                   const emp = employees.find((e) => e.id === entry.employee_id);
@@ -594,7 +627,7 @@ function NewEventPageInner() {
             <Input value={form.person_in_charge} onChange={(e) => setForm({ ...form, person_in_charge: e.target.value })} placeholder="その他（社員マスターにない人がいれば入力）" />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>ステータス</Label>
               <Select value={form.status} onValueChange={(v) => v && setForm({ ...form, status: v })}>
@@ -605,7 +638,23 @@ function NewEventPageInner() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>出店申込書</Label>
+              <Label>備考</Label>
+              <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} placeholder="特記事項があれば" />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ===== 出店申込書 ===== */}
+      <Card className="border-l-4 border-l-green-500 bg-green-50/50">
+        <CardContent className="pt-4 pb-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <FileText className="h-4 w-4 text-green-600" />
+            <span className="text-sm font-bold text-green-800">出店申込書</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs">提出状態</Label>
               <Select value={form.application_status} onValueChange={(v) => v && setForm({ ...form, application_status: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -614,8 +663,8 @@ function NewEventPageInner() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label>DMハガキ</Label>
+            <div className="space-y-1">
+              <Label className="text-xs">DMハガキ</Label>
               <Select value={form.dm_status} onValueChange={(v) => setForm({ ...form, dm_status: v ?? "" })}>
                 <SelectTrigger><SelectValue placeholder="なし" /></SelectTrigger>
                 <SelectContent>
@@ -627,26 +676,21 @@ function NewEventPageInner() {
               </Select>
             </div>
           </div>
-
-          <div className="space-y-2">
-            <Label>備考</Label>
-            <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="特記事項があれば" />
-          </div>
         </CardContent>
       </Card>
 
       {/* ===== ホテル手配 ===== */}
-      <Card>
-        <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Hotel className="h-4 w-4" />ホテル手配
+      <Card className="border-l-4 border-l-blue-500 bg-blue-50/50">
+        <CardHeader className="flex-row items-center justify-between space-y-0 pt-4 pb-2 px-6">
+          <CardTitle className="flex items-center gap-2 text-sm font-bold text-blue-800">
+            <Hotel className="h-4 w-4 text-blue-600" />ホテル手配
           </CardTitle>
-          <Button variant="outline" size="sm" onClick={addHotel}><Plus className="h-3 w-3 mr-1" />追加</Button>
+          <Button variant="outline" size="sm" onClick={addHotel} className="bg-white"><Plus className="h-3 w-3 mr-1" />追加</Button>
         </CardHeader>
         <CardContent className="space-y-3">
           {hotelEntries.length === 0 && <p className="text-sm text-muted-foreground">未登録（後から催事詳細ページで追加も可能です）</p>}
           {hotelEntries.map((h, i) => (
-            <div key={i} className="space-y-2 rounded-md border p-3 relative">
+            <div key={i} className="space-y-2 rounded-md border bg-white p-3 relative">
               <Button variant="ghost" size="icon" className="h-6 w-6 absolute top-2 right-2" onClick={() => removeHotel(i)}>
                 <X className="h-3 w-3 text-destructive" />
               </Button>
@@ -693,17 +737,17 @@ function NewEventPageInner() {
       </Card>
 
       {/* ===== 交通手配 ===== */}
-      <Card>
-        <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Train className="h-4 w-4" />交通手配
+      <Card className="border-l-4 border-l-orange-500 bg-orange-50/50">
+        <CardHeader className="flex-row items-center justify-between space-y-0 pt-4 pb-2 px-6">
+          <CardTitle className="flex items-center gap-2 text-sm font-bold text-orange-800">
+            <Train className="h-4 w-4 text-orange-600" />交通手配
           </CardTitle>
-          <Button variant="outline" size="sm" onClick={addTransport}><Plus className="h-3 w-3 mr-1" />追加</Button>
+          <Button variant="outline" size="sm" onClick={addTransport} className="bg-white"><Plus className="h-3 w-3 mr-1" />追加</Button>
         </CardHeader>
         <CardContent className="space-y-3">
           {transportEntries.length === 0 && <p className="text-sm text-muted-foreground">未登録（後から催事詳細ページで追加も可能です）</p>}
           {transportEntries.map((t, i) => (
-            <div key={i} className="space-y-2 rounded-md border p-3 relative">
+            <div key={i} className="space-y-2 rounded-md border bg-white p-3 relative">
               <Button variant="ghost" size="icon" className="h-6 w-6 absolute top-2 right-2" onClick={() => removeTransport(i)}>
                 <X className="h-3 w-3 text-destructive" />
               </Button>
@@ -746,17 +790,17 @@ function NewEventPageInner() {
       </Card>
 
       {/* ===== マネキン手配 ===== */}
-      <Card>
-        <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <UserCheck className="h-4 w-4" />マネキン手配
+      <Card className="border-l-4 border-l-pink-500 bg-pink-50/50">
+        <CardHeader className="flex-row items-center justify-between space-y-0 pt-4 pb-2 px-6">
+          <CardTitle className="flex items-center gap-2 text-sm font-bold text-pink-800">
+            <UserCheck className="h-4 w-4 text-pink-600" />マネキン手配
           </CardTitle>
-          <Button variant="outline" size="sm" onClick={addMannequin}><Plus className="h-3 w-3 mr-1" />追加</Button>
+          <Button variant="outline" size="sm" onClick={addMannequin} className="bg-white"><Plus className="h-3 w-3 mr-1" />追加</Button>
         </CardHeader>
         <CardContent className="space-y-3">
           {mannequinEntries.length === 0 && <p className="text-sm text-muted-foreground">未登録（後から催事詳細ページで追加も可能です）</p>}
           {mannequinEntries.map((m, i) => (
-            <div key={i} className="space-y-2 rounded-md border p-3 relative">
+            <div key={i} className="space-y-2 rounded-md border bg-white p-3 relative">
               <Button variant="ghost" size="icon" className="h-6 w-6 absolute top-2 right-2" onClick={() => removeMannequin(i)}>
                 <X className="h-3 w-3 text-destructive" />
               </Button>
@@ -807,10 +851,10 @@ function NewEventPageInner() {
       </Card>
 
       {/* ===== 備品の流れ ===== */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Package className="h-4 w-4" />備品の流れ
+      <Card className="border-l-4 border-l-amber-500 bg-amber-50/50">
+        <CardHeader className="pt-4 pb-2 px-6">
+          <CardTitle className="flex items-center gap-2 text-sm font-bold text-amber-800">
+            <Package className="h-4 w-4 text-amber-600" />備品の流れ
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -872,12 +916,10 @@ function NewEventPageInner() {
         </CardContent>
       </Card>
 
-      {/* ===== アクション ===== */}
-      <div className="flex gap-3">
+      {/* ===== ページ最下部の保存ボタン ===== */}
+      <div className="flex justify-center pt-4 pb-8 border-t gap-3">
         <Button variant="outline" onClick={() => router.push("/events")}>キャンセル</Button>
-        <Button onClick={handleSave} disabled={!isValid || saving}>
-          {saving ? "保存中..." : "作成する"}
-        </Button>
+        <SaveButton className="min-w-[240px] text-base" />
       </div>
     </div>
   );
