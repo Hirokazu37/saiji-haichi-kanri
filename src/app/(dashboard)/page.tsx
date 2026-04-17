@@ -106,13 +106,15 @@ export default function DashboardPage() {
   const supabase = createClient();
   const { canEdit } = usePermission();
   const [loading, setLoading] = useState(true);
-  // SSR時にサーバー(UTC)とクライアント(JST)で日付がズレるため、クライアント側で初期化する
+  // SSR時にサーバー(UTC)とクライアント(JST)で日付がズレるため、クライアントマウント後に初期化する
+  const [mounted, setMounted] = useState(false);
   const [today, setToday] = useState<string>("");
   const [nowWeekday, setNowWeekday] = useState<string>("");
   useEffect(() => {
     const d = new Date();
     setToday(fmtLocalYmd(d));
     setNowWeekday(["日","月","火","水","木","金","土"][d.getDay()]);
+    setMounted(true);
   }, []);
   const [counts, setCounts] = useState({ thisMonth: 0, preparing: 0, active: 0 });
   const [monthEvents, setMonthEvents] = useState<Event[]>([]);
@@ -289,7 +291,7 @@ export default function DashboardPage() {
     else setCalMonth(calMonth + 1);
   };
 
-  if (loading) return <p className="text-muted-foreground p-4">読み込み中...</p>;
+  if (!mounted || loading) return <p className="text-muted-foreground p-4">読み込み中...</p>;
 
   const todayDate = parseLocalYmd(today);
   const todayFmt = `${todayDate.getFullYear()}年${todayDate.getMonth() + 1}月${todayDate.getDate()}日（${nowWeekday}）`;
