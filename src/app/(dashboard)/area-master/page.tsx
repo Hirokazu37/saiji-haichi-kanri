@@ -32,7 +32,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { areaMap, areaNames, getAreaForPrefecture } from "@/lib/areas";
+import { areaMap, areaNames, getAreaForPrefecture, regionColors } from "@/lib/areas";
 import { prefectures } from "@/lib/prefectures";
 import { usePermission } from "@/hooks/usePermission";
 
@@ -46,12 +46,6 @@ type Area = {
 };
 
 const emptyForm = { name: "", region: "", prefecture: "", color: "" };
-
-const regionColors: Record<string, string> = {
-  "北海道": "#EF4444", "東北": "#8B5CF6", "関東": "#F97316", "北陸": "#06B6D4",
-  "中部": "#10B981", "関西": "#F59E0B", "中国": "#EC4899", "四国": "#3B82F6",
-  "九州": "#14B8A6", "沖縄": "#6366F1",
-};
 
 function SortableRow({
   area,
@@ -275,7 +269,7 @@ export default function AreaMasterPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>地方</Label>
-                <Select value={form.region} onValueChange={(v) => setForm({ ...form, region: v, prefecture: "", color: form.color || regionColors[v] || "" })}>
+                <Select value={form.region} onValueChange={(v) => { const r = v ?? ""; setForm({ ...form, region: r, prefecture: "", color: form.color || regionColors[r] || "" }); }}>
                   <SelectTrigger><SelectValue placeholder="地方選択" /></SelectTrigger>
                   <SelectContent>
                     {areaNames.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
@@ -284,7 +278,7 @@ export default function AreaMasterPage() {
               </div>
               <div className="space-y-2">
                 <Label>都道府県</Label>
-                <Select value={form.prefecture} onValueChange={handlePrefectureChange}>
+                <Select value={form.prefecture} onValueChange={(v) => handlePrefectureChange(v ?? "")}>
                   <SelectTrigger><SelectValue placeholder="都道府県選択" /></SelectTrigger>
                   <SelectContent>
                     {filteredPrefectures.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}

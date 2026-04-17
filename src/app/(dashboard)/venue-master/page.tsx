@@ -20,7 +20,7 @@ import {
 import { Plus, Pencil, Trash2, Search, X, Store, PlusCircle } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { prefectures } from "@/lib/prefectures";
-import { getAreaForPrefecture } from "@/lib/areas";
+import { getAreaForPrefecture, getRegionColor } from "@/lib/areas";
 import { usePermission } from "@/hooks/usePermission";
 
 type VenueMaster = {
@@ -40,7 +40,7 @@ type VenueMaster = {
   area_id: string | null;
 };
 
-type AreaItem = { id: string; name: string; region: string | null; prefecture: string | null };
+type AreaItem = { id: string; name: string; region: string | null; prefecture: string | null; color: string | null };
 type HotelMasterItem = { id: string; name: string; area_id: string | null };
 type HotelVenueLink = { id: string; hotel_id: string; venue_name: string };
 type MannequinPerson = { id: string; name: string; agency_name: string | null };
@@ -98,7 +98,7 @@ export default function VenueMasterPage() {
   const fetchData = useCallback(async () => {
     const [venueRes, areaRes, hmRes, hlRes, mpRes, mlRes] = await Promise.all([
       supabase.from("venue_master").select("*").order("venue_name"),
-      supabase.from("area_master").select("id, name, region, prefecture").order("sort_order"),
+      supabase.from("area_master").select("id, name, region, prefecture, color").order("sort_order"),
       supabase.from("hotel_master").select("id, name, area_id").eq("is_active", true).order("name"),
       supabase.from("hotel_venue_links").select("*"),
       supabase.from("mannequin_people").select("id, name, mannequin_agencies(name)").order("name"),
@@ -119,6 +119,24 @@ export default function VenueMasterPage() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const getVenueLabel = (v: VenueMaster) => v.store_name ? `${v.venue_name} ${v.store_name}` : v.venue_name;
+
+  // 百貨店の表示色: エリアマスタの色 > 都道府県→地方色
+  const getVenueColor = (v: VenueMaster): string => {
+    const area = areas.find((a) => a.id === v.area_id);
+    if (area?.color) return area.color;
+    return getRegionColor(v.prefecture);
+  };
+  // エリア名から色を引く（グループ見出し用）
+  const getAreaColor = (areaName: string): string => {
+    const area = areas.find((a) => a.name === areaName);
+    if (area?.color) return area.color;
+    if (area?.region) {
+      // area-master定義の地方から色を直接引く
+      const regionPref = areas.find((a) => a.name === areaName)?.prefecture;
+      if (regionPref) return getRegionColor(regionPref);
+    }
+    return "#CBD5E1";
+  };
 
   const getHotelsForVenue = (v: VenueMaster) => {
     const label = getVenueLabel(v);
@@ -399,8 +417,8 @@ export default function VenueMasterPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-1" />
                 <TableHead>百貨店名</TableHead>
-                <TableHead>店舗名</TableHead>
                 <TableHead className="hidden md:table-cell">都道府県</TableHead>
                 <TableHead className="hidden lg:table-cell">産直くん①</TableHead>
                 <TableHead className="hidden lg:table-cell">産直くん②</TableHead>
@@ -411,20 +429,27 @@ export default function VenueMasterPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {Array.from(grouped.entries()).map(([areaName, venueList]) => (
+              {Array.from(grouped.entries()).map(([areaName, venueList]) => {
+                const areaColor = getAreaColor(areaName);
+                return (
                 <Fragment key={areaName}>
-                  <TableRow className="bg-muted/60 hover:bg-muted/60">
-                    <TableCell colSpan={canEdit ? 9 : 8} className="py-1.5 font-semibold text-xs text-muted-foreground">
+                  <TableRow className="hover:bg-muted/60" style={{ backgroundColor: `${areaColor}22` }}>
+                    <TableCell className="p-0" style={{ backgroundColor: areaColor, width: 6 }} />
+                    <TableCell colSpan={canEdit ? 8 : 7} className="py-1.5 font-semibold text-xs">
+                      <span className="inline-block w-3 h-3 rounded align-middle mr-2" style={{ backgroundColor: areaColor }} />
                       {areaName}（{venueList.length}件）
                     </TableCell>
                   </TableRow>
                   {venueList.map((v) => {
                 const hotels = getHotelsForVenue(v);
                 const mannequins = getMannequinsForVenue(v);
+                const venueColor = getVenueColor(v);
                 return (
                   <TableRow key={v.id} className={!v.is_active ? "opacity-50" : ""}>
-                    <TableCell className="font-medium">{v.venue_name}</TableCell>
-                    <TableCell className="text-sm">{v.store_name || "—"}</TableCell>
+                    <TableCell className="p-0" style={{ backgroundColor: venueColor, width: 6 }} />
+                    <TableCell>
+                      <div className="font-medium">{v.venue_name}{v.store_name ? <span className="text-muted-foreground font-normal ml-1">{v.store_name}</span> : null}</div>
+                    </TableCell>
                     <TableCell className="text-sm hidden md:table-cell">{v.prefecture || "—"}</TableCell>
                     <TableCell className="text-sm hidden lg:table-cell">
                       {v.sanchoku_code_1 ? <span>{v.sanchoku_code_1}{v.sanchoku_memo_1 ? <span className="text-muted-foreground text-xs ml-1">({v.sanchoku_memo_1})</span> : ""}</span> : "—"}
@@ -462,7 +487,8 @@ export default function VenueMasterPage() {
                 );
               })}
                 </Fragment>
-              ))}
+                );
+              })}
               {filtered.length === 0 && (
                 <TableRow><TableCell colSpan={canEdit ? 9 : 8} className="text-center text-muted-foreground py-8">百貨店が登録されていません</TableCell></TableRow>
               )}
@@ -498,7 +524,7 @@ export default function VenueMasterPage() {
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">都道府県</Label>
-                <Select value={form.prefecture} onValueChange={(v) => setForm({ ...form, prefecture: v })}>
+                <Select value={form.prefecture} onValueChange={(v) => setForm({ ...form, prefecture: v ?? "" })}>
                   <SelectTrigger><SelectValue placeholder="選択" /></SelectTrigger>
                   <SelectContent>
                     {prefectures.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
@@ -516,7 +542,7 @@ export default function VenueMasterPage() {
                   </div>
                   {!showNewArea ? (
                     <div className="flex gap-2">
-                    <Select value={form.area_id} onValueChange={(v) => { setForm({ ...form, area_id: v }); setSelectedHotelIds(new Set()); }}>
+                    <Select value={form.area_id} onValueChange={(v) => { setForm({ ...form, area_id: v ?? "" }); setSelectedHotelIds(new Set()); }}>
                       <SelectTrigger className="flex-1"><SelectValue placeholder="エリア選択">{form.area_id ? (() => { const a = areas.find((x) => x.id === form.area_id); return a ? (a.prefecture ? `${a.prefecture} / ${a.name}` : a.name) : ""; })() : undefined}</SelectValue></SelectTrigger>
                       <SelectContent>
                         {(() => {

@@ -28,3 +28,17 @@ export function getAreaForPrefecture(pref: string): string | null {
   }
   return null;
 }
+
+/** 地方（region）ごとのデフォルト色 */
+export const regionColors: Record<string, string> = {
+  "北海道": "#EF4444", "東北": "#8B5CF6", "関東": "#F97316", "北陸": "#06B6D4",
+  "中部": "#10B981", "関西": "#F59E0B", "中国": "#EC4899", "四国": "#3B82F6",
+  "九州": "#14B8A6", "沖縄": "#6366F1",
+};
+
+/** 都道府県から地方色を取得（フォールバックあり） */
+export function getRegionColor(pref: string | null | undefined): string {
+  if (!pref) return "#CBD5E1";
+  const region = getAreaForPrefecture(pref);
+  return (region && regionColors[region]) || "#CBD5E1";
+}
