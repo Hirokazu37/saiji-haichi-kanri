@@ -17,7 +17,7 @@ import { usePermission } from "@/hooks/usePermission";
 
 type EventRecord = {
   id: string;
-  name: string;
+  name: string | null;
   venue: string;
   store_name: string | null;
   start_date: string;
@@ -467,7 +467,7 @@ export default function ShipmentsPage() {
                             {venueLabel}
                             {evtHasWarning.has(evt.id) && <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />}
                           </div>
-                          <div className="text-[10px] text-muted-foreground truncate">{evt.name}</div>
+                          {evt.name && <div className="text-[10px] text-muted-foreground truncate">{evt.name}</div>}
                           <div className="flex items-center gap-1 mt-1">
                             {hasFrom ? (
                               <Badge variant="outline" className={`text-[11px] px-1.5 py-0 ${fromBadgeColor}`}>
@@ -564,7 +564,7 @@ export default function ShipmentsPage() {
                               <TooltipContent side="bottom" className="max-w-xs">
                                 <div className="space-y-1">
                                   <div className="font-bold">{venueLabel}</div>
-                                  <div className="text-muted-foreground">{evt.name}</div>
+                                  {evt.name && <div className="text-muted-foreground">{evt.name}</div>}
                                   <div>{evt.start_date} 〜 {evt.end_date}</div>
                                   <div className="border-t pt-1 mt-1">
                                     <div>搬入元: {evt.equipment_from || "未設定"}</div>

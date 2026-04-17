@@ -9,7 +9,7 @@ import Link from "next/link";
 
 type Event = {
   id: string;
-  name: string;
+  name: string | null;
   venue: string;
   store_name: string | null;
   prefecture: string;
@@ -182,7 +182,7 @@ export default function DashboardPage() {
                   >
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-xs truncate">{a.label}</div>
-                      <div className="text-[10px] text-muted-foreground truncate">{a.event.name}（{a.event.start_date}〜）</div>
+                      <div className="text-[10px] text-muted-foreground truncate">{a.event.name || `${a.event.venue}${a.event.store_name ? ` ${a.event.store_name}` : ""}`}（{a.event.start_date}〜）</div>
                     </div>
                     <StatusIcon status={a.application} />
                     <StatusIcon status={a.hotel} />
@@ -216,7 +216,7 @@ export default function DashboardPage() {
                       <span className="text-sm font-medium">{event.venue}{event.store_name ? ` ${event.store_name}` : ""}</span>
                       <Badge variant="outline" className={statusColor[event.status] || ""}>{event.status}</Badge>
                     </div>
-                    <p className="text-xs text-muted-foreground">{event.name} | {event.start_date} 〜 {event.end_date}</p>
+                    <p className="text-xs text-muted-foreground">{event.name ? `${event.name} | ` : ""}{event.start_date} 〜 {event.end_date}</p>
                   </Link>
                 ))}
               </div>
@@ -250,7 +250,7 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    {event.name}（{event.prefecture}）| {event.start_date} 〜 {event.end_date}
+                    {event.name ? `${event.name}（${event.prefecture}）| ` : `${event.prefecture} | `}{event.start_date} 〜 {event.end_date}
                     {event.person_in_charge ? ` | 担当: ${event.person_in_charge}` : ""}
                   </p>
                 </Link>

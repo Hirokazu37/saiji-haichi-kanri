@@ -33,7 +33,7 @@ type StaffRow = {
 
 type Event = {
   id: string;
-  name: string;
+  name: string | null;
   venue: string;
   store_name: string | null;
   prefecture: string;
@@ -499,8 +499,8 @@ export default function HotelTransportPage() {
                                       />
                                       <TooltipContent side="bottom">
                                         <div className="space-y-0.5">
-                                          <div className="font-medium">{evt.name}</div>
-                                          <div>{label}（{evt.prefecture}）</div>
+                                          <div className="font-medium">{evt.name || label}</div>
+                                          {evt.name && <div>{label}（{evt.prefecture}）</div>}
                                           <div className="text-muted-foreground">{evt.start_date} 〜 {evt.end_date}</div>
                                           <div>ホテル: {status.hotel} / 交通: {status.transport}</div>
                                           <div className="text-muted-foreground">クリックで手配を編集</div>

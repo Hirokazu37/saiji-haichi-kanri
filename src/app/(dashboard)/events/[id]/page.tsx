@@ -35,7 +35,7 @@ import { usePermission } from "@/hooks/usePermission";
 
 type EventData = {
   id: string;
-  name: string;
+  name: string | null;
   venue: string;
   store_name: string | null;
   prefecture: string;
@@ -99,7 +99,7 @@ export default function EventDetailPage({
     if (eventRes.data) {
       setEvent(eventRes.data);
       setForm({
-        name: eventRes.data.name,
+        name: eventRes.data.name || "",
         venue: eventRes.data.venue,
         store_name: eventRes.data.store_name || "",
         prefecture: eventRes.data.prefecture,
@@ -240,8 +240,8 @@ export default function EventDetailPage({
             )}
           </div>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span>{event.name}（{event.prefecture}）</span>
-            <span>|</span>
+            {event.name && <><span>{event.name}（{event.prefecture}）</span><span>|</span></>}
+            {!event.name && <><span>{event.prefecture}</span><span>|</span></>}
             <span>{event.start_date} 〜 {event.end_date}</span>
           </div>
         </div>
@@ -285,7 +285,7 @@ export default function EventDetailPage({
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>催事名</Label>
-              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="元祖有名駅弁と全国うまいもの大会" />
             </div>
             <div className="space-y-2">
               <Label>開催地 *</Label>

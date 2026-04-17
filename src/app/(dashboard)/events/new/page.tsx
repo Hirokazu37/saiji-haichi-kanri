@@ -295,11 +295,8 @@ export default function NewEventPage() {
     const extraText = form.person_in_charge.trim();
     const allNames = [...staffNames, ...(extraText ? [extraText] : [])];
 
-    // 催事名が空なら百貨店名（+店舗名）で自動補完（DB側がNOT NULL制約のため）
-    const autoName = form.name.trim() || [form.venue.trim(), form.store_name.trim()].filter(Boolean).join(" ");
-
     const { data, error } = await supabase.from("events").insert({
-      name: autoName,
+      name: form.name.trim() || null,
       venue: form.venue.trim(),
       store_name: form.store_name.trim() || null,
       prefecture: form.prefecture,
@@ -394,7 +391,7 @@ export default function NewEventPage() {
       }
 
       await Promise.all(inserts);
-      router.push(`/events/${eventId}`);
+      router.push("/events");
     }
     setSaving(false);
   };

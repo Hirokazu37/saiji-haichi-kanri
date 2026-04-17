@@ -13,7 +13,7 @@ import { usePermission } from "@/hooks/usePermission";
 
 type EventDM = {
   id: string;
-  name: string;
+  name: string | null;
   venue: string;
   store_name: string | null;
   start_date: string;
@@ -100,7 +100,7 @@ export default function DMListPage() {
                         {e.venue}{e.store_name ? ` ${e.store_name}` : ""}
                       </Link>
                     </TableCell>
-                    <TableCell className="text-sm">{e.name}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{e.name || "—"}</TableCell>
                     <TableCell className="text-sm hidden md:table-cell">{e.start_date} 〜 {e.end_date}</TableCell>
                     <TableCell>
                       {canEdit ? (

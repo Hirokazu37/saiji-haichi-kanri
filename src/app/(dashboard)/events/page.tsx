@@ -46,7 +46,7 @@ type StaffWithArrangement = {
 
 type Event = {
   id: string;
-  name: string;
+  name: string | null;
   venue: string;
   store_name: string | null;
   prefecture: string;

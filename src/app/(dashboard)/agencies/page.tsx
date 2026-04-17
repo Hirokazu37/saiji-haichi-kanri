@@ -65,7 +65,7 @@ type MannequinPerson = {
 type MannequinHistory = {
   id: string;
   event_id: string;
-  events: { name: string; venue: string; store_name: string | null; start_date: string; end_date: string } | null;
+  events: { name: string | null; venue: string; store_name: string | null; start_date: string; end_date: string } | null;
   work_start_date: string | null;
   work_end_date: string | null;
 };

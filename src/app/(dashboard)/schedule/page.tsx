@@ -26,7 +26,7 @@ type StaffAssignment = {
   hotel_name: string | null;
   hotel_check_in: string | null;
   hotel_check_out: string | null;
-  events: { id: string; name: string; venue: string; store_name: string | null } | null;
+  events: { id: string; name: string | null; venue: string; store_name: string | null } | null;
 };
 
 // 重複バーの段組み計算
