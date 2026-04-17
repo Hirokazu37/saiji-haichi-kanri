@@ -24,6 +24,7 @@ import {
   FileText,
   Mail,
   UserCog,
+  Archive,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -32,6 +33,7 @@ import { usePermission } from "@/hooks/usePermission";
 const navItems = [
   { label: "ダッシュボード", href: "/", icon: LayoutDashboard },
   { label: "日程表", href: "/events", icon: CalendarDays },
+  { label: "履歴（終了した催事）", href: "/archive", icon: Archive },
   { label: "社員スケジュール", href: "/schedule", icon: CalendarClock },
   { label: "ホテル手配", href: "/hotels", icon: Hotel },
   { label: "交通手配", href: "/transports", icon: Train },

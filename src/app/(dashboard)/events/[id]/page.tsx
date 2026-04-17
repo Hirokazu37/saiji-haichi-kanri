@@ -26,7 +26,7 @@ import {
   DialogFooter,
   DialogClose,
 } from "@/components/ui/dialog";
-import { Trash2, ArrowLeft, X, Building2, Save, Check } from "lucide-react";
+import { Trash2, ArrowLeft, X, Building2, Save, Check, Copy, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { prefectures, eventStatuses } from "@/lib/prefectures";
 import { ArrangementEditor, type ArrangementEditorHandle } from "@/components/arrangements/ArrangementEditor";
@@ -48,6 +48,8 @@ type EventData = {
   application_submitted_date: string | null;
   application_method: string | null;
   notes: string | null;
+  revenue: number | null;
+  retrospective: string | null;
 };
 
 const statusColor: Record<string, string> = {
@@ -90,6 +92,8 @@ export default function EventDetailPage({
     application_submitted_date: "",
     application_method: "",
     notes: "",
+    revenue: "",
+    retrospective: "",
   });
 
   const fetchEvent = useCallback(async () => {
@@ -114,6 +118,8 @@ export default function EventDetailPage({
         application_submitted_date: eventRes.data.application_submitted_date || "",
         application_method: eventRes.data.application_method || "",
         notes: eventRes.data.notes || "",
+        revenue: eventRes.data.revenue != null ? String(eventRes.data.revenue) : "",
+        retrospective: eventRes.data.retrospective || "",
       });
     }
     const emps = empRes.data || [];
@@ -190,6 +196,8 @@ export default function EventDetailPage({
         application_submitted_date: form.application_submitted_date || null,
         application_method: form.application_method || null,
         notes: form.notes.trim() || null,
+        revenue: form.revenue.trim() ? parseInt(form.revenue) : null,
+        retrospective: form.retrospective.trim() || null,
       })
       .eq("id", id);
 
@@ -274,7 +282,7 @@ export default function EventDetailPage({
             <span>{event.start_date} 〜 {event.end_date}</span>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Badge
             variant="outline"
             className={statusColor[event.status] || ""}
@@ -282,6 +290,17 @@ export default function EventDetailPage({
             {event.status}
           </Badge>
           {canEdit && <SaveButton />}
+          {canEdit && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push(`/events/new?from=${id}`)}
+              title="この催事を複製して新規作成"
+            >
+              <Copy className="h-4 w-4 mr-1" />
+              複製
+            </Button>
+          )}
           {canEdit && (
             <Button
               variant="outline"
@@ -374,6 +393,38 @@ export default function EventDetailPage({
 
       {/* 社員配置 */}
       <StaffTab eventId={id} startDate={event.start_date} endDate={event.end_date} />
+
+      {/* 実績（売上・振り返り） */}
+      <Card className="border-l-4 border-l-emerald-500 bg-emerald-50/30">
+        <CardContent className="pt-4 pb-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="h-4 w-4 text-emerald-700" />
+            <span className="text-sm font-bold text-emerald-800">実績（終了後に記録）</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs">売上金額（円）</Label>
+              <Input
+                type="number"
+                min={0}
+                step={1000}
+                value={form.revenue}
+                onChange={(e) => setForm({ ...form, revenue: e.target.value })}
+                placeholder="例: 850000"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">振り返りメモ</Label>
+              <Textarea
+                value={form.retrospective}
+                onChange={(e) => setForm({ ...form, retrospective: e.target.value })}
+                rows={2}
+                placeholder="反省点・来年に活かせる点など"
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* ページ最下部の保存ボタン */}
       {canEdit && (

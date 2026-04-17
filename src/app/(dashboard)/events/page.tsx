@@ -182,6 +182,7 @@ export default function EventsPage() {
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [showPast, setShowPast] = useState(false);
   const [viewMode, setViewMode] = useState<"gantt" | "calendar" | "card">("gantt");
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -318,7 +319,12 @@ export default function EventsPage() {
 
   useEffect(() => { fetchEvents(); }, [fetchEvents]);
 
-  const filtered = filterStatus === "all" ? events : events.filter((e) => e.status === filterStatus);
+  const todayIsoStr = new Date().toISOString().slice(0, 10);
+  const filtered = events.filter((e) => {
+    if (!showPast && e.end_date < todayIsoStr) return false;
+    if (filterStatus !== "all" && e.status !== filterStatus) return false;
+    return true;
+  });
 
   // ホテルマスター候補: 百貨店名で絞り込み、該当なければ全件
   const getHotelCandidates = (venue: string, storeName: string | null) => {
@@ -456,11 +462,24 @@ export default function EventsPage() {
       </div>
 
       {/* ステータスフィルタ */}
-      <div className="flex gap-2 flex-wrap print:hidden">
+      <div className="flex gap-2 flex-wrap print:hidden items-center">
         <Button variant={filterStatus === "all" ? "default" : "outline"} size="sm" onClick={() => setFilterStatus("all")}>すべて</Button>
         {eventStatuses.map((s) => (
           <Button key={s} variant={filterStatus === s ? "default" : "outline"} size="sm" onClick={() => setFilterStatus(s)}>{s}</Button>
         ))}
+        <div className="ml-auto flex items-center gap-2">
+          <Button
+            variant={showPast ? "default" : "outline"}
+            size="sm"
+            onClick={() => setShowPast(!showPast)}
+            title="終了した催事も表示"
+          >
+            {showPast ? "過去を隠す" : "過去を表示"}
+          </Button>
+          <Link href="/archive" className="text-xs text-muted-foreground hover:text-foreground hover:underline">
+            履歴ページ →
+          </Link>
+        </div>
       </div>
 
       {loading ? (

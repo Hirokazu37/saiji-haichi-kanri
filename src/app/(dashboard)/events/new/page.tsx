@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -45,7 +45,10 @@ export default function NewEventPage() {
   const { canEdit } = usePermission();
   const supabase = createClient();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const duplicateFromId = searchParams?.get("from") || null;
   const [saving, setSaving] = useState(false);
+  const [duplicatedFrom, setDuplicatedFrom] = useState<string | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [staffEntries, setStaffEntries] = useState<StaffEntry[]>([]);
   const [hotelEntries, setHotelEntries] = useState<HotelEntry[]>([]);
@@ -106,6 +109,70 @@ export default function NewEventPage() {
   }, [supabase]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // 複製: ?from=<id> が指定されたら元の催事データで初期化
+  useEffect(() => {
+    if (!duplicateFromId) return;
+    let cancelled = false;
+    (async () => {
+      const [evtRes, hotelsRes, transportsRes, mannsRes, shipsRes] = await Promise.all([
+        supabase.from("events").select("*").eq("id", duplicateFromId).single(),
+        supabase.from("hotels").select("*").eq("event_id", duplicateFromId),
+        supabase.from("transportations").select("*").eq("event_id", duplicateFromId),
+        supabase.from("mannequins").select("*").eq("event_id", duplicateFromId),
+        supabase.from("shipments").select("*").eq("event_id", duplicateFromId),
+      ]);
+      if (cancelled) return;
+      const src = evtRes.data;
+      if (!src) return;
+      const srcLabel = src.store_name ? `${src.venue} ${src.store_name}` : src.venue;
+      setDuplicatedFrom(srcLabel);
+      setForm({
+        name: src.name || "",
+        venue: src.venue || "",
+        store_name: src.store_name || "",
+        prefecture: src.prefecture || "",
+        start_date: "",
+        end_date: "",
+        closing_time: src.closing_time || "",
+        person_in_charge: "",
+        status: "準備中",
+        application_status: "未提出",
+        dm_status: src.dm_status && src.dm_status !== "印刷済み" ? src.dm_status : (src.dm_status === "印刷済み" ? "未着手" : ""),
+        notes: src.notes || "",
+        equipment_from: src.equipment_from || "",
+        equipment_to: src.equipment_to || "",
+      });
+      setHotelEntries(((hotelsRes.data || []) as { hotel_name: string | null; notes: string | null; room_count: number | null }[]).map((h) => ({
+        hotel_name: h.hotel_name || "",
+        check_in_date: "",
+        check_out_date: "",
+        room_count: h.room_count ? String(h.room_count) : "1",
+        reservation_status: "未予約",
+        notes: h.notes || "",
+      })));
+      setTransportEntries(((transportsRes.data || []) as { transport_type: string | null; departure_from: string | null; arrival_to: string | null }[]).map((t) => ({
+        transport_type: t.transport_type || "新幹線",
+        departure_from: t.departure_from || "",
+        arrival_to: t.arrival_to || "",
+        outbound_datetime: "",
+        reservation_status: "未予約",
+      })));
+      setMannequinEntries(((mannsRes.data || []) as { agency_name: string | null; staff_name: string | null; daily_rate: number | null }[]).map((m) => ({
+        agency_name: m.agency_name || "",
+        staff_name: m.staff_name || "",
+        work_start_date: "",
+        work_end_date: "",
+        daily_rate: m.daily_rate ? String(m.daily_rate) : "",
+        arrangement_status: "未手配",
+      })));
+      setShipmentEntries(((shipsRes.data || []) as { recipient_name: string; item_name: string }[]).map((s) => ({
+        recipient_name: s.recipient_name,
+        direction: s.item_name === "返送備品" ? "return" : "send",
+      })));
+    })();
+    return () => { cancelled = true; };
+  }, [duplicateFromId, supabase]);
 
   // --- 日付ヘルパー ---
   const prevDay = (dateStr: string) => {
@@ -418,6 +485,14 @@ export default function NewEventPage() {
   return (
     <div className="max-w-2xl mx-auto space-y-4 md:space-y-6">
       <h1 className="text-xl md:text-2xl font-bold">催事 新規作成</h1>
+
+      {duplicatedFrom && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm">
+          <span className="font-bold text-amber-800">複製元:</span>{" "}
+          <span className="text-amber-900">{duplicatedFrom}</span>
+          <p className="text-[11px] text-amber-700 mt-0.5">基本情報・ホテル・交通・マネキン・備品を引き継ぎました。開催期間と担当者は新たに入力してください。予約/手配状態は未予約/未手配にリセットされています。</p>
+        </div>
+      )}
 
       {/* ===== 基本情報 ===== */}
       <Card>

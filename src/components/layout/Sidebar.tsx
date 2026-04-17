@@ -16,12 +16,14 @@ import {
   Store,
   MapPin,
   UserCog,
+  Archive,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { label: "ダッシュボード", href: "/", icon: LayoutDashboard },
   { label: "日程表", href: "/events", icon: CalendarDays },
+  { label: "履歴（終了した催事）", href: "/archive", icon: Archive },
   { label: "社員スケジュール", href: "/schedule", icon: CalendarClock },
   { label: "ホテル・交通", href: "/hotels", icon: Hotel },
   { label: "備品の流れ", href: "/shipments", icon: Package },

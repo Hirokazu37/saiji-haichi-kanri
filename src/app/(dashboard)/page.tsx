@@ -116,7 +116,8 @@ export default function DashboardPage() {
     const horizonEnd = addDays(t, 120); // 締切アラート用の広め範囲
 
     const [monthRes, upcomingRes, touringRes, horizonRes, mannRes] = await Promise.all([
-      supabase.from("events").select("*").gte("start_date", monthStart).lte("start_date", monthEnd),
+      // 今月にかかる催事（end_date >= today の開催中/未開催のみ）
+      supabase.from("events").select("*").gte("start_date", monthStart).lte("start_date", monthEnd).gte("end_date", t),
       supabase.from("events").select("*").gte("start_date", t).lte("start_date", twoWeeksLater).order("start_date"),
       supabase.from("event_staff").select("id, event_id, start_date, end_date, role, hotel_name, hotel_check_in, hotel_check_out, hotel_status, transport_outbound_status, transport_return_status, employees(name), events(id, name, venue, store_name, prefecture, start_date, end_date)").lte("start_date", t).gte("end_date", t),
       supabase.from("events").select("*").gte("start_date", t).lte("start_date", horizonEnd).order("start_date"),
