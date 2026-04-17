@@ -26,7 +26,7 @@ import {
   DialogFooter,
   DialogClose,
 } from "@/components/ui/dialog";
-import { Trash2, ArrowLeft, X, Building2 } from "lucide-react";
+import { Trash2, ArrowLeft, X, Building2, Save, Check } from "lucide-react";
 import Link from "next/link";
 import { prefectures, eventStatuses } from "@/lib/prefectures";
 import { ArrangementEditor } from "@/components/arrangements/ArrangementEditor";
@@ -70,6 +70,7 @@ export default function EventDetailPage({
   type Employee = { id: string; name: string };
   const [event, setEvent] = useState<EventData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
@@ -158,6 +159,7 @@ export default function EventDetailPage({
   };
 
   const handleUpdate = async () => {
+    setSaveState("saving");
     // 担当者テキスト = 選択した社員名 + 自由入力テキスト
     const selectedNames = employees
       .filter((e) => selectedEmployeeIds.includes(e.id))
@@ -210,7 +212,30 @@ export default function EventDetailPage({
       );
     }
 
-    fetchEvent();
+    await fetchEvent();
+    setSaveState("saved");
+    setTimeout(() => setSaveState("idle"), 2500);
+  };
+
+  const SaveButton = ({ className = "" }: { className?: string }) => {
+    const isSaving = saveState === "saving";
+    const isSaved = saveState === "saved";
+    return (
+      <Button
+        onClick={handleUpdate}
+        disabled={isSaving}
+        size="lg"
+        className={`min-w-[160px] font-bold shadow-md ${isSaved ? "bg-green-700 hover:bg-green-700" : ""} ${className}`}
+      >
+        {isSaving ? (
+          <>保存中...</>
+        ) : isSaved ? (
+          <><Check className="h-4 w-4 mr-1" />保存しました</>
+        ) : (
+          <><Save className="h-4 w-4 mr-1" />基本情報を保存</>
+        )}
+      </Button>
+    );
   };
 
   const handleDelete = async () => {
@@ -252,6 +277,7 @@ export default function EventDetailPage({
           >
             {event.status}
           </Badge>
+          {canEdit && <SaveButton />}
           {canEdit && (
             <Button
               variant="outline"
@@ -338,7 +364,7 @@ export default function EventDetailPage({
           </div>
           {canEdit && (
             <div className="flex justify-end">
-              <Button onClick={handleUpdate}>基本情報を保存</Button>
+              <SaveButton />
             </div>
           )}
         </CardContent>
