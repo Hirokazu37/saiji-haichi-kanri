@@ -301,8 +301,7 @@ export default function EventDetailPage({
               <DateRangePicker
                 startDate={form.start_date}
                 endDate={form.end_date}
-                onChangeStart={(d) => setForm({ ...form, start_date: d })}
-                onChangeEnd={(d) => setForm({ ...form, end_date: d })}
+                onChange={(start, end) => setForm((prev) => ({ ...prev, start_date: start, end_date: end }))}
               />
             </div>
             <div className="space-y-2">

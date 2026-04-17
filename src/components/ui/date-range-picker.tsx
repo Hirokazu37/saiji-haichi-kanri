@@ -12,11 +12,14 @@ import type { DateRange } from "react-day-picker";
 type Props = {
   startDate: string; // "YYYY-MM-DD"
   endDate: string;   // "YYYY-MM-DD"
-  onChangeStart: (date: string) => void;
-  onChangeEnd: (date: string) => void;
+  /** 推奨: start/endを同時に更新する単一コールバック（Reactバッチ問題を回避） */
+  onChange?: (start: string, end: string) => void;
+  /** 互換: 旧API（個別コールバック）。onChangeが無い場合に使用 */
+  onChangeStart?: (date: string) => void;
+  onChangeEnd?: (date: string) => void;
 };
 
-export function DateRangePicker({ startDate, endDate, onChangeStart, onChangeEnd }: Props) {
+export function DateRangePicker({ startDate, endDate, onChange, onChangeStart, onChangeEnd }: Props) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<DateRange | undefined>(undefined);
   const [hovered, setHovered] = useState<Date | undefined>(undefined);
@@ -59,18 +62,22 @@ export function DateRangePicker({ startDate, endDate, onChangeStart, onChangeEnd
     setOpen(nextOpen);
   };
 
+  const emit = (start: string, end: string) => {
+    if (onChange) {
+      onChange(start, end);
+    } else {
+      onChangeStart?.(start);
+      onChangeEnd?.(end);
+    }
+  };
+
   const handleConfirm = () => {
     if (draft?.from) {
-      onChangeStart(format(draft.from, "yyyy-MM-dd"));
-      if (draft.to) {
-        onChangeEnd(format(draft.to, "yyyy-MM-dd"));
-      } else {
-        // 1日のみ選択の場合、開始日と同日を終了日に
-        onChangeEnd(format(draft.from, "yyyy-MM-dd"));
-      }
+      const start = format(draft.from, "yyyy-MM-dd");
+      const end = draft.to ? format(draft.to, "yyyy-MM-dd") : start;
+      emit(start, end);
     } else {
-      onChangeStart("");
-      onChangeEnd("");
+      emit("", "");
     }
     setOpen(false);
     setDraft(undefined);

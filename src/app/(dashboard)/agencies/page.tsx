@@ -32,7 +32,7 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Plus, Pencil, Trash2, Search, X, History, ChevronDown, ChevronRight,
+  Plus, Pencil, Trash2, Search, X, History, ChevronDown, ChevronRight, Star,
 } from "lucide-react";
 import Link from "next/link";
 import { areaMap, areaNames, allPrefectures, matchesArea, getAreaForPrefecture, getRegionColor, regionColors } from "@/lib/areas";
@@ -58,6 +58,7 @@ type MannequinPerson = {
   notes: string | null;
   area: string | null;
   evaluation: string | null;
+  rating: number | null;
   daily_rate: number | null;
 };
 
@@ -75,7 +76,7 @@ type AgencyAreaLink = { agency_id: string; area_id: string };
 
 const emptyPersonForm = {
   name: "", phone: "", mobile_phone: "", skills: "", notes: "",
-  area: "", evaluation: "", daily_rate: "", agency_id: "" as string,
+  area: "", evaluation: "", rating: 0, daily_rate: "", agency_id: "" as string,
   new_agency_name: "", new_agency_phone: "", new_agency_contact: "",
 };
 
@@ -314,7 +315,8 @@ export default function AgenciesPage() {
     setPersonForm({
       name: p.name, phone: p.phone || "", mobile_phone: p.mobile_phone || "",
       skills: p.skills || "", notes: p.notes || "",
-      area: p.area || "", evaluation: p.evaluation || "",
+      area: p.area || "", evaluation: "",
+      rating: p.rating ?? 0,
       daily_rate: p.daily_rate ? String(p.daily_rate) : "",
       agency_id: p.agency_id || "",
       new_agency_name: "", new_agency_phone: "", new_agency_contact: "",
@@ -349,7 +351,7 @@ export default function AgenciesPage() {
       skills: personForm.skills.trim() || null,
       notes: personForm.notes.trim() || null,
       area: personForm.area.trim() || null,
-      evaluation: personForm.evaluation.trim() || null,
+      rating: personForm.rating > 0 ? personForm.rating : null,
       daily_rate: personForm.daily_rate ? parseInt(personForm.daily_rate) : null,
     };
 
@@ -659,9 +661,16 @@ export default function AgenciesPage() {
                             ) : <span className="text-xs text-muted-foreground">—</span>}
                           </TableCell>
                           <TableCell className="hidden lg:table-cell">
-                            {person.evaluation ? (
-                              <span className="text-xs">{person.evaluation.substring(0, 20)}{person.evaluation.length > 20 ? "..." : ""}</span>
-                            ) : "—"}
+                            {person.rating && person.rating > 0 ? (
+                              <div className="flex items-center gap-0.5">
+                                {[1, 2, 3, 4, 5].map((n) => (
+                                  <Star
+                                    key={n}
+                                    className={`h-3.5 w-3.5 ${n <= (person.rating ?? 0) ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground/30"}`}
+                                  />
+                                ))}
+                              </div>
+                            ) : <span className="text-xs text-muted-foreground">—</span>}
                           </TableCell>
                           {canEdit && (
                             <TableCell>
@@ -829,8 +838,28 @@ export default function AgenciesPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>評価・メモ</Label>
-              <Textarea value={personForm.evaluation} onChange={(e) => setPersonForm({ ...personForm, evaluation: e.target.value })} placeholder="前回の評価や注意点など" />
+              <Label>評価</Label>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setPersonForm({ ...personForm, rating: personForm.rating === n ? 0 : n })}
+                      className="transition-transform hover:scale-110"
+                      aria-label={`${n}つ星`}
+                    >
+                      <Star
+                        className={`h-6 w-6 ${n <= personForm.rating ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground/30"}`}
+                      />
+                    </button>
+                  ))}
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  {personForm.rating > 0 ? `${personForm.rating} / 5` : "未評価"}
+                </span>
+              </div>
+              <p className="text-[10px] text-muted-foreground">同じ星を再クリックで「未評価」に戻ります。過去の評価テキストは下の備考欄に移行されています。</p>
             </div>
 
             <div className="space-y-2">

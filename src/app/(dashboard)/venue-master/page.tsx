@@ -17,8 +17,25 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel,
 } from "@/components/ui/select";
-import { Plus, Pencil, Trash2, Search, X, Store, PlusCircle, ChevronRight, ChevronDown } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, X, Store, PlusCircle, ChevronRight, ChevronDown, GripVertical } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { prefectures } from "@/lib/prefectures";
 import { getAreaForPrefecture, getRegionColor, regionColors } from "@/lib/areas";
 import { usePermission } from "@/hooks/usePermission";
@@ -38,6 +55,7 @@ type VenueMaster = {
   reading: string | null;
   is_active: boolean;
   area_id: string | null;
+  sort_order: number;
 };
 
 type AreaItem = { id: string; name: string; region: string | null; prefecture: string | null; color: string | null };
@@ -105,9 +123,53 @@ export default function VenueMasterPage() {
     });
   };
 
+  // D&D 並べ替え
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const activeId = String(active.id);
+    const overId = String(over.id);
+
+    // active がどの地方グループに属するか特定
+    let targetRegion: string | null = null;
+    for (const [region, list] of grouped.entries()) {
+      if (list.some((v) => v.id === activeId)) {
+        targetRegion = region;
+        break;
+      }
+    }
+    if (!targetRegion) return;
+
+    const regionVenues = grouped.get(targetRegion) || [];
+    const oldIndex = regionVenues.findIndex((v) => v.id === activeId);
+    const newIndex = regionVenues.findIndex((v) => v.id === overId);
+    // 違う地方グループへのドロップは無視
+    if (oldIndex < 0 || newIndex < 0) return;
+
+    const reordered = arrayMove(regionVenues, oldIndex, newIndex);
+    const originalOrders = regionVenues.map((v) => v.sort_order ?? 0);
+    const updates = reordered.map((v, i) => ({ id: v.id, sort_order: originalOrders[i] }));
+
+    // オプティミスティック更新
+    setVenues((prev) => prev.map((v) => {
+      const u = updates.find((x) => x.id === v.id);
+      return u ? { ...v, sort_order: u.sort_order } : v;
+    }));
+
+    // DB 更新
+    await Promise.all(
+      updates.map((u) => supabase.from("venue_master").update({ sort_order: u.sort_order }).eq("id", u.id)),
+    );
+  };
+
   const fetchData = useCallback(async () => {
     const [venueRes, areaRes, hmRes, hlRes, mpRes, mlRes] = await Promise.all([
-      supabase.from("venue_master").select("*").order("venue_name"),
+      supabase.from("venue_master").select("*").order("sort_order").order("venue_name"),
       supabase.from("area_master").select("id, name, region, prefecture, color").order("sort_order"),
       supabase.from("hotel_master").select("id, name, area_id").eq("is_active", true).order("name"),
       supabase.from("hotel_venue_links").select("*"),
@@ -166,21 +228,10 @@ export default function VenueMasterPage() {
     return getAreaForPrefecture(v.prefecture || "") || "未分類";
   };
 
-  // 地方別グループ+都道府県順+50音順ソート（停止は末尾グループ）
+  // 地方別グループ（地方内は sort_order 昇順、停止は末尾グループ）
   const grouped = (() => {
-    const areaOrder = areas.map((a) => a.id);
-    const sorted = [...filtered].sort((a, b) => {
-      // 使用中が先、停止が後
-      if (a.is_active !== b.is_active) return a.is_active ? -1 : 1;
-      // エリア順
-      const ai = a.area_id ? areaOrder.indexOf(a.area_id) : 9999;
-      const bi = b.area_id ? areaOrder.indexOf(b.area_id) : 9999;
-      if (ai !== bi) return ai - bi;
-      // 50音順（readingがあればreading、なければvenue_name）
-      const ar = a.reading || a.venue_name;
-      const br = b.reading || b.venue_name;
-      return ar.localeCompare(br, "ja");
-    });
+    // sort_order 昇順でソート
+    const sorted = [...filtered].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
     const activeVenues = sorted.filter((v) => v.is_active);
     const inactiveVenues = sorted.filter((v) => !v.is_active);
     // 地方の並び順（areaMapの定義順）
@@ -348,7 +399,8 @@ export default function VenueMasterPage() {
     if (editingId) {
       await supabase.from("venue_master").update(row).eq("id", editingId);
     } else {
-      const { data } = await supabase.from("venue_master").insert(row).select("id").single();
+      const maxOrder = venues.length > 0 ? Math.max(...venues.map((v) => v.sort_order ?? 0)) + 1 : 0;
+      const { data } = await supabase.from("venue_master").insert({ ...row, sort_order: maxOrder }).select("id").single();
       venueId = data?.id || null;
     }
 
@@ -402,6 +454,74 @@ export default function VenueMasterPage() {
 
   if (loading) return <p className="text-muted-foreground">読み込み中...</p>;
 
+  // D&D 対応の百貨店行
+  const SortableVenueRow = ({ v }: { v: VenueMaster }) => {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: v.id });
+    const hotels = getHotelsForVenue(v);
+    const mannequins = getMannequinsForVenue(v);
+    const venueColor = getVenueColor(v);
+    const venueRegion = getVenueRegion(v);
+    const style = {
+      transform: CSS.Transform.toString(transform),
+      transition,
+      opacity: isDragging ? 0.5 : 1,
+    };
+    return (
+      <TableRow ref={setNodeRef} style={style} className={!v.is_active ? "opacity-50" : ""}>
+        {canEdit && (
+          <TableCell className="w-8 p-1">
+            <button
+              {...attributes}
+              {...listeners}
+              className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1"
+              aria-label="ドラッグで並べ替え"
+            >
+              <GripVertical className="h-4 w-4" />
+            </button>
+          </TableCell>
+        )}
+        <TableCell className="p-0" style={{ backgroundColor: venueColor, width: 6 }} />
+        <TableCell className="text-xs text-muted-foreground">{venueRegion}</TableCell>
+        <TableCell className="text-sm hidden md:table-cell">{v.prefecture || "—"}</TableCell>
+        <TableCell>
+          <div className="font-medium">{v.venue_name}{v.store_name ? <span className="text-muted-foreground font-normal ml-1">{v.store_name}</span> : null}</div>
+        </TableCell>
+        <TableCell className="hidden md:table-cell">
+          <div className="flex flex-wrap gap-1">
+            {mannequins.length > 0 ? mannequins.map((m) => <Badge key={m.id} variant="outline" className="text-xs">{m.name}</Badge>) : <span className="text-xs text-muted-foreground">—</span>}
+          </div>
+        </TableCell>
+        <TableCell className="hidden md:table-cell">
+          <div className="flex flex-wrap gap-1">
+            {hotels.length > 0 ? hotels.map((h) => <Badge key={h.id} variant="outline" className="text-xs">{h.name}</Badge>) : <span className="text-xs text-muted-foreground">—</span>}
+          </div>
+        </TableCell>
+        <TableCell className="text-sm hidden lg:table-cell">
+          {v.sanchoku_code_1 ? <span>{v.sanchoku_code_1}{v.sanchoku_memo_1 ? <span className="text-muted-foreground text-xs ml-1">({v.sanchoku_memo_1})</span> : ""}</span> : "—"}
+        </TableCell>
+        <TableCell className="text-sm hidden lg:table-cell">
+          {v.sanchoku_code_2 ? <span>{v.sanchoku_code_2}{v.sanchoku_memo_2 ? <span className="text-muted-foreground text-xs ml-1">({v.sanchoku_memo_2})</span> : ""}</span> : "—"}
+        </TableCell>
+        <TableCell className="text-sm hidden lg:table-cell">
+          {v.sanchoku_code_3 ? <span>{v.sanchoku_code_3}{v.sanchoku_memo_3 ? <span className="text-muted-foreground text-xs ml-1">({v.sanchoku_memo_3})</span> : ""}</span> : "—"}
+        </TableCell>
+        {canEdit && (
+          <TableCell>
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={v.is_active}
+                onCheckedChange={() => toggleActive(v)}
+                className="data-[state=checked]:bg-green-700 scale-90"
+              />
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(v)}><Pencil className="h-3 w-3" /></Button>
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(v.id)}><Trash2 className="h-3 w-3" /></Button>
+            </div>
+          </TableCell>
+        )}
+      </TableRow>
+    );
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -423,6 +543,7 @@ export default function VenueMasterPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                {canEdit && <TableHead className="w-8" />}
                 <TableHead className="w-1" />
                 <TableHead className="w-20">地方</TableHead>
                 <TableHead className="hidden md:table-cell">都道府県</TableHead>
@@ -435,81 +556,41 @@ export default function VenueMasterPage() {
                 {canEdit && <TableHead>操作</TableHead>}
               </TableRow>
             </TableHeader>
-            <TableBody>
-              {Array.from(grouped.entries()).map(([regionName, venueList]) => {
-                const regionColor = regionName === "使用停止" ? "#9CA3AF" : (regionColors[regionName] || "#CBD5E1");
-                const isCollapsed = collapsedRegions.has(regionName);
-                return (
-                <Fragment key={regionName}>
-                  <TableRow
-                    className="hover:bg-muted/60 cursor-pointer"
-                    style={{ backgroundColor: `${regionColor}22` }}
-                    onClick={() => toggleRegion(regionName)}
-                  >
-                    <TableCell className="p-0" style={{ backgroundColor: regionColor, width: 6 }} />
-                    <TableCell colSpan={canEdit ? 9 : 8} className="py-1.5 font-semibold text-xs">
-                      <span className="inline-flex items-center gap-2">
-                        {isCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                        <span className="inline-block w-3 h-3 rounded" style={{ backgroundColor: regionColor }} />
-                        {regionName}（{venueList.length}件）
-                      </span>
-                    </TableCell>
-                  </TableRow>
-                  {!isCollapsed && venueList.map((v) => {
-                const hotels = getHotelsForVenue(v);
-                const mannequins = getMannequinsForVenue(v);
-                const venueColor = getVenueColor(v);
-                const venueRegion = getVenueRegion(v);
-                return (
-                  <TableRow key={v.id} className={!v.is_active ? "opacity-50" : ""}>
-                    <TableCell className="p-0" style={{ backgroundColor: venueColor, width: 6 }} />
-                    <TableCell className="text-xs text-muted-foreground">{venueRegion}</TableCell>
-                    <TableCell className="text-sm hidden md:table-cell">{v.prefecture || "—"}</TableCell>
-                    <TableCell>
-                      <div className="font-medium">{v.venue_name}{v.store_name ? <span className="text-muted-foreground font-normal ml-1">{v.store_name}</span> : null}</div>
-                    </TableCell>
-                    <TableCell className="hidden md:table-cell">
-                      <div className="flex flex-wrap gap-1">
-                        {mannequins.length > 0 ? mannequins.map((m) => <Badge key={m.id} variant="outline" className="text-xs">{m.name}</Badge>) : <span className="text-xs text-muted-foreground">—</span>}
-                      </div>
-                    </TableCell>
-                    <TableCell className="hidden md:table-cell">
-                      <div className="flex flex-wrap gap-1">
-                        {hotels.length > 0 ? hotels.map((h) => <Badge key={h.id} variant="outline" className="text-xs">{h.name}</Badge>) : <span className="text-xs text-muted-foreground">—</span>}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-sm hidden lg:table-cell">
-                      {v.sanchoku_code_1 ? <span>{v.sanchoku_code_1}{v.sanchoku_memo_1 ? <span className="text-muted-foreground text-xs ml-1">({v.sanchoku_memo_1})</span> : ""}</span> : "—"}
-                    </TableCell>
-                    <TableCell className="text-sm hidden lg:table-cell">
-                      {v.sanchoku_code_2 ? <span>{v.sanchoku_code_2}{v.sanchoku_memo_2 ? <span className="text-muted-foreground text-xs ml-1">({v.sanchoku_memo_2})</span> : ""}</span> : "—"}
-                    </TableCell>
-                    <TableCell className="text-sm hidden lg:table-cell">
-                      {v.sanchoku_code_3 ? <span>{v.sanchoku_code_3}{v.sanchoku_memo_3 ? <span className="text-muted-foreground text-xs ml-1">({v.sanchoku_memo_3})</span> : ""}</span> : "—"}
-                    </TableCell>
-                    {canEdit && (
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Switch
-                            checked={v.is_active}
-                            onCheckedChange={() => toggleActive(v)}
-                            className="data-[state=checked]:bg-green-700 scale-90"
-                          />
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(v)}><Pencil className="h-3 w-3" /></Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(v.id)}><Trash2 className="h-3 w-3" /></Button>
-                        </div>
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <TableBody>
+                {Array.from(grouped.entries()).map(([regionName, venueList]) => {
+                  const regionColor = regionName === "使用停止" ? "#9CA3AF" : (regionColors[regionName] || "#CBD5E1");
+                  const isCollapsed = collapsedRegions.has(regionName);
+                  return (
+                  <Fragment key={regionName}>
+                    <TableRow
+                      className="hover:bg-muted/60 cursor-pointer"
+                      style={{ backgroundColor: `${regionColor}22` }}
+                      onClick={() => toggleRegion(regionName)}
+                    >
+                      {canEdit && <TableCell className="p-0 w-8" />}
+                      <TableCell className="p-0" style={{ backgroundColor: regionColor, width: 6 }} />
+                      <TableCell colSpan={canEdit ? 9 : 8} className="py-1.5 font-semibold text-xs">
+                        <span className="inline-flex items-center gap-2">
+                          {isCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                          <span className="inline-block w-3 h-3 rounded" style={{ backgroundColor: regionColor }} />
+                          {regionName}（{venueList.length}件）
+                        </span>
                       </TableCell>
+                    </TableRow>
+                    {!isCollapsed && (
+                      <SortableContext items={venueList.map((v) => v.id)} strategy={verticalListSortingStrategy}>
+                        {venueList.map((v) => <SortableVenueRow key={v.id} v={v} />)}
+                      </SortableContext>
                     )}
-                  </TableRow>
-                );
-              })}
-                </Fragment>
-                );
-              })}
-              {filtered.length === 0 && (
-                <TableRow><TableCell colSpan={canEdit ? 10 : 9} className="text-center text-muted-foreground py-8">百貨店が登録されていません</TableCell></TableRow>
-              )}
-            </TableBody>
+                  </Fragment>
+                  );
+                })}
+                {filtered.length === 0 && (
+                  <TableRow><TableCell colSpan={canEdit ? 11 : 9} className="text-center text-muted-foreground py-8">百貨店が登録されていません</TableCell></TableRow>
+                )}
+              </TableBody>
+            </DndContext>
           </Table>
         </CardContent>
       </Card>
