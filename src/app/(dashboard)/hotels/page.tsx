@@ -26,6 +26,7 @@ type StaffRow = {
   end_date: string;
   role: string | null;
   hotel_name: string | null;
+  hotel_status: string | null;
   transport_outbound_status: string | null;
   transport_return_status: string | null;
   employees: { name: string } | null;
@@ -219,7 +220,7 @@ export default function HotelTransportPage() {
   const fetchData = useCallback(async () => {
     const [evtRes, staffRes, hmRes, hvlRes] = await Promise.all([
       supabase.from("events").select("id, name, venue, store_name, prefecture, start_date, end_date, status").order("start_date"),
-      supabase.from("event_staff").select("id, event_id, employee_id, start_date, end_date, role, hotel_name, transport_outbound_status, transport_return_status, employees(name)"),
+      supabase.from("event_staff").select("id, event_id, employee_id, start_date, end_date, role, hotel_name, hotel_status, transport_outbound_status, transport_return_status, employees(name)"),
       supabase.from("hotel_master").select("id, name").eq("is_active", true).order("name"),
       supabase.from("hotel_venue_links").select("hotel_id, venue_name"),
     ]);
@@ -244,7 +245,7 @@ export default function HotelTransportPage() {
   const getHotelTransportStatus = (evt: Event) => {
     const staff = allStaff.filter((s) => s.event_id === evt.id);
     if (staff.length === 0) return { hotel: "未登録", transport: "未登録", hasIncomplete: true };
-    const hotelOk = staff.every((s) => s.hotel_name);
+    const hotelOk = staff.every((s) => s.hotel_status === "手配済" || !!s.hotel_name);
     const transportOk = staff.every((s) => s.transport_outbound_status === "手配済" && s.transport_return_status === "手配済");
     return {
       hotel: hotelOk ? "設定済" : "未設定",
@@ -662,13 +663,25 @@ export default function HotelTransportPage() {
                     <div className="px-3 py-2 space-y-1">
                       {canEdit ? (
                         <>
-                          <Input
-                            value={s.hotel_name || ""}
-                            onChange={(e) => setPanelStaff((prev) => prev.map((ps) => ps.id === s.id ? { ...ps, hotel_name: e.target.value } : ps))}
-                            onBlur={(e) => updateStaffField(s.id, "hotel_name", e.target.value || null)}
-                            placeholder="ホテル名を入力"
-                            className={`h-8 text-sm ${saving === s.id ? "opacity-50" : ""}`}
-                          />
+                          <div className="flex items-center gap-2">
+                            <Input
+                              value={s.hotel_name || ""}
+                              onChange={(e) => setPanelStaff((prev) => prev.map((ps) => ps.id === s.id ? { ...ps, hotel_name: e.target.value } : ps))}
+                              onBlur={(e) => updateStaffField(s.id, "hotel_name", e.target.value || null)}
+                              placeholder="ホテル名（空欄でも手配済OK）"
+                              className={`h-8 text-sm flex-1 ${saving === s.id ? "opacity-50" : ""}`}
+                            />
+                            <button
+                              type="button"
+                              className={`relative inline-flex h-7 w-[90px] items-center rounded-full transition-colors shrink-0 ${s.hotel_status === "手配済" ? "bg-green-700" : "bg-gray-300"}`}
+                              onClick={() => { const next = s.hotel_status === "手配済" ? "未手配" : "手配済"; setPanelStaff((prev) => prev.map((ps) => ps.id === s.id ? { ...ps, hotel_status: next } : ps)); updateStaffField(s.id, "hotel_status", next); }}
+                            >
+                              <span className={`absolute text-[10px] font-medium ${s.hotel_status === "手配済" ? "left-2 text-white" : "right-2 text-gray-600"}`}>
+                                {s.hotel_status === "手配済" ? "手配済" : "未手配"}
+                              </span>
+                              <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${s.hotel_status === "手配済" ? "translate-x-[64px]" : "translate-x-0.5"}`} />
+                            </button>
+                          </div>
                           {hotelCandidates.length > 0 && (
                             <div className="flex flex-wrap gap-1">
                               {hotelCandidates.map((h) => (
@@ -681,7 +694,12 @@ export default function HotelTransportPage() {
                           )}
                         </>
                       ) : (
-                        <span className="text-sm">{s.hotel_name || "—"}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">{s.hotel_name || "—"}</span>
+                          <span className={`text-xs font-medium ${s.hotel_status === "手配済" ? "text-green-700" : "text-gray-500"}`}>
+                            {s.hotel_status === "手配済" ? "(手配済)" : "(未手配)"}
+                          </span>
+                        </div>
                       )}
                     </div>
                     <div className="px-3 py-2">

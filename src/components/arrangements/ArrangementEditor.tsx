@@ -147,6 +147,7 @@ export function ArrangementEditor({ eventId, venue, storeName, startDate, endDat
     for (const s of staff) {
       await supabase.from("event_staff").update({
         hotel_name: s.hotel_name || null,
+        hotel_status: s.hotel_status || "未手配",
         transport_outbound_status: s.transport_outbound_status || "未手配",
         transport_return_status: s.transport_return_status || "未手配",
       }).eq("id", s.id);
@@ -251,12 +252,24 @@ export function ArrangementEditor({ eventId, venue, storeName, startDate, endDat
             <div className="space-y-2">
               {staff.map((s, i) => (
                 <div key={s.id} className="bg-white rounded border p-3 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold">{s.employees?.name || "不明"}</span>
-                    <span className="text-xs text-muted-foreground">{s.start_date}〜{s.end_date} {s.role || ""}</span>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold">{s.employees?.name || "不明"}</span>
+                      <span className="text-xs text-muted-foreground">{s.start_date}〜{s.end_date} {s.role || ""}</span>
+                    </div>
+                    <button
+                      type="button"
+                      className={`relative inline-flex h-5 w-20 items-center rounded-full transition-colors shrink-0 ${s.hotel_status === "手配済" ? "bg-green-700" : "bg-gray-300"}`}
+                      onClick={() => updateStaffField(i, "hotel_status", s.hotel_status === "手配済" ? "未手配" : "手配済")}
+                    >
+                      <span className={`absolute text-[9px] font-medium ${s.hotel_status === "手配済" ? "left-1.5 text-white" : "right-1.5 text-gray-600"}`}>
+                        {s.hotel_status === "手配済" ? "手配済" : "未手配"}
+                      </span>
+                      <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform ${s.hotel_status === "手配済" ? "translate-x-[60px]" : "translate-x-0.5"}`} />
+                    </button>
                   </div>
                   <div className="space-y-1">
-                    <Input value={s.hotel_name || ""} onChange={(e) => updateStaffField(i, "hotel_name", e.target.value)} placeholder="ホテル名を入力" className="h-8 text-sm" />
+                    <Input value={s.hotel_name || ""} onChange={(e) => updateStaffField(i, "hotel_name", e.target.value)} placeholder="ホテル名を入力（空欄のまま手配済にもできます）" className="h-8 text-sm" />
                     {hotelCandidates.length > 0 && (
                       <div className="flex flex-wrap gap-1">
                         {hotelCandidates.map((h) => (
