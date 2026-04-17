@@ -485,7 +485,7 @@ export default function EventsPage() {
                                             }}
                                             onClick={() => openDialog(evt)}
                                           >
-                                            <div className="truncate font-semibold leading-tight text-[12px] mb-0.5">{label}</div>
+                                            <div className="truncate font-semibold leading-tight text-[11px] mb-0.5">{label}</div>
                                             <div className="flex gap-0.5 flex-wrap">
                                               {icons.map((ic) => (
                                                 <span key={ic.label} className={`inline-block text-[11px] leading-none px-1 py-0.5 rounded font-bold ${ic.label === "申込" ? "cursor-pointer hover:opacity-70" : ""} ${ic.na ? "bg-gray-200 text-gray-500" : ic.ok ? "bg-green-600 text-white" : "bg-red-500 text-white"}`}
