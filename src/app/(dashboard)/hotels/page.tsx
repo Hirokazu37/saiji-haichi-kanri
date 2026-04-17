@@ -183,13 +183,11 @@ export default function HotelTransportPage() {
       return { y, m };
     };
     const pushMonthFull = (y: number, m: number) => {
-      const dim = new Date(y, m, 0).getDate();
-      blocks.push({ year: y, month: m, dayStart: 1, dayEnd: dim });
+      blocks.push({ year: y, month: m, dayStart: 1, dayEnd: 31 });
     };
     const pushMonthHalves = (y: number, m: number) => {
-      const dim = new Date(y, m, 0).getDate();
       blocks.push({ year: y, month: m, dayStart: 1, dayEnd: 15, halfLabel: "前半" });
-      blocks.push({ year: y, month: m, dayStart: 16, dayEnd: dim, halfLabel: "後半" });
+      blocks.push({ year: y, month: m, dayStart: 16, dayEnd: 31, halfLabel: "後半" });
     };
     if (ganttSpanSel === "half-3") {
       for (let i = 0; i < 3; i++) { const { y, m } = nextYM(i); pushMonthHalves(y, m); }
@@ -461,7 +459,7 @@ export default function HotelTransportPage() {
                                   const evtStart = new Date(evt.start_date);
                                   const evtEnd = new Date(evt.end_date);
                                   const mStart = new Date(cm.year, cm.month - 1, dayStart);
-                                  const mEnd = new Date(cm.year, cm.month - 1, dayEnd);
+                                  const mEnd = new Date(cm.year, cm.month - 1, Math.min(dayEnd, daysInMonth));
                                   const effectiveStart = evtStart < mStart ? mStart : evtStart;
                                   const effectiveEnd = evtEnd > mEnd ? mEnd : evtEnd;
                                   const startDay = effectiveStart.getDate();
