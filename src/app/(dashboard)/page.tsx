@@ -270,13 +270,16 @@ export default function DashboardPage() {
 
   if (loading) return <p className="text-muted-foreground p-4">読み込み中...</p>;
 
+  const todayDate = new Date(today);
+  const todayFmt = `${todayDate.getFullYear()}年${todayDate.getMonth() + 1}月${todayDate.getDate()}日（${nowWeekday}）`;
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 max-w-5xl mx-auto">
       {/* ヘッダー */}
       <div className="flex items-end justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-2xl font-bold">ダッシュボード</h1>
-          <p className="text-xs text-muted-foreground">{today}（{nowWeekday}）</p>
+          <p className="text-xl md:text-2xl font-bold text-foreground mt-1">{todayFmt}</p>
         </div>
         <div className="flex gap-2">
           <Link href="/events" className="inline-flex items-center gap-1 text-xs px-3 py-1.5 border rounded-md hover:bg-muted transition-colors">
@@ -378,39 +381,39 @@ export default function DashboardPage() {
           {todayStaff.length === 0 ? (
             <p className="text-sm text-muted-foreground">今日出張中の社員はいません。</p>
           ) : (
-            <div className="space-y-2">
+            <div className="grid gap-2 md:grid-cols-2 max-w-3xl mx-auto">
               {todayStaff.map((s) => {
                 const isCheckIn = s.hotel_check_in === today;
                 const isCheckOut = s.hotel_check_out === today;
                 const isLastDay = s.end_date === today;
                 const isFirstDay = s.start_date === today;
                 return (
-                  <Link key={s.id} href={s.events ? `/events/${s.events.id}` : "/events"} className="block rounded-md border bg-white p-2.5 hover:bg-muted/30 transition-colors">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <Users className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <Link key={s.id} href={s.events ? `/events/${s.events.id}` : "/events"} className="block rounded-md border bg-white p-3 hover:bg-muted/30 transition-colors">
+                    <div className="flex items-center gap-1.5">
+                      <Users className="h-4 w-4 text-sky-600 shrink-0" />
                       <span className="font-bold text-sm">{s.employees?.name || "不明"}</span>
                       <span className="text-xs text-muted-foreground">→</span>
-                      <span className="text-sm font-medium">{s.events ? venueLabel(s.events) : "催事不明"}</span>
-                      {s.events && <span className="text-[10px] text-muted-foreground">（{s.events.prefecture}）</span>}
+                      <span className="text-sm font-medium truncate">{s.events ? venueLabel(s.events) : "催事不明"}</span>
                     </div>
-                    <div className="flex items-center gap-1.5 mt-1.5 flex-wrap text-[11px]">
+                    <div className="text-[10px] text-muted-foreground mt-0.5 ml-[22px]">
+                      {s.events?.prefecture}・{fmtDateShort(s.start_date)}〜{fmtDateShort(s.end_date)}
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-2 flex-wrap text-[11px] ml-[22px]">
                       {isFirstDay && <Badge variant="outline" className="bg-sky-50 border-sky-300 text-sky-800 text-[10px]">初日</Badge>}
                       {isLastDay && <Badge variant="outline" className="bg-amber-50 border-amber-300 text-amber-800 text-[10px]">最終日</Badge>}
-                      {isCheckIn && <span className="inline-flex items-center gap-0.5 text-blue-700 font-semibold"><LogIn className="h-3 w-3" />チェックイン</span>}
-                      {isCheckOut && <span className="inline-flex items-center gap-0.5 text-orange-700 font-semibold"><LogOut className="h-3 w-3" />チェックアウト</span>}
+                      {isCheckIn && <span className="inline-flex items-center gap-0.5 text-blue-700 font-semibold"><LogIn className="h-3 w-3" />IN</span>}
+                      {isCheckOut && <span className="inline-flex items-center gap-0.5 text-orange-700 font-semibold"><LogOut className="h-3 w-3" />OUT</span>}
                       {s.hotel_name && (
                         <span className="inline-flex items-center gap-0.5 text-muted-foreground">
                           <HotelIcon className="h-3 w-3" />{s.hotel_name}
-                          <span className={`ml-0.5 text-[10px] font-bold ${s.hotel_status === "手配済" ? "text-green-700" : "text-gray-500"}`}>
-                            {s.hotel_status === "手配済" ? "✓" : ""}
-                          </span>
+                          {s.hotel_status === "手配済" && <span className="ml-0.5 text-green-700 font-bold">✓</span>}
                         </span>
                       )}
                       {isFirstDay && s.transport_outbound_status && (
                         <span className="inline-flex items-center gap-0.5">
                           <Train className="h-3 w-3 text-muted-foreground" />
                           <span className={s.transport_outbound_status === "手配済" ? "text-green-700 font-semibold" : "text-red-600 font-semibold"}>
-                            行き {s.transport_outbound_status}
+                            行き{s.transport_outbound_status === "手配済" ? "✓" : "✗"}
                           </span>
                         </span>
                       )}
@@ -418,11 +421,10 @@ export default function DashboardPage() {
                         <span className="inline-flex items-center gap-0.5">
                           <Train className="h-3 w-3 text-muted-foreground" />
                           <span className={s.transport_return_status === "手配済" ? "text-green-700 font-semibold" : "text-red-600 font-semibold"}>
-                            帰り {s.transport_return_status}
+                            帰り{s.transport_return_status === "手配済" ? "✓" : "✗"}
                           </span>
                         </span>
                       )}
-                      <span className="ml-auto text-[10px] text-muted-foreground">{fmtDateShort(s.start_date)}〜{fmtDateShort(s.end_date)}</span>
                     </div>
                   </Link>
                 );
