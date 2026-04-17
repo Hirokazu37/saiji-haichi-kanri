@@ -198,10 +198,12 @@ export default function EventsPage() {
   const [calYear, setCalYear] = useState(today.getFullYear());
   const [calMonth, setCalMonth] = useState(today.getMonth() + 1);
   const [calSpan, setCalSpan] = useState(6);
-  // ガント専用: "half-first" | "half-second" | "1" | "3" | "6" | "12"
+  // ガント専用: "half-first" | "half-second" | "half-3" | "1" | "3" | "6" | "12"
+  //   half-first  : 当月前半のみ
+  //   half-second : 当月後半のみ
+  //   half-3      : 3ヶ月分を半月ごとに2段に分割（6ブロック）
+  //   1/3/6/12    : そのまま月数
   const [ganttSpanSel, setGanttSpanSel] = useState<string>("6");
-  const ganttHalf: "first" | "second" | null = ganttSpanSel === "half-first" ? "first" : ganttSpanSel === "half-second" ? "second" : null;
-  const ganttMonthsCount = ganttHalf ? 1 : parseInt(ganttSpanSel) || 1;
 
   const calMonths = useMemo(() => {
     const months: { year: number; month: number }[] = [];
@@ -214,17 +216,46 @@ export default function EventsPage() {
     return months;
   }, [calYear, calMonth, calSpan]);
 
-  // ガント用の表示月（ganttMonthsCount分）
-  const ganttMonths = useMemo(() => {
-    const months: { year: number; month: number }[] = [];
-    for (let i = 0; i < ganttMonthsCount; i++) {
-      let m = calMonth + i;
-      let y = calYear;
+  // ガント用の表示ブロック（各ブロック = 1カード）
+  // { year, month, dayStart, dayEnd, halfLabel? }
+  const ganttBlocks = useMemo(() => {
+    type Block = { year: number; month: number; dayStart: number; dayEnd: number; halfLabel?: "前半" | "後半" };
+    const blocks: Block[] = [];
+    const pushMonthFull = (y: number, m: number) => {
+      const dim = new Date(y, m, 0).getDate();
+      blocks.push({ year: y, month: m, dayStart: 1, dayEnd: dim });
+    };
+    const pushMonthHalves = (y: number, m: number) => {
+      const dim = new Date(y, m, 0).getDate();
+      blocks.push({ year: y, month: m, dayStart: 1, dayEnd: 15, halfLabel: "前半" });
+      blocks.push({ year: y, month: m, dayStart: 16, dayEnd: dim, halfLabel: "後半" });
+    };
+    const nextYM = (i: number) => {
+      let m = calMonth + i, y = calYear;
       while (m > 12) { m -= 12; y++; }
-      months.push({ year: y, month: m });
+      return { y, m };
+    };
+    if (ganttSpanSel === "half-first") {
+      const { y, m } = nextYM(0);
+      blocks.push({ year: y, month: m, dayStart: 1, dayEnd: 15, halfLabel: "前半" });
+    } else if (ganttSpanSel === "half-second") {
+      const { y, m } = nextYM(0);
+      const dim = new Date(y, m, 0).getDate();
+      blocks.push({ year: y, month: m, dayStart: 16, dayEnd: dim, halfLabel: "後半" });
+    } else if (ganttSpanSel === "half-3") {
+      for (let i = 0; i < 3; i++) {
+        const { y, m } = nextYM(i);
+        pushMonthHalves(y, m);
+      }
+    } else {
+      const months = parseInt(ganttSpanSel) || 1;
+      for (let i = 0; i < months; i++) {
+        const { y, m } = nextYM(i);
+        pushMonthFull(y, m);
+      }
     }
-    return months;
-  }, [calYear, calMonth, ganttMonthsCount]);
+    return blocks;
+  }, [calYear, calMonth, ganttSpanSel]);
 
   const holidays = useMemo(() => {
     const years = [...new Set(calMonths.map((m) => m.year))];
@@ -370,11 +401,15 @@ export default function EventsPage() {
     ? `${calYear}年 ${calMonth}月`
     : `${calYear}年 ${calMonth}月 〜 ${calMonths[calMonths.length - 1].year}年 ${calMonths[calMonths.length - 1].month}月`;
 
-  const ganttSpanLabel = ganttHalf
-    ? `${calYear}年 ${calMonth}月 ${ganttHalf === "first" ? "前半(1-15)" : "後半(16-末)"}`
-    : ganttMonthsCount === 1
-    ? `${calYear}年 ${calMonth}月`
-    : `${calYear}年 ${calMonth}月 〜 ${ganttMonths[ganttMonths.length - 1].year}年 ${ganttMonths[ganttMonths.length - 1].month}月`;
+  const ganttSpanLabel = (() => {
+    if (ganttSpanSel === "half-first") return `${calYear}年 ${calMonth}月 前半(1-15)`;
+    if (ganttSpanSel === "half-second") return `${calYear}年 ${calMonth}月 後半(16-末)`;
+    if (ganttBlocks.length === 0) return `${calYear}年 ${calMonth}月`;
+    const last = ganttBlocks[ganttBlocks.length - 1];
+    if (ganttBlocks.length === 1 && !ganttBlocks[0].halfLabel) return `${calYear}年 ${calMonth}月`;
+    if (ganttSpanSel === "half-3") return `${calYear}年 ${calMonth}月 〜 ${last.year}年 ${last.month}月（半月2段）`;
+    return `${calYear}年 ${calMonth}月 〜 ${last.year}年 ${last.month}月`;
+  })();
 
   return (
     <div className="space-y-4">
@@ -425,6 +460,7 @@ export default function EventsPage() {
             <SelectContent>
               <SelectItem value="half-first">半月（前半）</SelectItem>
               <SelectItem value="half-second">半月（後半）</SelectItem>
+              <SelectItem value="half-3">半月×3ヶ月</SelectItem>
               <SelectItem value="1">1ヶ月</SelectItem>
               <SelectItem value="3">3ヶ月</SelectItem>
               <SelectItem value="6">6ヶ月</SelectItem>
@@ -453,11 +489,10 @@ export default function EventsPage() {
 
           <TooltipProvider>
             <div className="space-y-4">
-              {ganttMonths.map((cm, cmIdx) => {
+              {ganttBlocks.map((cm, cmIdx) => {
                 const daysInMonth = new Date(cm.year, cm.month, 0).getDate();
-                // 半月モードでの表示範囲
-                const dayStart = ganttHalf === "second" ? 16 : 1;
-                const dayEnd = ganttHalf === "first" ? 15 : daysInMonth;
+                const dayStart = cm.dayStart;
+                const dayEnd = cm.dayEnd;
                 const cellCount = dayEnd - dayStart + 1;
                 const rangeStart = `${cm.year}-${String(cm.month).padStart(2, "0")}-${String(dayStart).padStart(2, "0")}`;
                 const rangeEnd = `${cm.year}-${String(cm.month).padStart(2, "0")}-${String(dayEnd).padStart(2, "0")}`;
@@ -470,13 +505,14 @@ export default function EventsPage() {
                 const monthEvents = filtered.filter((e) => e.start_date <= rangeEnd && e.end_date >= rangeStart);
 
                 return (
-                  <Card key={`${cm.year}-${cm.month}`} className={`overflow-hidden ${cmIdx > 0 && cmIdx % 2 === 0 ? "print:page-break" : ""}`}>
+                  <Card key={`${cm.year}-${cm.month}-${cm.halfLabel || "full"}`} className={`overflow-hidden ${cmIdx > 0 && cmIdx % 2 === 0 ? "print:page-break" : ""}`}>
                     <CardContent className="p-0 overflow-x-auto print:overflow-visible">
-                      <div className="min-w-[800px]">
+                      <div className="min-w-[600px]">
                         {/* 月タイトル */}
                         <div className="flex border-b bg-white">
-                          <div className="w-12 shrink-0 border-r flex items-center justify-center text-base font-black py-1.5 bg-sky-50">
-                            <span className="text-sky-700">{cm.month}<span className="text-xs">月</span></span>
+                          <div className="w-14 shrink-0 border-r flex flex-col items-center justify-center py-1.5 bg-sky-50">
+                            <span className="text-sky-700 text-base font-black leading-none">{cm.month}<span className="text-xs">月</span></span>
+                            {cm.halfLabel && <span className="text-[10px] text-sky-600 font-semibold leading-none mt-0.5">{cm.halfLabel}</span>}
                           </div>
                           <div className="flex-1 flex">
                             {Array.from({ length: cellCount }, (_, i) => {
@@ -512,7 +548,7 @@ export default function EventsPage() {
                           const trackEvents = monthEvents.filter((e) => trackMap.get(e.id) === trackIdx);
                           return (
                             <div key={trackIdx} className={`flex border-b last:border-b-0 ${trackIdx % 2 === 1 ? "bg-slate-50/50" : "bg-white"}`} style={{ minHeight: 76 }}>
-                              <div className="w-12 shrink-0 border-r flex items-center justify-center text-[10px] font-bold text-muted-foreground">
+                              <div className="w-14 shrink-0 border-r flex items-center justify-center text-[10px] font-bold text-muted-foreground">
                                 {TRACK_LABELS[trackIdx] || String(trackIdx + 1)}
                               </div>
                               <div className="flex-1 relative">
