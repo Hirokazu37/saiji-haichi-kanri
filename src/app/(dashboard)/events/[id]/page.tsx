@@ -366,11 +366,6 @@ export default function EventDetailPage({
               <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} />
             </div>
           </div>
-          {canEdit && (
-            <div className="flex justify-end">
-              <SaveButton />
-            </div>
-          )}
         </CardContent>
       </Card>
 
