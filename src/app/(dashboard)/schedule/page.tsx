@@ -99,7 +99,7 @@ export default function SchedulePage() {
     const startOfRange = `${firstMonth.year}-${String(firstMonth.month).padStart(2, "0")}-01`;
     const endOfRange = `${lastMonth.year}-${String(lastMonth.month).padStart(2, "0")}-${lastMonth.days}`;
 
-    const [empRes, staffRes, hotelRes] = await Promise.all([
+    const [empRes, staffRes] = await Promise.all([
       supabase.from("employees").select("id, name").order("sort_order").order("name"),
       supabase
         .from("event_staff")

@@ -26,11 +26,20 @@ export function ConsentDialog() {
   };
 
   return (
-    <Dialog open={open}>
+    <Dialog
+      open={open}
+      disablePointerDismissal
+      onOpenChange={(next, details) => {
+        // ESCキーでの閉じる操作も無効化
+        if (!next && details.reason === "escape-key") {
+          return;
+        }
+        setOpen(next);
+      }}
+    >
       <DialogContent
         className="max-w-md [&>button]:hidden"
-        onPointerDownOutside={(e) => e.preventDefault()}
-        onEscapeKeyDown={(e) => e.preventDefault()}
+        showCloseButton={false}
       >
         <DialogHeader>
           <div className="flex items-center gap-2">

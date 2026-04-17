@@ -31,9 +31,9 @@ export async function PATCH(
 
   // パスワードの更新
   if (password) {
-    if (password.length < 6) {
+    if (password.length < 8) {
       return NextResponse.json(
-        { error: "パスワードは6文字以上で設定してください" },
+        { error: "パスワードは8文字以上で設定してください" },
         { status: 400 }
       );
     }

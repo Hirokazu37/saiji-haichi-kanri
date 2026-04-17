@@ -68,8 +68,8 @@ function RegisterForm() {
       setError("パスワードが一致しません");
       return;
     }
-    if (form.password.length < 6) {
-      setError("パスワードは6文字以上で設定してください");
+    if (form.password.length < 8) {
+      setError("パスワードは8文字以上で設定してください");
       return;
     }
 

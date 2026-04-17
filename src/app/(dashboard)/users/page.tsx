@@ -329,9 +329,7 @@ export default function UsersPage() {
             {error && <p className="text-sm text-destructive">{error}</p>}
           </div>
           <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">キャンセル</Button>
-            </DialogClose>
+            <DialogClose render={<Button variant="outline">キャンセル</Button>} />
             <Button onClick={handleSave} disabled={saving}>
               {saving ? "保存中..." : "保存"}
             </Button>

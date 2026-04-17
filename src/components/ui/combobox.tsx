@@ -144,10 +144,7 @@ export function Combobox({
         <PopoverPrimitive.Positioner align="start" sideOffset={4} className="isolate z-50">
           <PopoverPrimitive.Popup
             className="z-50 w-[min(22rem,90vw)] rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-hidden data-open:animate-in data-closed:animate-out data-open:fade-in-0 data-closed:fade-out-0"
-            onOpenAutoFocus={(e) => {
-              e.preventDefault();
-              searchInputRef.current?.focus();
-            }}
+            initialFocus={searchInputRef as React.RefObject<HTMLElement | null>}
           >
             <div className="border-b p-2">
               <div className="relative">
