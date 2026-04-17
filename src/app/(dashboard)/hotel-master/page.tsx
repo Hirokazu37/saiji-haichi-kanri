@@ -44,6 +44,15 @@ type VenueLink = {
 
 type VenueOption = string;
 
+type VenueMasterItem = {
+  id: string;
+  venue_name: string;
+  store_name: string | null;
+  prefecture: string | null;
+  area_id: string | null;
+  is_active: boolean;
+};
+
 const emptyForm = { name: "", phone: "", price_per_night: "", prefecture: "", area_id: "", notes: "" };
 
 export default function HotelMasterPage() {
@@ -53,6 +62,7 @@ export default function HotelMasterPage() {
   const [areas, setAreas] = useState<AreaItem[]>([]);
   const [venueLinks, setVenueLinks] = useState<VenueLink[]>([]);
   const [pastVenues, setPastVenues] = useState<VenueOption[]>([]);
+  const [venueMasters, setVenueMasters] = useState<VenueMasterItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterVenue, setFilterVenue] = useState("");
@@ -79,15 +89,17 @@ export default function HotelMasterPage() {
   };
 
   const fetchData = useCallback(async () => {
-    const [hotelRes, linkRes, evtRes, areaRes] = await Promise.all([
+    const [hotelRes, linkRes, evtRes, areaRes, vmRes] = await Promise.all([
       supabase.from("hotel_master").select("*").order("name"),
       supabase.from("hotel_venue_links").select("*"),
       supabase.from("events").select("venue, store_name").order("created_at", { ascending: false }).limit(200),
       supabase.from("area_master").select("id, name, region, prefecture, color").order("sort_order"),
+      supabase.from("venue_master").select("id, venue_name, store_name, prefecture, area_id, is_active").eq("is_active", true),
     ]);
     setHotels(hotelRes.data || []);
     setAreas(areaRes.data || []);
     setVenueLinks(linkRes.data || []);
+    setVenueMasters((vmRes.data || []) as VenueMasterItem[]);
 
     const seen = new Set<string>();
     const venues: string[] = [];
@@ -392,26 +404,68 @@ export default function HotelMasterPage() {
             </div>
             <div className="space-y-2">
               <Label>近くの百貨店（複数選択可）</Label>
-              {/* 選択済みだがpastVenuesにない百貨店を解除できるように表示 */}
               {(() => {
-                const extraVenues = Array.from(selectedVenues).filter((v) => !pastVenues.includes(v));
-                return extraVenues.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 pb-1 mb-1 border-b border-dashed">
-                    {extraVenues.map((v) => (
-                      <Badge key={v} variant="default" className="cursor-pointer text-xs" onClick={() => toggleVenue(v)}>
-                        {v} ✕
-                      </Badge>
-                    ))}
+                // 編集中ホテルの地方（region）・エリアID
+                const hotelRegion = form.prefecture ? getAreaForPrefecture(form.prefecture) : null;
+                // venue_master を同じ地方優先でソート
+                const getVenueRegion = (v: VenueMasterItem): string => {
+                  const area = areas.find((a) => a.id === v.area_id);
+                  return area?.region || getAreaForPrefecture(v.prefecture || "") || "";
+                };
+                const sameArea = venueMasters.filter((v) => form.area_id && v.area_id === form.area_id);
+                const sameRegion = venueMasters.filter((v) => !sameArea.includes(v) && hotelRegion && getVenueRegion(v) === hotelRegion);
+                const others = venueMasters.filter((v) => !sameArea.includes(v) && !sameRegion.includes(v));
+                const makeLabel = (v: VenueMasterItem) => v.store_name ? `${v.venue_name} ${v.store_name}` : v.venue_name;
+                const allLabels = venueMasters.map(makeLabel);
+                // 選択済みだが venue_master に無いもの
+                const extraVenues = Array.from(selectedVenues).filter((v) => !allLabels.includes(v));
+                const renderBadges = (list: VenueMasterItem[]) => (
+                  <div className="flex flex-wrap gap-1.5">
+                    {list.map((v) => {
+                      const label = makeLabel(v);
+                      return (
+                        <Badge key={v.id} variant={selectedVenues.has(label) ? "default" : "outline"} className="cursor-pointer text-xs" onClick={() => toggleVenue(label)}>
+                          {label}
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                );
+                return (
+                  <div className="space-y-2">
+                    {extraVenues.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 pb-1 border-b border-dashed">
+                        {extraVenues.map((v) => (
+                          <Badge key={v} variant="default" className="cursor-pointer text-xs" onClick={() => toggleVenue(v)}>
+                            {v} ✕
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                    {sameArea.length > 0 && (
+                      <div>
+                        <p className="text-[11px] font-semibold text-muted-foreground mb-1">同じエリア</p>
+                        {renderBadges(sameArea)}
+                      </div>
+                    )}
+                    {sameRegion.length > 0 && (
+                      <div>
+                        <p className="text-[11px] font-semibold text-muted-foreground mb-1">同じ地方{hotelRegion ? `（${hotelRegion}）` : ""}</p>
+                        {renderBadges(sameRegion)}
+                      </div>
+                    )}
+                    {others.length > 0 && (
+                      <details>
+                        <summary className="text-[11px] font-semibold text-muted-foreground cursor-pointer hover:text-foreground">その他の地方（{others.length}件）</summary>
+                        <div className="mt-1">{renderBadges(others)}</div>
+                      </details>
+                    )}
+                    {venueMasters.length === 0 && (
+                      <p className="text-xs text-muted-foreground">百貨店マスタに登録がありません</p>
+                    )}
                   </div>
                 );
               })()}
-              <div className="flex flex-wrap gap-1.5">
-                {pastVenues.map((v) => (
-                  <Badge key={v} variant={selectedVenues.has(v) ? "default" : "outline"} className="cursor-pointer text-xs" onClick={() => toggleVenue(v)}>
-                    {v}
-                  </Badge>
-                ))}
-              </div>
               {selectedVenues.size > 0 && <p className="text-xs text-muted-foreground">{selectedVenues.size}件の百貨店を紐づけ</p>}
             </div>
           </div>
