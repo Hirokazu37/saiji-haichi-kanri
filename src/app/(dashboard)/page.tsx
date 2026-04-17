@@ -106,6 +106,7 @@ export default function DashboardPage() {
 
   const [calYear, setCalYear] = useState(() => new Date().getFullYear());
   const [calMonth, setCalMonth] = useState(() => new Date().getMonth() + 1);
+  const [expandedCard, setExpandedCard] = useState<"thisMonth" | "preparing" | "active" | null>(null);
 
   const fetchData = useCallback(async () => {
     const t = todayStr();
@@ -228,6 +229,18 @@ export default function DashboardPage() {
     return cells;
   }, [calYear, calMonth]);
 
+  const expandedEvents = useMemo<Event[]>(() => {
+    if (expandedCard === "thisMonth") return monthEvents;
+    if (expandedCard === "preparing") return monthEvents.filter((e) => e.status === "準備中" || e.status === "手配中");
+    if (expandedCard === "active") return monthEvents.filter((e) => e.status === "開催中" || (e.start_date <= today && e.end_date >= today));
+    return [];
+  }, [expandedCard, monthEvents, today]);
+
+  const expandedTitle = expandedCard === "thisMonth" ? "今月の催事"
+    : expandedCard === "preparing" ? "準備中・手配中"
+    : expandedCard === "active" ? "今日 開催中"
+    : "";
+
   const eventsByDate = useMemo(() => {
     const map = new Map<string, Event[]>();
     for (const e of monthEvents) {
@@ -279,34 +292,80 @@ export default function DashboardPage() {
 
       {/* サマリー */}
       <div className="grid gap-3 grid-cols-2 md:grid-cols-3">
-        <Link href="/events" className="block">
-          <Card className="hover:shadow-md transition-shadow">
-            <CardHeader className="flex flex-row items-center justify-between pb-2 pt-3 px-4">
-              <CardTitle className="text-xs font-medium text-muted-foreground">今月の催事</CardTitle>
-              <CalendarDays className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent className="pb-3 px-4"><div className="text-2xl font-bold">{counts.thisMonth} 件</div></CardContent>
-          </Card>
-        </Link>
-        <Link href="/events" className="block">
-          <Card className="hover:shadow-md transition-shadow">
-            <CardHeader className="flex flex-row items-center justify-between pb-2 pt-3 px-4">
-              <CardTitle className="text-xs font-medium text-muted-foreground">準備中・手配中</CardTitle>
-              <AlertTriangle className="h-4 w-4 text-orange-500" />
-            </CardHeader>
-            <CardContent className="pb-3 px-4"><div className="text-2xl font-bold">{counts.preparing} 件</div></CardContent>
-          </Card>
-        </Link>
-        <Link href="/events" className="block">
-          <Card className="hover:shadow-md transition-shadow">
-            <CardHeader className="flex flex-row items-center justify-between pb-2 pt-3 px-4">
-              <CardTitle className="text-xs font-medium text-muted-foreground">今日 開催中</CardTitle>
-              <CheckCircle className="h-4 w-4 text-green-500" />
-            </CardHeader>
-            <CardContent className="pb-3 px-4"><div className="text-2xl font-bold">{counts.active} 件</div></CardContent>
-          </Card>
-        </Link>
+        {([
+          { key: "thisMonth" as const, label: "今月の催事", count: counts.thisMonth, icon: <CalendarDays className="h-4 w-4 text-muted-foreground" /> },
+          { key: "preparing" as const, label: "準備中・手配中", count: counts.preparing, icon: <AlertTriangle className="h-4 w-4 text-orange-500" /> },
+          { key: "active" as const, label: "今日 開催中", count: counts.active, icon: <CheckCircle className="h-4 w-4 text-green-500" /> },
+        ]).map((c) => {
+          const isActive = expandedCard === c.key;
+          return (
+            <button
+              key={c.key}
+              type="button"
+              onClick={() => setExpandedCard(isActive ? null : c.key)}
+              className="text-left"
+            >
+              <Card className={`transition-all ${isActive ? "ring-2 ring-sky-500 shadow-md" : "hover:shadow-md"}`}>
+                <CardHeader className="flex flex-row items-center justify-between pb-2 pt-3 px-4">
+                  <CardTitle className="text-xs font-medium text-muted-foreground">{c.label}</CardTitle>
+                  {c.icon}
+                </CardHeader>
+                <CardContent className="pb-3 px-4 flex items-baseline justify-between">
+                  <div className="text-2xl font-bold">{c.count} 件</div>
+                  <span className="text-[10px] text-muted-foreground">{isActive ? "閉じる ▲" : "一覧 ▼"}</span>
+                </CardContent>
+              </Card>
+            </button>
+          );
+        })}
       </div>
+
+      {/* 展開リスト */}
+      {expandedCard && (
+        <Card className="border-l-4 border-l-sky-500">
+          <CardHeader className="pb-2 pt-3 px-4">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-bold flex items-center gap-2">
+                {expandedTitle}
+                <Badge variant="outline" className="text-xs">{expandedEvents.length}</Badge>
+              </CardTitle>
+              <button onClick={() => setExpandedCard(null)} className="text-xs text-muted-foreground hover:text-foreground">閉じる ✕</button>
+            </div>
+          </CardHeader>
+          <CardContent className="px-4 pb-4">
+            {expandedEvents.length === 0 ? (
+              <p className="text-sm text-muted-foreground">該当する催事はありません。</p>
+            ) : (
+              <div className="space-y-1.5 max-h-[400px] overflow-y-auto">
+                {expandedEvents
+                  .slice()
+                  .sort((a, b) => a.start_date.localeCompare(b.start_date))
+                  .map((event) => {
+                    const d = diffDays(today, event.start_date);
+                    const isActive = event.start_date <= today && event.end_date >= today;
+                    return (
+                      <Link key={event.id} href={`/events/${event.id}`} className="block p-2 rounded border hover:bg-muted/40 transition-colors">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <span className="text-sm font-bold">{venueLabel(event)}</span>
+                          <div className="flex gap-1 items-center">
+                            <Badge variant="outline" className={statusColor[event.status] || ""}>{event.status}</Badge>
+                            <span className="text-xs font-bold text-muted-foreground ml-1">
+                              {isActive ? "開催中" : d === 0 ? "今日開始" : d > 0 ? `あと${d}日` : `${Math.abs(d)}日前終了`}
+                            </span>
+                          </div>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">
+                          {event.name ? `${event.name}（${event.prefecture}）| ` : `${event.prefecture} | `}{event.start_date} 〜 {event.end_date}
+                          {event.person_in_charge ? ` | 担当: ${event.person_in_charge}` : ""}
+                        </p>
+                      </Link>
+                    );
+                  })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* 今日の動き */}
       <Card className="border-l-4 border-l-sky-500">
@@ -489,18 +548,18 @@ export default function DashboardPage() {
                 <Link
                   key={idx}
                   href={`/events`}
-                  className={`relative border rounded p-1 min-h-[60px] hover:bg-sky-50 transition-colors ${bg}`}
+                  className={`relative border rounded p-1.5 min-h-[96px] md:min-h-[110px] hover:bg-sky-50 transition-colors ${bg}`}
                   title={dayEvents.map((e) => venueLabel(e)).join("\n")}
                 >
-                  <div className={`text-[11px] font-bold ${dayColor}`}>{cell.date.getDate()}</div>
-                  <div className="space-y-0.5 mt-0.5">
-                    {dayEvents.slice(0, 2).map((e) => (
-                      <div key={e.id} className="text-[9px] truncate px-1 py-0.5 rounded bg-sky-100 text-sky-800 border border-sky-200">
+                  <div className={`text-sm font-bold ${dayColor}`}>{cell.date.getDate()}</div>
+                  <div className="space-y-1 mt-1">
+                    {dayEvents.slice(0, 3).map((e) => (
+                      <div key={e.id} className="text-[10px] truncate px-1 py-0.5 rounded bg-sky-100 text-sky-800 border border-sky-200 leading-tight">
                         {venueLabel(e)}
                       </div>
                     ))}
-                    {dayEvents.length > 2 && (
-                      <div className="text-[9px] text-muted-foreground px-1">+{dayEvents.length - 2}件</div>
+                    {dayEvents.length > 3 && (
+                      <div className="text-[10px] text-muted-foreground px-1">+{dayEvents.length - 3}件</div>
                     )}
                   </div>
                 </Link>
