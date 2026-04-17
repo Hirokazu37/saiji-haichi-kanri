@@ -614,6 +614,13 @@ export default function EventsPage() {
             {calMonths.map((cm) => {
               const weeks = getCalendarWeeks(cm.year, cm.month);
               const weekDayNames = ["日", "月", "火", "水", "木", "金", "土"];
+              // 月内全週の最大レーン数を算出して、行高を統一する
+              const maxLanesInMonth = weeks.reduce((acc, wk) => {
+                const lanes = assignWeekLanes(filtered, wk[0], wk[6]);
+                const max = lanes.reduce((a, l) => Math.max(a, l.laneIdx + 1), 0);
+                return Math.max(acc, max);
+              }, 0);
+              const rowHeight = 28 + Math.max(maxLanesInMonth, 2) * 20;
               return (
                 <Card key={`${cm.year}-${cm.month}`}>
                   <CardContent className="p-3">
@@ -630,8 +637,6 @@ export default function EventsPage() {
                         const weekStart = week[0];
                         const weekEnd = week[6];
                         const lanes = assignWeekLanes(filtered, weekStart, weekEnd);
-                        const maxLanes = lanes.reduce((acc, l) => Math.max(acc, l.laneIdx + 1), 0);
-                        const cellMinHeight = 28 + maxLanes * 20;
                         return (
                           <div key={wIdx} className="relative">
                             <div className="grid grid-cols-7">
@@ -647,7 +652,7 @@ export default function EventsPage() {
                                   <div
                                     key={dIdx}
                                     className={`border-r border-b ${isToday ? "bg-amber-50" : isCurrentMonth ? "" : "bg-muted/20"}`}
-                                    style={{ minHeight: cellMinHeight }}
+                                    style={{ height: rowHeight }}
                                   >
                                     <div className={`text-xs px-1 pt-0.5 font-medium ${dayColor}`}>
                                       {date.getDate()}
