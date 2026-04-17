@@ -106,8 +106,14 @@ export default function DashboardPage() {
   const supabase = createClient();
   const { canEdit } = usePermission();
   const [loading, setLoading] = useState(true);
-  const [today] = useState<string>(todayStr());
-  const [nowWeekday] = useState<string>(fmtWeekday(todayStr()));
+  // SSR時にサーバー(UTC)とクライアント(JST)で日付がズレるため、クライアント側で初期化する
+  const [today, setToday] = useState<string>("");
+  const [nowWeekday, setNowWeekday] = useState<string>("");
+  useEffect(() => {
+    const d = new Date();
+    setToday(fmtLocalYmd(d));
+    setNowWeekday(["日","月","火","水","木","金","土"][d.getDay()]);
+  }, []);
   const [counts, setCounts] = useState({ thisMonth: 0, preparing: 0, active: 0 });
   const [monthEvents, setMonthEvents] = useState<Event[]>([]);
   const [upcomingEvents, setUpcomingEvents] = useState<Event[]>([]);
