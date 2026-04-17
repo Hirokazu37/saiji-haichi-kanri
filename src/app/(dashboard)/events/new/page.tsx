@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -42,6 +42,14 @@ const closingTimes = [
 const transportTypes = ["新幹線", "飛行機", "レンタカー", "社用車", "その他"];
 
 export default function NewEventPage() {
+  return (
+    <Suspense fallback={<p className="text-muted-foreground p-4">読み込み中...</p>}>
+      <NewEventPageInner />
+    </Suspense>
+  );
+}
+
+function NewEventPageInner() {
   const { canEdit } = usePermission();
   const supabase = createClient();
   const router = useRouter();
