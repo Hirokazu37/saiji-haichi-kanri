@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
 import {
   Select,
   SelectContent,
@@ -294,14 +295,15 @@ export default function EventDetailPage({
               </Select>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-[2fr_1fr] gap-4">
             <div className="space-y-2">
-              <Label>開始日 *</Label>
-              <Input type="date" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <Label>終了日 *</Label>
-              <Input type="date" value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} />
+              <Label>開催期間 *</Label>
+              <DateRangePicker
+                startDate={form.start_date}
+                endDate={form.end_date}
+                onChangeStart={(d) => setForm({ ...form, start_date: d })}
+                onChangeEnd={(d) => setForm({ ...form, end_date: d })}
+              />
             </div>
             <div className="space-y-2">
               <Label>閉場時間</Label>

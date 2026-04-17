@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
+import { Combobox, type ComboboxItem } from "@/components/ui/combobox";
 import { prefectures, eventStatuses } from "@/lib/prefectures";
 import { X, Plus, Hotel, Train, UserCheck, Package, ArrowLeft } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
@@ -24,6 +26,12 @@ type TransportEntry = { transport_type: string; departure_from: string; arrival_
 type MannequinEntry = { agency_name: string; staff_name: string; work_start_date: string; work_end_date: string; daily_rate: string; arrangement_status: string };
 type ShipmentEntry = { recipient_name: string; direction: "send" | "return" };
 type VenueOption = { label: string };
+type VenueMaster = { id: string; venue_name: string; store_name: string | null; prefecture: string | null; area_id: string | null; reading: string | null; is_active: boolean };
+type HotelMaster = { id: string; name: string; area_id: string | null };
+type HotelVenueLink = { hotel_id: string; venue_name: string };
+type AgencyMaster = { id: string; name: string };
+type AgencyAreaLink = { agency_id: string; area_id: string };
+type AreaMaster = { id: string; name: string };
 
 const closingTimes = [
   "15:00", "15:30", "16:00", "16:30", "17:00", "17:30",
@@ -44,6 +52,12 @@ export default function NewEventPage() {
   const [mannequinEntries, setMannequinEntries] = useState<MannequinEntry[]>([]);
   const [shipmentEntries, setShipmentEntries] = useState<ShipmentEntry[]>([]);
   const [pastVenues, setPastVenues] = useState<VenueOption[]>([]);
+  const [venueMasters, setVenueMasters] = useState<VenueMaster[]>([]);
+  const [hotelMasters, setHotelMasters] = useState<HotelMaster[]>([]);
+  const [hotelVenueLinks, setHotelVenueLinks] = useState<HotelVenueLink[]>([]);
+  const [agencyMasters, setAgencyMasters] = useState<AgencyMaster[]>([]);
+  const [agencyAreaLinks, setAgencyAreaLinks] = useState<AgencyAreaLink[]>([]);
+  const [areaMasters, setAreaMasters] = useState<AreaMaster[]>([]);
 
   const [form, setForm] = useState({
     name: "",
@@ -63,9 +77,15 @@ export default function NewEventPage() {
   });
 
   const fetchData = useCallback(async () => {
-    const [empRes, evtRes] = await Promise.all([
+    const [empRes, evtRes, vmRes, hmRes, hvlRes, amRes, aalRes, arRes] = await Promise.all([
       supabase.from("employees").select("id, name").order("sort_order").order("name"),
       supabase.from("events").select("venue, store_name").order("created_at", { ascending: false }).limit(100),
+      supabase.from("venue_master").select("id, venue_name, store_name, prefecture, area_id, reading, is_active").eq("is_active", true),
+      supabase.from("hotel_master").select("id, name, area_id").eq("is_active", true).order("name"),
+      supabase.from("hotel_venue_links").select("hotel_id, venue_name"),
+      supabase.from("mannequin_agencies").select("id, name").order("name"),
+      supabase.from("agency_area_links").select("agency_id, area_id"),
+      supabase.from("area_master").select("id, name"),
     ]);
     setEmployees(empRes.data || []);
     // 過去の催事会場を重複排除してリスト化
@@ -76,6 +96,12 @@ export default function NewEventPage() {
       if (!seen.has(label)) { seen.add(label); venues.push({ label }); }
     });
     setPastVenues(venues);
+    setVenueMasters((vmRes.data || []) as VenueMaster[]);
+    setHotelMasters((hmRes.data || []) as HotelMaster[]);
+    setHotelVenueLinks((hvlRes.data || []) as HotelVenueLink[]);
+    setAgencyMasters((amRes.data || []) as AgencyMaster[]);
+    setAgencyAreaLinks((aalRes.data || []) as AgencyAreaLink[]);
+    setAreaMasters((arRes.data || []) as AreaMaster[]);
   }, [supabase]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -146,6 +172,87 @@ export default function NewEventPage() {
 
   // --- 備品転送 ---
   const currentVenueLabel = form.venue ? (form.store_name ? `${form.venue} ${form.store_name}` : form.venue) : "";
+
+  // --- 百貨店Combobox項目 ---
+  const venueItems: ComboboxItem[] = useMemo(() => {
+    const items = venueMasters.map((v) => {
+      const label = v.store_name ? `${v.venue_name} ${v.store_name}` : v.venue_name;
+      return {
+        value: `${v.id}`,
+        label,
+        reading: v.reading ?? "",
+        sublabel: v.prefecture ?? "",
+      } as ComboboxItem;
+    });
+    // 50音（ふりがな）でソート
+    items.sort((a, b) => {
+      const ra = a.reading || a.label;
+      const rb = b.reading || b.label;
+      return ra.localeCompare(rb, "ja");
+    });
+    return items;
+  }, [venueMasters]);
+
+  // 百貨店選択時のハンドラ（Combobox value=id形式。id→マスター情報で自動入力）
+  const handleVenueSelect = (id: string) => {
+    if (!id) {
+      setForm((f) => ({ ...f, venue: "", store_name: "", prefecture: "" }));
+      return;
+    }
+    const v = venueMasters.find((x) => x.id === id);
+    if (!v) {
+      // カスタム値（マスターに無い文字列）: そのまま venue に入れる
+      setForm((f) => ({ ...f, venue: id }));
+      return;
+    }
+    setForm((f) => ({
+      ...f,
+      venue: v.venue_name,
+      store_name: v.store_name ?? "",
+      prefecture: v.prefecture ?? f.prefecture,
+    }));
+  };
+  // 表示用: 現在のform.venueから対応するマスターidを逆引き
+  const currentVenueId = (() => {
+    const m = venueMasters.find((v) => v.venue_name === form.venue && (v.store_name ?? "") === form.store_name);
+    return m?.id ?? form.venue; // マスター無しなら生文字列（Comboboxが自由入力モードに）
+  })();
+
+  // --- ホテルCombobox項目 ---
+  const currentVenueAreaId = (() => {
+    const m = venueMasters.find((v) => v.venue_name === form.venue && (v.store_name ?? "") === form.store_name);
+    return m?.area_id ?? null;
+  })();
+  const hotelItems: ComboboxItem[] = useMemo(() => {
+    const linkedIds = new Set(
+      hotelVenueLinks.filter((l) => l.venue_name === currentVenueLabel).map((l) => l.hotel_id)
+    );
+    const sameArea = (h: HotelMaster) => currentVenueAreaId && h.area_id === currentVenueAreaId;
+    return hotelMasters.map((h) => ({
+      value: h.name,
+      label: h.name,
+      reading: h.name,
+      group: linkedIds.has(h.id)
+        ? "この百貨店に紐づくホテル"
+        : sameArea(h)
+          ? "同じエリアのホテル"
+          : "その他のホテル",
+    })) as ComboboxItem[];
+  }, [hotelMasters, hotelVenueLinks, currentVenueLabel, currentVenueAreaId]);
+
+  // --- マネキン会社Combobox項目 ---
+  const agencyItems: ComboboxItem[] = useMemo(() => {
+    const areaId = currentVenueAreaId;
+    const linkedAgencyIds = new Set(
+      areaId ? agencyAreaLinks.filter((l) => l.area_id === areaId).map((l) => l.agency_id) : []
+    );
+    return agencyMasters.map((a) => ({
+      value: a.name,
+      label: a.name,
+      reading: a.name,
+      group: linkedAgencyIds.has(a.id) ? "このエリア対応" : "その他",
+    })) as ComboboxItem[];
+  }, [agencyMasters, agencyAreaLinks, currentVenueAreaId]);
   const shipmentDestinations = [
     { label: "本社（安岡蒲鉾）", type: "return" as const },
     ...(currentVenueLabel ? [{ label: currentVenueLabel, type: "send" as const }] : []),
@@ -292,11 +399,18 @@ export default function NewEventPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>百貨店名 *</Label>
-              <Input value={form.venue} onChange={(e) => setForm({ ...form, venue: e.target.value })} placeholder="京王百貨店" />
+              <Combobox
+                items={venueItems}
+                value={currentVenueId}
+                onChange={handleVenueSelect}
+                placeholder="百貨店を選択（ふりがな検索可）"
+                searchPlaceholder="例: いせたん、けいおう..."
+                allowCustom
+              />
             </div>
             <div className="space-y-2">
               <Label>店舗名</Label>
-              <Input value={form.store_name} onChange={(e) => setForm({ ...form, store_name: e.target.value })} placeholder="新宿" />
+              <Input value={form.store_name} onChange={(e) => setForm({ ...form, store_name: e.target.value })} placeholder="新宿（百貨店選択時は自動入力）" />
             </div>
           </div>
 
@@ -315,15 +429,14 @@ export default function NewEventPage() {
             </Select>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>開始日 *</Label>
-              <Input type="date" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <Label>終了日 *</Label>
-              <Input type="date" value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} />
-            </div>
+          <div className="space-y-2">
+            <Label>開催期間 *</Label>
+            <DateRangePicker
+              startDate={form.start_date}
+              endDate={form.end_date}
+              onChangeStart={(d) => setForm({ ...form, start_date: d })}
+              onChangeEnd={(d) => setForm({ ...form, end_date: d })}
+            />
           </div>
 
           <div className="space-y-2">
@@ -436,7 +549,16 @@ export default function NewEventPage() {
               </Button>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="col-span-2">
-                  <Input value={h.hotel_name} onChange={(e) => updateHotel(i, "hotel_name", e.target.value)} placeholder="ホテル名" className="h-8 text-sm" />
+                  <Combobox
+                    items={hotelItems}
+                    value={h.hotel_name}
+                    onChange={(v) => updateHotel(i, "hotel_name", v)}
+                    placeholder="ホテルを選択"
+                    searchPlaceholder="ホテル名で検索..."
+                    allowCustom
+                    inputClassName="h-8 text-sm"
+                    className="h-8 text-sm"
+                  />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">チェックイン</Label>
@@ -538,7 +660,16 @@ export default function NewEventPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label className="text-xs">派遣会社名</Label>
-                  <Input value={m.agency_name} onChange={(e) => updateMannequin(i, "agency_name", e.target.value)} placeholder="○○マネキン" className="h-8 text-xs" />
+                  <Combobox
+                    items={agencyItems}
+                    value={m.agency_name}
+                    onChange={(v) => updateMannequin(i, "agency_name", v)}
+                    placeholder="会社を選択"
+                    searchPlaceholder="会社名で検索..."
+                    allowCustom
+                    inputClassName="h-8 text-xs"
+                    className="h-8 text-xs"
+                  />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">スタッフ名</Label>
