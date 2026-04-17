@@ -604,10 +604,10 @@ export default function AgenciesPage() {
             <TableRow>
               <TableHead className="w-1" />
               <TableHead className="w-20">地方</TableHead>
-              <TableHead className="hidden md:table-cell">エリア</TableHead>
               <TableHead>氏名</TableHead>
               <TableHead>マネキン会社</TableHead>
               <TableHead className="hidden md:table-cell">電話番号</TableHead>
+              <TableHead className="hidden md:table-cell max-w-[200px]">エリア</TableHead>
               <TableHead className="hidden lg:table-cell">評価</TableHead>
               {canEdit && <TableHead className="w-28">操作</TableHead>}
             </TableRow>
@@ -646,17 +646,17 @@ export default function AgenciesPage() {
                         <TableRow key={person.id}>
                           <TableCell className="p-0" style={{ backgroundColor: personColor, width: 6 }} />
                           <TableCell className="text-xs text-muted-foreground">{regionName}</TableCell>
-                          <TableCell className="hidden md:table-cell">
+                          <TableCell className="font-medium">{person.name}</TableCell>
+                          <TableCell>{getAgencyName(person.agency_id)}</TableCell>
+                          <TableCell className="hidden md:table-cell text-sm">
+                            {person.mobile_phone || person.phone || "—"}
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell max-w-[200px]">
                             {areaNames2.length > 0 ? (
                               <div className="flex flex-wrap gap-1">
                                 {areaNames2.map((n) => <Badge key={n} variant="outline" className="text-xs">{n}</Badge>)}
                               </div>
                             ) : <span className="text-xs text-muted-foreground">—</span>}
-                          </TableCell>
-                          <TableCell className="font-medium">{person.name}</TableCell>
-                          <TableCell>{getAgencyName(person.agency_id)}</TableCell>
-                          <TableCell className="hidden md:table-cell text-sm">
-                            {person.mobile_phone || person.phone || "—"}
                           </TableCell>
                           <TableCell className="hidden lg:table-cell">
                             {person.evaluation ? (
