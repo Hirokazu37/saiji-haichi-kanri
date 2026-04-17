@@ -259,9 +259,10 @@ export default function VenueMasterPage() {
     if (!newAreaName.trim()) return;
     setSavingArea(true);
 
-    // 百貨店の都道府県から地方・都道府県を自動セット
+    // 百貨店の都道府県から地方・色を自動セット
     const pref = form.prefecture || null;
     const region = pref ? getAreaForPrefecture(pref) : null;
+    const color = region ? regionColors[region] || null : null;
 
     // sort_orderは既存エリアの最大値+1
     const maxOrder = areas.length > 0 ? Math.max(...areas.map((a) => (a as unknown as { sort_order?: number }).sort_order ?? 0)) + 1 : 0;
@@ -270,8 +271,9 @@ export default function VenueMasterPage() {
       name: newAreaName.trim(),
       region,
       prefecture: pref,
+      color,
       sort_order: maxOrder,
-    }).select("id, name, region, prefecture").single();
+    }).select("id, name, region, prefecture, color").single();
 
     if (data) {
       setAreas((prev) => [...prev, data as AreaItem]);

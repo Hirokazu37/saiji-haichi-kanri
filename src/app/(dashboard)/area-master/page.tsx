@@ -293,9 +293,44 @@ export default function AreaMasterPage() {
             </div>
             <div className="space-y-2">
               <Label>色</Label>
-              <div className="flex items-center gap-2">
-                <input type="color" value={form.color || "#cccccc"} onChange={(e) => setForm({ ...form, color: e.target.value })} className="w-8 h-8 rounded cursor-pointer border-0 p-0" />
-                <span className="text-xs text-muted-foreground">{form.color || "自動（地方で決定）"}</span>
+              <div className="space-y-2">
+                {/* プリセットパレット（地方色 + 追加バリエーション） */}
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    ...Object.entries(regionColors).map(([r, c]) => ({ label: r, color: c })),
+                    { label: "ピンク", color: "#F472B6" },
+                    { label: "紫", color: "#A78BFA" },
+                    { label: "緑", color: "#4ADE80" },
+                    { label: "黄", color: "#FACC15" },
+                    { label: "茶", color: "#A16207" },
+                    { label: "グレー", color: "#9CA3AF" },
+                  ].map(({ label, color }) => {
+                    const isSelected = form.color?.toLowerCase() === color.toLowerCase();
+                    return (
+                      <button
+                        key={color + label}
+                        type="button"
+                        onClick={() => setForm({ ...form, color })}
+                        title={label}
+                        className={`w-7 h-7 rounded border-2 transition-transform ${isSelected ? "border-foreground scale-110 shadow" : "border-white hover:scale-105"}`}
+                        style={{ backgroundColor: color }}
+                      />
+                    );
+                  })}
+                </div>
+                {/* カスタムカラー */}
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer">
+                    カスタム:
+                    <input type="color" value={form.color || "#cccccc"} onChange={(e) => setForm({ ...form, color: e.target.value })} className="w-8 h-8 rounded cursor-pointer border-0 p-0" />
+                  </label>
+                  <span className="text-xs text-muted-foreground font-mono">{form.color || "（未設定）"}</span>
+                  {form.color && (
+                    <Button type="button" variant="ghost" size="sm" className="h-6 text-xs text-muted-foreground" onClick={() => setForm({ ...form, color: "" })}>
+                      クリア
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
