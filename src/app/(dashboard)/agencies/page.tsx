@@ -32,7 +32,7 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Plus, Pencil, Trash2, Search, X, History,
+  Plus, Pencil, Trash2, Search, X, History, ChevronDown, ChevronRight,
 } from "lucide-react";
 import Link from "next/link";
 import { areaMap, areaNames, allPrefectures, matchesArea } from "@/lib/areas";
@@ -185,6 +185,7 @@ export default function AgenciesPage() {
 
   // 会社編集
   const [agencyAreaLinks, setAgencyAreaLinks] = useState<AgencyAreaLink[]>([]);
+  const [expandedAgencyId, setExpandedAgencyId] = useState<string | null>(null);
   const [selectedAgencyAreaIds, setSelectedAgencyAreaIds] = useState<Set<string>>(new Set());
   const [agencyDialogOpen, setAgencyDialogOpen] = useState(false);
   const [editingAgencyId, setEditingAgencyId] = useState<string | null>(null);
@@ -443,24 +444,53 @@ export default function AgenciesPage() {
             <div className="space-y-1">
               {agencies.map((a) => {
                 const count = getPeopleCountForAgency(a.id);
+                const isExpanded = expandedAgencyId === a.id;
+                const members = people.filter((p) => p.agency_id === a.id);
                 return (
-                  <div key={a.id} className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-muted/50 text-sm">
-                    <div className="flex items-center gap-3">
-                      <span className="font-medium">{a.name}</span>
-                      {a.contact_person && <span className="text-muted-foreground text-xs">担当: {a.contact_person}</span>}
-                      {a.phone && <span className="text-muted-foreground text-xs">{a.phone}</span>}
-                      {a.url && <a href={a.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs">HP</a>}
-                      <Badge variant="outline" className="text-[10px]">{count}名</Badge>
-                      {getAreaNamesForAgency(a.id).map((n) => <Badge key={n} variant="secondary" className="text-[10px]">{n}</Badge>)}
+                  <div key={a.id}>
+                    <div className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-muted/50 text-sm cursor-pointer" onClick={() => setExpandedAgencyId(isExpanded ? null : a.id)}>
+                      <div className="flex items-center gap-2">
+                        {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+                        <span className="font-medium">{a.name}</span>
+                        {a.contact_person && <span className="text-muted-foreground text-xs hidden sm:inline">担当: {a.contact_person}</span>}
+                        {a.phone && <span className="text-muted-foreground text-xs hidden sm:inline">{a.phone}</span>}
+                        {a.url && <a href={a.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs" onClick={(e) => e.stopPropagation()}>HP</a>}
+                        <Badge variant="outline" className="text-[10px]">{count}名</Badge>
+                        {getAreaNamesForAgency(a.id).map((n) => <Badge key={n} variant="secondary" className="text-[10px]">{n}</Badge>)}
+                      </div>
+                      {canEdit && (
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); openAgencyEdit(a); }}>
+                            <Pencil className="h-3 w-3" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); setDeletingAgency(a); setDeleteAgencyDialogOpen(true); }}>
+                            <Trash2 className="h-3 w-3 text-destructive" />
+                          </Button>
+                        </div>
+                      )}
                     </div>
-                    {canEdit && (
-                      <div className="flex gap-1">
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openAgencyEdit(a)}>
-                          <Pencil className="h-3 w-3" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setDeletingAgency(a); setDeleteAgencyDialogOpen(true); }}>
-                          <Trash2 className="h-3 w-3 text-destructive" />
-                        </Button>
+                    {isExpanded && (
+                      <div className="ml-8 mb-2 border-l-2 border-muted pl-3 space-y-0.5">
+                        {members.length === 0 ? (
+                          <p className="text-xs text-muted-foreground py-1">所属マネキンなし</p>
+                        ) : (
+                          members.map((m) => (
+                            <div key={m.id} className="flex items-center gap-3 py-1 text-xs">
+                              <span className="font-medium">{m.name}</span>
+                              {(m.mobile_phone || m.phone) && <span className="text-muted-foreground">{m.mobile_phone || m.phone}</span>}
+                              {getAreaNamesForPerson(m.id).length > 0 && (
+                                <div className="flex gap-0.5">
+                                  {getAreaNamesForPerson(m.id).map((n) => <Badge key={n} variant="outline" className="text-[9px] py-0">{n}</Badge>)}
+                                </div>
+                              )}
+                              {canEdit && (
+                                <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto" onClick={() => openEdit(m)}>
+                                  <Pencil className="h-2.5 w-2.5" />
+                                </Button>
+                              )}
+                            </div>
+                          ))
+                        )}
                       </div>
                     )}
                   </div>
