@@ -312,7 +312,14 @@ export default function NewEventPage() {
       equipment_to: form.equipment_to || null,
     }).select("id").single();
 
-    if (!error && data) {
+    if (error || !data) {
+      console.error("[events insert] error:", error);
+      alert(`催事の保存に失敗しました。\n${error?.message ?? "不明なエラー"}`);
+      setSaving(false);
+      return;
+    }
+
+    {
       const eventId = data.id;
 
       // 並列INSERT
