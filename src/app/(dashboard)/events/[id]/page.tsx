@@ -217,15 +217,15 @@ export default function EventDetailPage({
     setTimeout(() => setSaveState("idle"), 2500);
   };
 
-  const SaveButton = ({ className = "" }: { className?: string }) => {
+  const SaveButton = ({ className = "", size = "lg" }: { className?: string; size?: "lg" | "default" }) => {
     const isSaving = saveState === "saving";
     const isSaved = saveState === "saved";
     return (
       <Button
         onClick={handleUpdate}
         disabled={isSaving}
-        size="lg"
-        className={`min-w-[160px] font-bold shadow-md ${isSaved ? "bg-green-700 hover:bg-green-700" : ""} ${className}`}
+        size={size}
+        className={`min-w-[160px] font-bold shadow-md text-white ${isSaved ? "bg-green-700 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"} ${className}`}
       >
         {isSaving ? (
           <>保存中...</>
@@ -375,6 +375,13 @@ export default function EventDetailPage({
 
       {/* 社員配置 */}
       <StaffTab eventId={id} startDate={event.start_date} endDate={event.end_date} />
+
+      {/* ページ最下部の保存ボタン */}
+      {canEdit && (
+        <div className="flex justify-center pt-4 pb-8 border-t">
+          <SaveButton className="min-w-[240px] text-base" />
+        </div>
+      )}
 
       {/* 削除確認ダイアログ */}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>

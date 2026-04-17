@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, MapPin, Calendar, Printer, ImageDown, ChevronLeft, ChevronRight, LayoutGrid, CalendarDays, CalendarRange, X } from "lucide-react";
+import { Plus, MapPin, Calendar, Printer, ImageDown, ChevronLeft, ChevronRight, LayoutGrid, CalendarDays, CalendarRange, X, Package, Users, Clock, UserCheck } from "lucide-react";
 import Link from "next/link";
 import { eventStatuses } from "@/lib/prefectures";
 import { getHolidaysForRange } from "@/lib/holidays";
@@ -52,13 +52,17 @@ type Event = {
   prefecture: string;
   start_date: string;
   end_date: string;
+  closing_time: string | null;
   person_in_charge: string | null;
   status: string;
   application_status: string | null;
+  application_submitted_date: string | null;
+  application_method: string | null;
   dm_status: string | null;
   dm_count: number | null;
   equipment_from: string | null;
   equipment_to: string | null;
+  notes: string | null;
 };
 
 const statusColor: Record<string, string> = {
@@ -374,6 +378,13 @@ export default function EventsPage() {
     if (!dialogEvent) return;
     await supabase.from("events").update({ [field]: value }).eq("id", dialogEvent.id);
     setDialogEvent({ ...dialogEvent, [field]: value } as Event);
+    setEvents((prev) => prev.map((ev) => ev.id === dialogEvent.id ? { ...ev, [field]: value } as Event : ev));
+  };
+
+  const updateDmCount = async (count: number | null) => {
+    if (!dialogEvent) return;
+    await supabase.from("events").update({ dm_count: count }).eq("id", dialogEvent.id);
+    setEvents((prev) => prev.map((ev) => ev.id === dialogEvent.id ? { ...ev, dm_count: count } : ev));
   };
 
   const handleDialogSave = async () => {
@@ -835,14 +846,33 @@ export default function EventsPage() {
           </DialogHeader>
           {dialogEvent && (() => {
             const venueLabel = dialogEvent.store_name ? `${dialogEvent.venue} ${dialogEvent.store_name}` : dialogEvent.venue;
+            const manns = mannequinSummaries.filter((m) => m.event_id === dialogEvent.id);
+            const mannArranged = manns.filter((m) => m.arrangement_status === "手配済").length;
             return (
               <div className="space-y-3">
                 {/* 催事情報 */}
-                <div className="text-sm border-b pb-3">
-                  <div className="font-bold text-base">{venueLabel}</div>
+                <div className="text-sm border-b pb-3 space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-bold text-base">{venueLabel}</span>
+                    <Badge variant="outline" className={statusColor[dialogEvent.status] || ""}>{dialogEvent.status}</Badge>
+                  </div>
                   {dialogEvent.name && <div className="text-muted-foreground">{dialogEvent.name}（{dialogEvent.prefecture}）</div>}
                   {!dialogEvent.name && <div className="text-muted-foreground">{dialogEvent.prefecture}</div>}
-                  <div className="text-muted-foreground text-xs">{dialogEvent.start_date} 〜 {dialogEvent.end_date}</div>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                    <span className="inline-flex items-center gap-1"><Calendar className="h-3 w-3" />{dialogEvent.start_date} 〜 {dialogEvent.end_date}</span>
+                    {dialogEvent.closing_time && <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" />閉場 {dialogEvent.closing_time}</span>}
+                  </div>
+                  {dialogEvent.person_in_charge && (
+                    <div className="flex items-start gap-1 text-xs">
+                      <Users className="h-3 w-3 mt-0.5 shrink-0 text-muted-foreground" />
+                      <span><span className="text-muted-foreground">担当: </span>{dialogEvent.person_in_charge}</span>
+                    </div>
+                  )}
+                  {dialogEvent.notes && (
+                    <div className="text-xs bg-muted/30 rounded px-2 py-1 mt-1 whitespace-pre-wrap">
+                      <span className="text-muted-foreground">備考: </span>{dialogEvent.notes}
+                    </div>
+                  )}
                 </div>
 
                 {/* 出店申込書 */}
@@ -938,11 +968,30 @@ export default function EventsPage() {
                   )}
                 </div>
 
+                {/* マネキン */}
+                <div className="rounded-md border-l-4 border-l-pink-500 bg-pink-50/50 p-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <span className="text-sm font-bold text-pink-800 inline-flex items-center gap-1">
+                      <UserCheck className="h-4 w-4" />マネキン手配
+                    </span>
+                    <span className="text-xs">
+                      {manns.length === 0 ? (
+                        <span className="text-muted-foreground">未登録</span>
+                      ) : (
+                        <span className={mannArranged === manns.length ? "text-green-700 font-bold" : "text-orange-600"}>
+                          {mannArranged} / {manns.length} 人手配済
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-1">編集は催事詳細ページで</p>
+                </div>
+
                 {/* DMハガキ */}
-                <div className="rounded-md border-l-4 border-l-purple-500 bg-purple-50/50 p-3">
-                  <div className="flex items-center justify-between">
+                <div className="rounded-md border-l-4 border-l-purple-500 bg-purple-50/50 p-3 space-y-2">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
                     <span className="text-sm font-bold text-purple-800">DMハガキ</span>
-                    <div className="flex gap-1">
+                    <div className="flex gap-1 flex-wrap">
                       {["なし", "未着手", "校正中", "印刷済み"].map((s) => {
                         const current = dialogEvent.dm_status || "なし";
                         return (
@@ -954,6 +1003,49 @@ export default function EventsPage() {
                       })}
                     </div>
                   </div>
+                  {dialogEvent.dm_status && dialogEvent.dm_status !== "なし" && (
+                    <div className="flex items-center gap-2 bg-white rounded border p-2">
+                      <Label className="text-xs text-purple-800 font-bold shrink-0">印刷枚数</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        step={100}
+                        value={dialogEvent.dm_count ?? ""}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          const next = v === "" ? null : parseInt(v);
+                          setDialogEvent({ ...dialogEvent, dm_count: next } as Event);
+                        }}
+                        onBlur={() => updateDmCount(dialogEvent.dm_count)}
+                        placeholder="例: 500"
+                        className="h-8 text-xs w-28"
+                      />
+                      <span className="text-xs text-muted-foreground">枚</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* 備品の流れ */}
+                <div className="rounded-md border-l-4 border-l-amber-500 bg-amber-50/50 p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Package className="h-4 w-4 text-amber-700" />
+                    <span className="text-sm font-bold text-amber-800">備品の流れ</span>
+                  </div>
+                  <div className="text-xs space-y-1 bg-white rounded border p-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground shrink-0 w-14">搬入元:</span>
+                      <span className={dialogEvent.equipment_from ? "font-medium" : "text-orange-600"}>
+                        {dialogEvent.equipment_from || "未設定"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground shrink-0 w-14">搬出先:</span>
+                      <span className={dialogEvent.equipment_to ? "font-medium" : "text-orange-600"}>
+                        {dialogEvent.equipment_to || "未設定"}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-1">編集は催事詳細ページで</p>
                 </div>
 
                 {/* 催事詳細リンク */}
