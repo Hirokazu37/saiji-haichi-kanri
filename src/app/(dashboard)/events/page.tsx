@@ -420,7 +420,7 @@ export default function EventsPage() {
                         {Array.from({ length: trackCount }, (_, trackIdx) => {
                           const trackEvents = monthEvents.filter((e) => trackMap.get(e.id) === trackIdx);
                           return (
-                            <div key={trackIdx} className={`flex border-b last:border-b-0 ${trackIdx % 2 === 1 ? "bg-slate-50/50" : "bg-white"}`} style={{ minHeight: 48 }}>
+                            <div key={trackIdx} className={`flex border-b last:border-b-0 ${trackIdx % 2 === 1 ? "bg-slate-50/50" : "bg-white"}`} style={{ minHeight: 76 }}>
                               <div className="w-12 shrink-0 border-r flex items-center justify-center text-[10px] font-bold text-muted-foreground">
                                 {TRACK_LABELS[trackIdx] || String(trackIdx + 1)}
                               </div>
@@ -481,7 +481,7 @@ export default function EventsPage() {
                                             style={{
                                               left: `${left}%`,
                                               width: `${width}%`,
-                                              height: 44,
+                                              height: 72,
                                             }}
                                             onClick={() => openDialog(evt)}
                                           >
