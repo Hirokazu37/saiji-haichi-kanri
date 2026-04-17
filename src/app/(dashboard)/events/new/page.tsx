@@ -221,8 +221,8 @@ export default function NewEventPage() {
     }
     const v = venueMasters.find((x) => x.id === id);
     if (!v) {
-      // カスタム値（マスターに無い文字列）: そのまま venue に入れる
-      setForm((f) => ({ ...f, venue: id }));
+      // カスタム値（マスターに無い文字列）: venue に入れ、store_name はクリア
+      setForm((f) => ({ ...f, venue: id, store_name: "" }));
       return;
     }
     setForm((f) => ({
@@ -416,22 +416,16 @@ export default function NewEventPage() {
       <Card>
         <CardHeader><CardTitle>基本情報</CardTitle></CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>百貨店名 *</Label>
-              <Combobox
-                items={venueItems}
-                value={currentVenueId}
-                onChange={handleVenueSelect}
-                placeholder="百貨店を選択（ふりがな検索可）"
-                searchPlaceholder="例: いせたん、けいおう..."
-                allowCustom
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>店舗名</Label>
-              <Input value={form.store_name} onChange={(e) => setForm({ ...form, store_name: e.target.value })} placeholder="新宿（百貨店選択時は自動入力）" />
-            </div>
+          <div className="space-y-2">
+            <Label>百貨店 *</Label>
+            <Combobox
+              items={venueItems}
+              value={currentVenueId}
+              onChange={handleVenueSelect}
+              placeholder="百貨店を選択（ふりがな検索可）"
+              searchPlaceholder="例: いせたん、けいおう..."
+              allowCustom
+            />
           </div>
 
           <div className="space-y-2">
