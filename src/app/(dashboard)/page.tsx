@@ -123,7 +123,8 @@ export default function DashboardPage() {
     const t = todayStr();
     const twoWeeksLater = addDays(t, 14);
     const monthStart = `${t.slice(0, 7)}-01`;
-    const monthEnd = new Date(new Date(t).getFullYear(), new Date(t).getMonth() + 1, 0).toISOString().slice(0, 10);
+    const tDate = parseLocalYmd(t);
+    const monthEnd = fmtLocalYmd(new Date(tDate.getFullYear(), tDate.getMonth() + 1, 0));
     const horizonEnd = addDays(t, 120); // 締切アラート用の広め範囲
 
     const [monthRes, upcomingRes, touringRes, horizonRes, mannRes] = await Promise.all([
