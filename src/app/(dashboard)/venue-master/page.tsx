@@ -17,10 +17,10 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel,
 } from "@/components/ui/select";
-import { Plus, Pencil, Trash2, Search, X, Store, PlusCircle } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, X, Store, PlusCircle, ChevronRight, ChevronDown } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { prefectures } from "@/lib/prefectures";
-import { getAreaForPrefecture, getRegionColor } from "@/lib/areas";
+import { getAreaForPrefecture, getRegionColor, regionColors } from "@/lib/areas";
 import { usePermission } from "@/hooks/usePermission";
 
 type VenueMaster = {
@@ -95,6 +95,16 @@ export default function VenueMasterPage() {
   // 削除
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
+  // 地方アコーディオン（折りたたみ中の地方名）
+  const [collapsedRegions, setCollapsedRegions] = useState<Set<string>>(new Set());
+  const toggleRegion = (region: string) => {
+    setCollapsedRegions((prev) => {
+      const next = new Set(prev);
+      if (next.has(region)) next.delete(region); else next.add(region);
+      return next;
+    });
+  };
+
   const fetchData = useCallback(async () => {
     const [venueRes, areaRes, hmRes, hlRes, mpRes, mlRes] = await Promise.all([
       supabase.from("venue_master").select("*").order("venue_name"),
@@ -126,17 +136,6 @@ export default function VenueMasterPage() {
     if (area?.color) return area.color;
     return getRegionColor(v.prefecture);
   };
-  // エリア名から色を引く（グループ見出し用）
-  const getAreaColor = (areaName: string): string => {
-    const area = areas.find((a) => a.name === areaName);
-    if (area?.color) return area.color;
-    if (area?.region) {
-      // area-master定義の地方から色を直接引く
-      const regionPref = areas.find((a) => a.name === areaName)?.prefecture;
-      if (regionPref) return getRegionColor(regionPref);
-    }
-    return "#CBD5E1";
-  };
 
   const getHotelsForVenue = (v: VenueMaster) => {
     const label = getVenueLabel(v);
@@ -160,7 +159,14 @@ export default function VenueMasterPage() {
     return true;
   });
 
-  // エリア別グループ+50音順ソート（停止は各グループ内の下に沈む）
+  // 百貨店の地方（region）を取得
+  const getVenueRegion = (v: VenueMaster): string => {
+    const area = areas.find((a) => a.id === v.area_id);
+    if (area?.region) return area.region;
+    return getAreaForPrefecture(v.prefecture || "") || "未分類";
+  };
+
+  // 地方別グループ+都道府県順+50音順ソート（停止は末尾グループ）
   const grouped = (() => {
     const areaOrder = areas.map((a) => a.id);
     const sorted = [...filtered].sort((a, b) => {
@@ -175,18 +181,16 @@ export default function VenueMasterPage() {
       const br = b.reading || b.venue_name;
       return ar.localeCompare(br, "ja");
     });
-    // 使用中と停止を分けてグループ化
     const activeVenues = sorted.filter((v) => v.is_active);
     const inactiveVenues = sorted.filter((v) => !v.is_active);
+    // 地方の並び順（areaMapの定義順）
+    const regionOrder = ["北海道", "東北", "関東", "北陸", "中部", "関西", "中国", "四国", "九州", "沖縄", "未分類"];
     const groups = new Map<string, VenueMaster[]>();
-    activeVenues.forEach((v) => {
-      const areaName = areas.find((a) => a.id === v.area_id)?.name || "未分類";
-      if (!groups.has(areaName)) groups.set(areaName, []);
-      groups.get(areaName)!.push(v);
+    regionOrder.forEach((r) => {
+      const items = activeVenues.filter((v) => getVenueRegion(v) === r);
+      if (items.length > 0) groups.set(r, items);
     });
-    if (inactiveVenues.length > 0) {
-      groups.set("使用停止", inactiveVenues);
-    }
+    if (inactiveVenues.length > 0) groups.set("使用停止", inactiveVenues);
     return groups;
   })();
 
@@ -418,39 +422,60 @@ export default function VenueMasterPage() {
             <TableHeader>
               <TableRow>
                 <TableHead className="w-1" />
-                <TableHead>百貨店名</TableHead>
+                <TableHead className="w-20">地方</TableHead>
                 <TableHead className="hidden md:table-cell">都道府県</TableHead>
+                <TableHead>百貨店名</TableHead>
+                <TableHead className="hidden md:table-cell">マネキン</TableHead>
+                <TableHead className="hidden md:table-cell">ホテル</TableHead>
                 <TableHead className="hidden lg:table-cell">産直くん①</TableHead>
                 <TableHead className="hidden lg:table-cell">産直くん②</TableHead>
                 <TableHead className="hidden lg:table-cell">産直くん③</TableHead>
-                <TableHead className="hidden md:table-cell">ホテル</TableHead>
-                <TableHead className="hidden md:table-cell">マネキン</TableHead>
                 {canEdit && <TableHead>操作</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
-              {Array.from(grouped.entries()).map(([areaName, venueList]) => {
-                const areaColor = getAreaColor(areaName);
+              {Array.from(grouped.entries()).map(([regionName, venueList]) => {
+                const regionColor = regionName === "使用停止" ? "#9CA3AF" : (regionColors[regionName] || "#CBD5E1");
+                const isCollapsed = collapsedRegions.has(regionName);
                 return (
-                <Fragment key={areaName}>
-                  <TableRow className="hover:bg-muted/60" style={{ backgroundColor: `${areaColor}22` }}>
-                    <TableCell className="p-0" style={{ backgroundColor: areaColor, width: 6 }} />
-                    <TableCell colSpan={canEdit ? 8 : 7} className="py-1.5 font-semibold text-xs">
-                      <span className="inline-block w-3 h-3 rounded align-middle mr-2" style={{ backgroundColor: areaColor }} />
-                      {areaName}（{venueList.length}件）
+                <Fragment key={regionName}>
+                  <TableRow
+                    className="hover:bg-muted/60 cursor-pointer"
+                    style={{ backgroundColor: `${regionColor}22` }}
+                    onClick={() => toggleRegion(regionName)}
+                  >
+                    <TableCell className="p-0" style={{ backgroundColor: regionColor, width: 6 }} />
+                    <TableCell colSpan={canEdit ? 9 : 8} className="py-1.5 font-semibold text-xs">
+                      <span className="inline-flex items-center gap-2">
+                        {isCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                        <span className="inline-block w-3 h-3 rounded" style={{ backgroundColor: regionColor }} />
+                        {regionName}（{venueList.length}件）
+                      </span>
                     </TableCell>
                   </TableRow>
-                  {venueList.map((v) => {
+                  {!isCollapsed && venueList.map((v) => {
                 const hotels = getHotelsForVenue(v);
                 const mannequins = getMannequinsForVenue(v);
                 const venueColor = getVenueColor(v);
+                const venueRegion = getVenueRegion(v);
                 return (
                   <TableRow key={v.id} className={!v.is_active ? "opacity-50" : ""}>
                     <TableCell className="p-0" style={{ backgroundColor: venueColor, width: 6 }} />
+                    <TableCell className="text-xs text-muted-foreground">{venueRegion}</TableCell>
+                    <TableCell className="text-sm hidden md:table-cell">{v.prefecture || "—"}</TableCell>
                     <TableCell>
                       <div className="font-medium">{v.venue_name}{v.store_name ? <span className="text-muted-foreground font-normal ml-1">{v.store_name}</span> : null}</div>
                     </TableCell>
-                    <TableCell className="text-sm hidden md:table-cell">{v.prefecture || "—"}</TableCell>
+                    <TableCell className="hidden md:table-cell">
+                      <div className="flex flex-wrap gap-1">
+                        {mannequins.length > 0 ? mannequins.map((m) => <Badge key={m.id} variant="outline" className="text-xs">{m.name}</Badge>) : <span className="text-xs text-muted-foreground">—</span>}
+                      </div>
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell">
+                      <div className="flex flex-wrap gap-1">
+                        {hotels.length > 0 ? hotels.map((h) => <Badge key={h.id} variant="outline" className="text-xs">{h.name}</Badge>) : <span className="text-xs text-muted-foreground">—</span>}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-sm hidden lg:table-cell">
                       {v.sanchoku_code_1 ? <span>{v.sanchoku_code_1}{v.sanchoku_memo_1 ? <span className="text-muted-foreground text-xs ml-1">({v.sanchoku_memo_1})</span> : ""}</span> : "—"}
                     </TableCell>
@@ -459,16 +484,6 @@ export default function VenueMasterPage() {
                     </TableCell>
                     <TableCell className="text-sm hidden lg:table-cell">
                       {v.sanchoku_code_3 ? <span>{v.sanchoku_code_3}{v.sanchoku_memo_3 ? <span className="text-muted-foreground text-xs ml-1">({v.sanchoku_memo_3})</span> : ""}</span> : "—"}
-                    </TableCell>
-                    <TableCell className="hidden md:table-cell">
-                      <div className="flex flex-wrap gap-1">
-                        {hotels.length > 0 ? hotels.map((h) => <Badge key={h.id} variant="outline" className="text-xs">{h.name}</Badge>) : <span className="text-xs text-muted-foreground">—</span>}
-                      </div>
-                    </TableCell>
-                    <TableCell className="hidden md:table-cell">
-                      <div className="flex flex-wrap gap-1">
-                        {mannequins.length > 0 ? mannequins.map((m) => <Badge key={m.id} variant="outline" className="text-xs">{m.name}</Badge>) : <span className="text-xs text-muted-foreground">—</span>}
-                      </div>
                     </TableCell>
                     {canEdit && (
                       <TableCell>
@@ -490,7 +505,7 @@ export default function VenueMasterPage() {
                 );
               })}
               {filtered.length === 0 && (
-                <TableRow><TableCell colSpan={canEdit ? 9 : 8} className="text-center text-muted-foreground py-8">百貨店が登録されていません</TableCell></TableRow>
+                <TableRow><TableCell colSpan={canEdit ? 10 : 9} className="text-center text-muted-foreground py-8">百貨店が登録されていません</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
