@@ -198,6 +198,10 @@ export default function EventsPage() {
   const [calYear, setCalYear] = useState(today.getFullYear());
   const [calMonth, setCalMonth] = useState(today.getMonth() + 1);
   const [calSpan, setCalSpan] = useState(6);
+  // ガント専用: "half-first" | "half-second" | "1" | "3" | "6" | "12"
+  const [ganttSpanSel, setGanttSpanSel] = useState<string>("6");
+  const ganttHalf: "first" | "second" | null = ganttSpanSel === "half-first" ? "first" : ganttSpanSel === "half-second" ? "second" : null;
+  const ganttMonthsCount = ganttHalf ? 1 : parseInt(ganttSpanSel) || 1;
 
   const calMonths = useMemo(() => {
     const months: { year: number; month: number }[] = [];
@@ -209,6 +213,18 @@ export default function EventsPage() {
     }
     return months;
   }, [calYear, calMonth, calSpan]);
+
+  // ガント用の表示月（ganttMonthsCount分）
+  const ganttMonths = useMemo(() => {
+    const months: { year: number; month: number }[] = [];
+    for (let i = 0; i < ganttMonthsCount; i++) {
+      let m = calMonth + i;
+      let y = calYear;
+      while (m > 12) { m -= 12; y++; }
+      months.push({ year: y, month: m });
+    }
+    return months;
+  }, [calYear, calMonth, ganttMonthsCount]);
 
   const holidays = useMemo(() => {
     const years = [...new Set(calMonths.map((m) => m.year))];
@@ -354,6 +370,12 @@ export default function EventsPage() {
     ? `${calYear}年 ${calMonth}月`
     : `${calYear}年 ${calMonth}月 〜 ${calMonths[calMonths.length - 1].year}年 ${calMonths[calMonths.length - 1].month}月`;
 
+  const ganttSpanLabel = ganttHalf
+    ? `${calYear}年 ${calMonth}月 ${ganttHalf === "first" ? "前半(1-15)" : "後半(16-末)"}`
+    : ganttMonthsCount === 1
+    ? `${calYear}年 ${calMonth}月`
+    : `${calYear}年 ${calMonth}月 〜 ${ganttMonths[ganttMonths.length - 1].year}年 ${ganttMonths[ganttMonths.length - 1].month}月`;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -395,12 +417,15 @@ export default function EventsPage() {
         <>
         <div className="flex items-center gap-3 mb-4 print:hidden">
           <Button variant="outline" size="icon" onClick={prevMonth}><ChevronLeft className="h-4 w-4" /></Button>
-          <span className="text-lg font-semibold min-w-[200px] text-center">{spanLabel}</span>
+          <span className="text-lg font-semibold min-w-[240px] text-center">{ganttSpanLabel}</span>
           <Button variant="outline" size="icon" onClick={nextMonth}><ChevronRight className="h-4 w-4" /></Button>
           <Button variant="ghost" size="sm" onClick={() => { setCalYear(today.getFullYear()); setCalMonth(today.getMonth() + 1); }}>今月</Button>
-          <Select value={String(calSpan)} onValueChange={(v) => v && setCalSpan(parseInt(v))}>
-            <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+          <Select value={ganttSpanSel} onValueChange={(v) => v && setGanttSpanSel(v)}>
+            <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
             <SelectContent>
+              <SelectItem value="half-first">半月（前半）</SelectItem>
+              <SelectItem value="half-second">半月（後半）</SelectItem>
+              <SelectItem value="1">1ヶ月</SelectItem>
               <SelectItem value="3">3ヶ月</SelectItem>
               <SelectItem value="6">6ヶ月</SelectItem>
               <SelectItem value="12">12ヶ月</SelectItem>
@@ -411,7 +436,7 @@ export default function EventsPage() {
         <div ref={listRef}>
           {/* 印刷用タイトル */}
           <div className="hidden print:block text-center mb-2">
-            <h2 className="text-base font-bold">日程表　{spanLabel}</h2>
+            <h2 className="text-base font-bold">日程表　{ganttSpanLabel}</h2>
             <p className="text-xs text-muted-foreground">印刷日時 {new Date().toLocaleString("ja-JP")}</p>
           </div>
 
@@ -428,16 +453,21 @@ export default function EventsPage() {
 
           <TooltipProvider>
             <div className="space-y-4">
-              {calMonths.map((cm, cmIdx) => {
+              {ganttMonths.map((cm, cmIdx) => {
                 const daysInMonth = new Date(cm.year, cm.month, 0).getDate();
+                // 半月モードでの表示範囲
+                const dayStart = ganttHalf === "second" ? 16 : 1;
+                const dayEnd = ganttHalf === "first" ? 15 : daysInMonth;
+                const cellCount = dayEnd - dayStart + 1;
+                const rangeStart = `${cm.year}-${String(cm.month).padStart(2, "0")}-${String(dayStart).padStart(2, "0")}`;
+                const rangeEnd = `${cm.year}-${String(cm.month).padStart(2, "0")}-${String(dayEnd).padStart(2, "0")}`;
+
                 const trackMap = assignTracks(filtered, cm.year, cm.month);
                 const maxTrack = trackMap.size > 0 ? Math.max(...Array.from(trackMap.values())) : -1;
                 const trackCount = Math.max(maxTrack + 1, 1);
 
-                // この月の催事をトラック別に整理
-                const monthStart = `${cm.year}-${String(cm.month).padStart(2, "0")}-01`;
-                const monthEnd = `${cm.year}-${String(cm.month).padStart(2, "0")}-${String(daysInMonth).padStart(2, "0")}`;
-                const monthEvents = filtered.filter((e) => e.start_date <= monthEnd && e.end_date >= monthStart);
+                // 表示範囲にかかる催事
+                const monthEvents = filtered.filter((e) => e.start_date <= rangeEnd && e.end_date >= rangeStart);
 
                 return (
                   <Card key={`${cm.year}-${cm.month}`} className={`overflow-hidden ${cmIdx > 0 && cmIdx % 2 === 0 ? "print:page-break" : ""}`}>
@@ -449,8 +479,8 @@ export default function EventsPage() {
                             <span className="text-sky-700">{cm.month}<span className="text-xs">月</span></span>
                           </div>
                           <div className="flex-1 flex">
-                            {Array.from({ length: 31 }, (_, i) => {
-                              const day = i + 1;
+                            {Array.from({ length: cellCount }, (_, i) => {
+                              const day = dayStart + i;
                               if (day > daysInMonth) {
                                 return <div key={day} className="flex-1 bg-muted/10" />;
                               }
@@ -488,8 +518,8 @@ export default function EventsPage() {
                               <div className="flex-1 relative">
                                 {/* 背景グリッド */}
                                 <div className="absolute inset-0 flex">
-                                  {Array.from({ length: 31 }, (_, i) => {
-                                    const day = i + 1;
+                                  {Array.from({ length: cellCount }, (_, i) => {
+                                    const day = dayStart + i;
                                     if (day > daysInMonth) {
                                       return <div key={i} className="flex-1 bg-muted/10" />;
                                     }
@@ -510,19 +540,19 @@ export default function EventsPage() {
                                   const label = evt.store_name ? `${evt.venue} ${evt.store_name}` : evt.venue;
                                   const barColor = trackBarColors[trackIdx % trackBarColors.length];
 
-                                  // 月内でのバー位置計算
+                                  // 表示範囲内でのバー位置計算（半月モード対応）
                                   const evtStart = new Date(evt.start_date);
                                   const evtEnd = new Date(evt.end_date);
-                                  const mStart = new Date(cm.year, cm.month - 1, 1);
-                                  const mEnd = new Date(cm.year, cm.month - 1, daysInMonth);
+                                  const mStart = new Date(cm.year, cm.month - 1, dayStart);
+                                  const mEnd = new Date(cm.year, cm.month - 1, dayEnd);
 
                                   const effectiveStart = evtStart < mStart ? mStart : evtStart;
                                   const effectiveEnd = evtEnd > mEnd ? mEnd : evtEnd;
 
                                   const startDay = effectiveStart.getDate();
                                   const endDay = effectiveEnd.getDate();
-                                  const left = ((startDay - 1) / 31) * 100;
-                                  const width = ((endDay - startDay + 1) / 31) * 100;
+                                  const left = ((startDay - dayStart) / cellCount) * 100;
+                                  const width = ((endDay - startDay + 1) / cellCount) * 100;
 
                                   const arr = getArrangementStatus(evt);
                                   const icons = [
