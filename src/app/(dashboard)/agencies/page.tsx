@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, Fragment } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,7 +35,7 @@ import {
   Plus, Pencil, Trash2, Search, X, History, ChevronDown, ChevronRight,
 } from "lucide-react";
 import Link from "next/link";
-import { areaMap, areaNames, allPrefectures, matchesArea } from "@/lib/areas";
+import { areaMap, areaNames, allPrefectures, matchesArea, getAreaForPrefecture, getRegionColor, regionColors } from "@/lib/areas";
 import { usePermission } from "@/hooks/usePermission";
 
 type Agency = {
@@ -69,7 +69,7 @@ type MannequinHistory = {
   work_end_date: string | null;
 };
 
-type AreaItem = { id: string; name: string; region: string | null };
+type AreaItem = { id: string; name: string; region: string | null; color: string | null };
 type MannequinAreaLink = { mannequin_id: string; area_id: string };
 type AgencyAreaLink = { agency_id: string; area_id: string };
 
@@ -168,6 +168,16 @@ export default function AgenciesPage() {
   const [searchAgency, setSearchAgency] = useState("");
   const [searchArea, setSearchArea] = useState("");
 
+  // 地方アコーディオン
+  const [collapsedRegions, setCollapsedRegions] = useState<Set<string>>(new Set());
+  const toggleRegion = (region: string) => {
+    setCollapsedRegions((prev) => {
+      const next = new Set(prev);
+      if (next.has(region)) next.delete(region); else next.add(region);
+      return next;
+    });
+  };
+
   // Person dialog
   const [personDialogOpen, setPersonDialogOpen] = useState(false);
   const [editingPersonId, setEditingPersonId] = useState<string | null>(null);
@@ -198,7 +208,7 @@ export default function AgenciesPage() {
     const [agencyRes, peopleRes, areaRes, areaLinkRes, agencyAreaRes] = await Promise.all([
       supabase.from("mannequin_agencies").select("*").order("name"),
       supabase.from("mannequin_people").select("*").order("name"),
-      supabase.from("area_master").select("id, name, region").order("sort_order"),
+      supabase.from("area_master").select("id, name, region, color").order("sort_order"),
       supabase.from("mannequin_area_links").select("mannequin_id, area_id"),
       supabase.from("agency_area_links").select("agency_id, area_id"),
     ]);
@@ -411,6 +421,43 @@ export default function AgenciesPage() {
 
   const hasSearch = searchName || searchAgency || searchArea;
 
+  // マネキンさんの地方・色（最初に紐づくエリアを代表とする）
+  const getPersonPrimaryArea = (personId: string): AreaItem | null => {
+    const link = areaLinks.find((l) => l.mannequin_id === personId);
+    return link ? (areas.find((a) => a.id === link.area_id) || null) : null;
+  };
+  const getPersonRegion = (personId: string, fallbackArea: string | null): string => {
+    const area = getPersonPrimaryArea(personId);
+    if (area?.region) return area.region;
+    // area テキスト欄の最初の都道府県から推測
+    if (fallbackArea) {
+      const first = fallbackArea.split("、").filter(Boolean)[0];
+      if (first) return getAreaForPrefecture(first) || "未分類";
+    }
+    return "未分類";
+  };
+  const getPersonColor = (personId: string, fallbackArea: string | null): string => {
+    const area = getPersonPrimaryArea(personId);
+    if (area?.color) return area.color;
+    if (fallbackArea) {
+      const first = fallbackArea.split("、").filter(Boolean)[0];
+      if (first) return getRegionColor(first);
+    }
+    return "#CBD5E1";
+  };
+
+  // 地方別グループ
+  const groupedPeople = (() => {
+    const regionOrder = ["北海道", "東北", "関東", "北陸", "中部", "関西", "中国", "四国", "九州", "沖縄", "未分類"];
+    const sorted = [...filteredPeople].sort((a, b) => a.name.localeCompare(b.name, "ja"));
+    const groups = new Map<string, MannequinPerson[]>();
+    regionOrder.forEach((r) => {
+      const items = sorted.filter((p) => getPersonRegion(p.id, p.area) === r);
+      if (items.length > 0) groups.set(r, items);
+    });
+    return groups;
+  })();
+
   if (loading) return <p className="text-muted-foreground">読み込み中...</p>;
 
   return (
@@ -555,10 +602,12 @@ export default function AgenciesPage() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-1" />
+              <TableHead className="w-20">地方</TableHead>
+              <TableHead className="hidden md:table-cell">エリア</TableHead>
               <TableHead>氏名</TableHead>
               <TableHead>マネキン会社</TableHead>
               <TableHead className="hidden md:table-cell">電話番号</TableHead>
-              <TableHead className="hidden md:table-cell">エリア</TableHead>
               <TableHead className="hidden lg:table-cell">評価</TableHead>
               {canEdit && <TableHead className="w-28">操作</TableHead>}
             </TableRow>
@@ -566,50 +615,75 @@ export default function AgenciesPage() {
           <TableBody>
             {filteredPeople.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground">
+                <TableCell colSpan={canEdit ? 8 : 7} className="text-center text-muted-foreground">
                   {hasSearch ? "該当するマネキンさんが見つかりません。" : "マネキンさんが登録されていません。「マネキン追加」から登録してください。"}
                 </TableCell>
               </TableRow>
             ) : (
-              filteredPeople.map((person) => (
-                <TableRow key={person.id}>
-                  <TableCell className="font-medium">{person.name}</TableCell>
-                  <TableCell>{getAgencyName(person.agency_id)}</TableCell>
-                  <TableCell className="hidden md:table-cell text-sm">
-                    {person.mobile_phone || person.phone || "—"}
-                  </TableCell>
-                  <TableCell className="hidden md:table-cell">
-                    {(() => {
-                      const names = getAreaNamesForPerson(person.id);
-                      return names.length > 0 ? (
-                        <div className="flex flex-wrap gap-1">
-                          {names.map((n) => <Badge key={n} variant="outline" className="text-xs">{n}</Badge>)}
-                        </div>
-                      ) : "—";
-                    })()}
-                  </TableCell>
-                  <TableCell className="hidden lg:table-cell">
-                    {person.evaluation ? (
-                      <span className="text-xs">{person.evaluation.substring(0, 20)}{person.evaluation.length > 20 ? "..." : ""}</span>
-                    ) : "—"}
-                  </TableCell>
-                  {canEdit && (
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => openHistory(person)} title="催事履歴">
-                          <History className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => openEdit(person)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => openDelete(person.id, person.name)}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  )}
-                </TableRow>
-              ))
+              Array.from(groupedPeople.entries()).map(([regionName, personList]) => {
+                const regionColor = regionColors[regionName] || "#CBD5E1";
+                const isCollapsed = collapsedRegions.has(regionName);
+                return (
+                  <Fragment key={regionName}>
+                    <TableRow
+                      className="hover:bg-muted/60 cursor-pointer"
+                      style={{ backgroundColor: `${regionColor}22` }}
+                      onClick={() => toggleRegion(regionName)}
+                    >
+                      <TableCell className="p-0" style={{ backgroundColor: regionColor, width: 6 }} />
+                      <TableCell colSpan={canEdit ? 7 : 6} className="py-1.5 font-semibold text-xs">
+                        <span className="inline-flex items-center gap-2">
+                          {isCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                          <span className="inline-block w-3 h-3 rounded" style={{ backgroundColor: regionColor }} />
+                          {regionName}（{personList.length}名）
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                    {!isCollapsed && personList.map((person) => {
+                      const personColor = getPersonColor(person.id, person.area);
+                      const areaNames2 = getAreaNamesForPerson(person.id);
+                      return (
+                        <TableRow key={person.id}>
+                          <TableCell className="p-0" style={{ backgroundColor: personColor, width: 6 }} />
+                          <TableCell className="text-xs text-muted-foreground">{regionName}</TableCell>
+                          <TableCell className="hidden md:table-cell">
+                            {areaNames2.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {areaNames2.map((n) => <Badge key={n} variant="outline" className="text-xs">{n}</Badge>)}
+                              </div>
+                            ) : <span className="text-xs text-muted-foreground">—</span>}
+                          </TableCell>
+                          <TableCell className="font-medium">{person.name}</TableCell>
+                          <TableCell>{getAgencyName(person.agency_id)}</TableCell>
+                          <TableCell className="hidden md:table-cell text-sm">
+                            {person.mobile_phone || person.phone || "—"}
+                          </TableCell>
+                          <TableCell className="hidden lg:table-cell">
+                            {person.evaluation ? (
+                              <span className="text-xs">{person.evaluation.substring(0, 20)}{person.evaluation.length > 20 ? "..." : ""}</span>
+                            ) : "—"}
+                          </TableCell>
+                          {canEdit && (
+                            <TableCell>
+                              <div className="flex gap-1">
+                                <Button variant="ghost" size="icon" onClick={() => openHistory(person)} title="催事履歴">
+                                  <History className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="icon" onClick={() => openEdit(person)}>
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="icon" onClick={() => openDelete(person.id, person.name)}>
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          )}
+                        </TableRow>
+                      );
+                    })}
+                  </Fragment>
+                );
+              })
             )}
           </TableBody>
         </Table>
@@ -662,7 +736,7 @@ export default function AgenciesPage() {
               {agencyMode === "existing" ? (
                 <Select
                   value={personForm.agency_id || "none"}
-                  onValueChange={(v) => setPersonForm({ ...personForm, agency_id: v === "none" ? "" : v })}
+                  onValueChange={(v) => setPersonForm({ ...personForm, agency_id: v == null || v === "none" ? "" : v })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="マネキン会社を選択（任意）">
