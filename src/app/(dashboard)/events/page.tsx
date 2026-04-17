@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, MapPin, Calendar, Printer, ImageDown, ChevronLeft, ChevronRight, LayoutGrid, CalendarDays, X } from "lucide-react";
+import { Plus, MapPin, Calendar, Printer, ImageDown, ChevronLeft, ChevronRight, LayoutGrid, CalendarDays, CalendarRange, X } from "lucide-react";
 import Link from "next/link";
 import { eventStatuses } from "@/lib/prefectures";
 import { getHolidaysForRange } from "@/lib/holidays";
@@ -82,6 +82,64 @@ const trackBarColors = [
 
 const TRACK_LABELS = ["A", "B", "C", "D", "E", "F", "G", "H"];
 
+/** 指定週内の催事をレーンに割り当てる（日曜始まり） */
+function assignWeekLanes(
+  evts: Event[],
+  weekStart: Date,
+  weekEnd: Date
+): { event: Event; laneIdx: number; startDay: number; endDay: number }[] {
+  const ws = weekStart.toISOString().slice(0, 10);
+  const we = weekEnd.toISOString().slice(0, 10);
+  const weekEvents = evts
+    .filter((e) => e.start_date <= we && e.end_date >= ws)
+    .sort((a, b) => a.start_date.localeCompare(b.start_date));
+  const laneEnds: string[] = [];
+  const result: { event: Event; laneIdx: number; startDay: number; endDay: number }[] = [];
+  for (const evt of weekEvents) {
+    let lane = -1;
+    for (let t = 0; t < laneEnds.length; t++) {
+      if (evt.start_date > laneEnds[t]) {
+        lane = t;
+        laneEnds[t] = evt.end_date;
+        break;
+      }
+    }
+    if (lane === -1) {
+      lane = laneEnds.length;
+      laneEnds.push(evt.end_date);
+    }
+    const effStart = evt.start_date < ws ? weekStart : new Date(evt.start_date + "T00:00:00");
+    const effEnd = evt.end_date > we ? weekEnd : new Date(evt.end_date + "T00:00:00");
+    result.push({
+      event: evt,
+      laneIdx: lane,
+      startDay: effStart.getDay(),
+      endDay: effEnd.getDay(),
+    });
+  }
+  return result;
+}
+
+/** 月のカレンダー週構造を返す（日曜始まり） */
+function getCalendarWeeks(year: number, month: number): Date[][] {
+  const firstDay = new Date(year, month - 1, 1);
+  const dim = new Date(year, month, 0).getDate();
+  const firstDow = firstDay.getDay(); // 0=Sun
+  const weeks: Date[][] = [];
+  const startDate = new Date(year, month - 1, 1 - firstDow);
+  const totalCells = Math.ceil((firstDow + dim) / 7) * 7;
+  for (let w = 0; w < totalCells / 7; w++) {
+    const row: Date[] = [];
+    for (let d = 0; d < 7; d++) {
+      const cur = new Date(startDate);
+      cur.setDate(startDate.getDate() + w * 7 + d);
+      row.push(cur);
+    }
+    weeks.push(row);
+  }
+  return weeks;
+}
+
 /** 月内の催事をトラック（A-H）に割り当てる */
 function assignTracks(evts: Event[], y: number, m: number): Map<string, number> {
   const dim = new Date(y, m, 0).getDate();
@@ -120,7 +178,7 @@ export default function EventsPage() {
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<string>("all");
-  const [viewMode, setViewMode] = useState<"calendar" | "card">("calendar");
+  const [viewMode, setViewMode] = useState<"gantt" | "calendar" | "card">("gantt");
   const listRef = useRef<HTMLDivElement>(null);
 
   // 手配データ
@@ -302,10 +360,13 @@ export default function EventsPage() {
         <h1 className="text-2xl font-bold">日程表</h1>
         <div className="flex gap-2 items-center">
           <div className="flex border rounded-md print:hidden">
-            <Button variant={viewMode === "calendar" ? "default" : "ghost"} size="sm" className="rounded-r-none" onClick={() => setViewMode("calendar")}>
+            <Button variant={viewMode === "gantt" ? "default" : "ghost"} size="sm" className="rounded-r-none" onClick={() => setViewMode("gantt")} title="ガントチャート">
+              <CalendarRange className="h-4 w-4" />
+            </Button>
+            <Button variant={viewMode === "calendar" ? "default" : "ghost"} size="sm" className="rounded-none border-x" onClick={() => setViewMode("calendar")} title="カレンダー">
               <CalendarDays className="h-4 w-4" />
             </Button>
-            <Button variant={viewMode === "card" ? "default" : "ghost"} size="sm" className="rounded-l-none" onClick={() => setViewMode("card")}>
+            <Button variant={viewMode === "card" ? "default" : "ghost"} size="sm" className="rounded-l-none" onClick={() => setViewMode("card")} title="カード">
               <LayoutGrid className="h-4 w-4" />
             </Button>
           </div>
@@ -329,7 +390,7 @@ export default function EventsPage() {
 
       {loading ? (
         <p className="text-muted-foreground">読み込み中...</p>
-      ) : viewMode === "calendar" ? (
+      ) : viewMode === "gantt" ? (
         /* ===== ガントチャート日程表 ===== */
         <>
         <div className="flex items-center gap-3 mb-4 print:hidden">
@@ -527,6 +588,124 @@ export default function EventsPage() {
                 );
               })}
             </div>
+          </TooltipProvider>
+        </div>
+        </>
+      ) : viewMode === "calendar" ? (
+        /* ===== カレンダービュー（月グリッド・日曜始まり） ===== */
+        <>
+        <div className="flex items-center gap-3 mb-4 print:hidden">
+          <Button variant="outline" size="icon" onClick={prevMonth}><ChevronLeft className="h-4 w-4" /></Button>
+          <span className="text-lg font-semibold min-w-[200px] text-center">{spanLabel}</span>
+          <Button variant="outline" size="icon" onClick={nextMonth}><ChevronRight className="h-4 w-4" /></Button>
+          <Button variant="ghost" size="sm" onClick={() => { setCalYear(today.getFullYear()); setCalMonth(today.getMonth() + 1); }}>今月</Button>
+          <Select value={String(calSpan)} onValueChange={(v) => v && setCalSpan(parseInt(v))}>
+            <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="3">3ヶ月</SelectItem>
+              <SelectItem value="6">6ヶ月</SelectItem>
+              <SelectItem value="12">12ヶ月</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div ref={listRef} className="space-y-6">
+          <TooltipProvider>
+            {calMonths.map((cm) => {
+              const weeks = getCalendarWeeks(cm.year, cm.month);
+              const weekDayNames = ["日", "月", "火", "水", "木", "金", "土"];
+              return (
+                <Card key={`${cm.year}-${cm.month}`}>
+                  <CardContent className="p-3">
+                    <h2 className="text-base font-bold mb-2">{cm.year}年 {cm.month}月</h2>
+                    <div className="border-t border-l">
+                      <div className="grid grid-cols-7">
+                        {weekDayNames.map((wd, i) => (
+                          <div key={wd} className={`border-r border-b text-center text-xs font-bold py-1 ${i === 0 ? "text-red-600 bg-red-50/50" : i === 6 ? "text-blue-600 bg-blue-50/50" : "bg-muted/30"}`}>
+                            {wd}
+                          </div>
+                        ))}
+                      </div>
+                      {weeks.map((week, wIdx) => {
+                        const weekStart = week[0];
+                        const weekEnd = week[6];
+                        const lanes = assignWeekLanes(filtered, weekStart, weekEnd);
+                        const maxLanes = lanes.reduce((acc, l) => Math.max(acc, l.laneIdx + 1), 0);
+                        const cellMinHeight = 28 + maxLanes * 20;
+                        return (
+                          <div key={wIdx} className="relative">
+                            <div className="grid grid-cols-7">
+                              {week.map((date, dIdx) => {
+                                const isCurrentMonth = date.getMonth() + 1 === cm.month;
+                                const isToday = today.getFullYear() === date.getFullYear() && today.getMonth() === date.getMonth() && today.getDate() === date.getDate();
+                                const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+                                const isHoliday = holidays.has(dateStr);
+                                const isSun = date.getDay() === 0;
+                                const isSat = date.getDay() === 6;
+                                const dayColor = !isCurrentMonth ? "text-muted-foreground/40" : isSun || isHoliday ? "text-red-600" : isSat ? "text-blue-600" : "";
+                                return (
+                                  <div
+                                    key={dIdx}
+                                    className={`border-r border-b ${isToday ? "bg-amber-50" : isCurrentMonth ? "" : "bg-muted/20"}`}
+                                    style={{ minHeight: cellMinHeight }}
+                                  >
+                                    <div className={`text-xs px-1 pt-0.5 font-medium ${dayColor}`}>
+                                      {date.getDate()}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            {/* イベントバー（週セルの上にオーバーレイ） */}
+                            <div className="absolute inset-0 pointer-events-none">
+                              {lanes.map(({ event, laneIdx, startDay, endDay }) => {
+                                const spanDays = endDay - startDay + 1;
+                                const label = event.store_name ? `${event.venue} ${event.store_name}` : event.venue;
+                                const arr = getArrangementStatus(event);
+                                return (
+                                  <Tooltip key={`${event.id}-${wIdx}`}>
+                                    <TooltipTrigger
+                                      render={
+                                        <div
+                                          role="button"
+                                          tabIndex={0}
+                                          className={`absolute truncate text-[10px] font-medium px-1 py-0.5 rounded border cursor-pointer pointer-events-auto hover:opacity-80 ${
+                                            event.status === "実施済" ? "bg-gray-100 border-gray-300 text-gray-600" :
+                                            arr.application === "提出済" ? "bg-green-100 border-green-300 text-green-900" :
+                                            "bg-blue-100 border-blue-300 text-blue-900"
+                                          }`}
+                                          style={{
+                                            left: `calc(${(startDay / 7) * 100}% + 2px)`,
+                                            width: `calc(${(spanDays / 7) * 100}% - 4px)`,
+                                            top: `${22 + laneIdx * 20}px`,
+                                          }}
+                                          onClick={() => openDialog(event)}
+                                          onKeyDown={(e: React.KeyboardEvent) => { if (e.key === "Enter") openDialog(event); }}
+                                        >
+                                          {label}
+                                        </div>
+                                      }
+                                    />
+                                    <TooltipContent side="bottom">
+                                      <div className="space-y-0.5">
+                                        <div className="font-medium">{event.name || label}</div>
+                                        {event.name && <div>{label}（{event.prefecture}）</div>}
+                                        <div className="text-muted-foreground">{event.start_date} 〜 {event.end_date}</div>
+                                        <div>申込書: {arr.application} / ホテル: {arr.hotel} / 交通: {arr.transport}</div>
+                                      </div>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </TooltipProvider>
         </div>
         </>
