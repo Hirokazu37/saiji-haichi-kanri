@@ -198,11 +198,9 @@ export default function EventsPage() {
   const [calYear, setCalYear] = useState(today.getFullYear());
   const [calMonth, setCalMonth] = useState(today.getMonth() + 1);
   const [calSpan, setCalSpan] = useState(6);
-  // ガント専用: "half-first" | "half-second" | "half-3" | "1" | "3" | "6" | "12"
-  //   half-first  : 当月前半のみ
-  //   half-second : 当月後半のみ
-  //   half-3      : 3ヶ月分を半月ごとに2段に分割（6ブロック）
-  //   1/3/6/12    : そのまま月数
+  // ガント専用: "half-3" | "1" | "3" | "6" | "12"
+  //   half-3   : 3ヶ月分を各月前半/後半の2段に分割（1月=1カード内に2行）
+  //   1/3/6/12 : 1ヶ月1カードで月数分表示
   const [ganttSpanSel, setGanttSpanSel] = useState<string>("6");
 
   const calMonths = useMemo(() => {
@@ -235,14 +233,7 @@ export default function EventsPage() {
       while (m > 12) { m -= 12; y++; }
       return { y, m };
     };
-    if (ganttSpanSel === "half-first") {
-      const { y, m } = nextYM(0);
-      blocks.push({ year: y, month: m, dayStart: 1, dayEnd: 15, halfLabel: "前半" });
-    } else if (ganttSpanSel === "half-second") {
-      const { y, m } = nextYM(0);
-      const dim = new Date(y, m, 0).getDate();
-      blocks.push({ year: y, month: m, dayStart: 16, dayEnd: dim, halfLabel: "後半" });
-    } else if (ganttSpanSel === "half-3") {
+    if (ganttSpanSel === "half-3") {
       for (let i = 0; i < 3; i++) {
         const { y, m } = nextYM(i);
         pushMonthHalves(y, m);
@@ -256,6 +247,21 @@ export default function EventsPage() {
     }
     return blocks;
   }, [calYear, calMonth, ganttSpanSel]);
+
+  // 同じ月(year+month)の連続ブロックを1つのカードにまとめる
+  const ganttCardGroups = useMemo(() => {
+    type Block = typeof ganttBlocks[number];
+    const groups: Block[][] = [];
+    for (const b of ganttBlocks) {
+      const last = groups[groups.length - 1];
+      if (last && last[0].year === b.year && last[0].month === b.month) {
+        last.push(b);
+      } else {
+        groups.push([b]);
+      }
+    }
+    return groups;
+  }, [ganttBlocks]);
 
   const holidays = useMemo(() => {
     const years = [...new Set(calMonths.map((m) => m.year))];
@@ -402,8 +408,6 @@ export default function EventsPage() {
     : `${calYear}年 ${calMonth}月 〜 ${calMonths[calMonths.length - 1].year}年 ${calMonths[calMonths.length - 1].month}月`;
 
   const ganttSpanLabel = (() => {
-    if (ganttSpanSel === "half-first") return `${calYear}年 ${calMonth}月 前半(1-15)`;
-    if (ganttSpanSel === "half-second") return `${calYear}年 ${calMonth}月 後半(16-末)`;
     if (ganttBlocks.length === 0) return `${calYear}年 ${calMonth}月`;
     const last = ganttBlocks[ganttBlocks.length - 1];
     if (ganttBlocks.length === 1 && !ganttBlocks[0].halfLabel) return `${calYear}年 ${calMonth}月`;
@@ -458,8 +462,6 @@ export default function EventsPage() {
           <Select value={ganttSpanSel} onValueChange={(v) => v && setGanttSpanSel(v)}>
             <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="half-first">半月（前半）</SelectItem>
-              <SelectItem value="half-second">半月（後半）</SelectItem>
               <SelectItem value="half-3">半月×3ヶ月</SelectItem>
               <SelectItem value="1">1ヶ月</SelectItem>
               <SelectItem value="3">3ヶ月</SelectItem>
@@ -489,30 +491,35 @@ export default function EventsPage() {
 
           <TooltipProvider>
             <div className="space-y-4">
-              {ganttBlocks.map((cm, cmIdx) => {
-                const daysInMonth = new Date(cm.year, cm.month, 0).getDate();
-                const dayStart = cm.dayStart;
-                const dayEnd = cm.dayEnd;
-                const cellCount = dayEnd - dayStart + 1;
-                const rangeStart = `${cm.year}-${String(cm.month).padStart(2, "0")}-${String(dayStart).padStart(2, "0")}`;
-                const rangeEnd = `${cm.year}-${String(cm.month).padStart(2, "0")}-${String(dayEnd).padStart(2, "0")}`;
-
-                const trackMap = assignTracks(filtered, cm.year, cm.month);
-                const maxTrack = trackMap.size > 0 ? Math.max(...Array.from(trackMap.values())) : -1;
-                const trackCount = Math.max(maxTrack + 1, 1);
-
-                // 表示範囲にかかる催事
-                const monthEvents = filtered.filter((e) => e.start_date <= rangeEnd && e.end_date >= rangeStart);
-
+              {ganttCardGroups.map((group, gIdx) => {
+                const firstBlock = group[0];
+                const cardKey = `${firstBlock.year}-${firstBlock.month}`;
                 return (
-                  <Card key={`${cm.year}-${cm.month}-${cm.halfLabel || "full"}`} className={`overflow-hidden ${cmIdx > 0 && cmIdx % 2 === 0 ? "print:page-break" : ""}`}>
+                  <Card key={cardKey} className={`overflow-hidden ${gIdx > 0 && gIdx % 2 === 0 ? "print:page-break" : ""}`}>
                     <CardContent className="p-0 overflow-x-auto print:overflow-visible">
                       <div className="min-w-[600px]">
+                        {group.map((cm, subIdx) => {
+                          const daysInMonth = new Date(cm.year, cm.month, 0).getDate();
+                          const dayStart = cm.dayStart;
+                          const dayEnd = cm.dayEnd;
+                          const cellCount = dayEnd - dayStart + 1;
+                          const rangeStart = `${cm.year}-${String(cm.month).padStart(2, "0")}-${String(dayStart).padStart(2, "0")}`;
+                          const rangeEnd = `${cm.year}-${String(cm.month).padStart(2, "0")}-${String(dayEnd).padStart(2, "0")}`;
+
+                          const trackMap = assignTracks(filtered, cm.year, cm.month);
+                          const maxTrack = trackMap.size > 0 ? Math.max(...Array.from(trackMap.values())) : -1;
+                          const trackCount = Math.max(maxTrack + 1, 1);
+
+                          // 表示範囲にかかる催事
+                          const monthEvents = filtered.filter((e) => e.start_date <= rangeEnd && e.end_date >= rangeStart);
+                          const isFirstSub = subIdx === 0;
+                          return (
+                            <div key={`${cm.halfLabel || "full"}`} className={subIdx > 0 ? "border-t-2 border-sky-200" : ""}>
                         {/* 月タイトル */}
                         <div className="flex border-b bg-white">
                           <div className="w-14 shrink-0 border-r flex flex-col items-center justify-center py-1.5 bg-sky-50">
-                            <span className="text-sky-700 text-base font-black leading-none">{cm.month}<span className="text-xs">月</span></span>
-                            {cm.halfLabel && <span className="text-[10px] text-sky-600 font-semibold leading-none mt-0.5">{cm.halfLabel}</span>}
+                            {isFirstSub && <span className="text-sky-700 text-base font-black leading-none">{cm.month}<span className="text-xs">月</span></span>}
+                            {cm.halfLabel && <span className={`text-[11px] text-sky-600 font-semibold leading-none ${isFirstSub ? "mt-0.5" : ""}`}>{cm.halfLabel}</span>}
                           </div>
                           <div className="flex-1 flex">
                             {Array.from({ length: cellCount }, (_, i) => {
@@ -533,8 +540,8 @@ export default function EventsPage() {
                                   className={`flex-1 text-center border-r ${isT ? "bg-primary/10" : isRed ? "bg-red-50/50" : isSat ? "bg-blue-50/50" : ""}`}
                                   title={holiday || undefined}
                                 >
-                                  <div className="text-[10px] font-medium leading-tight pt-0.5">{day}</div>
-                                  <div className={`text-[9px] leading-tight pb-0.5 ${isRed ? "text-red-500 font-bold" : isSat ? "text-blue-500" : "text-muted-foreground"}`}>
+                                  <div className="text-[14px] font-bold leading-tight pt-1">{day}</div>
+                                  <div className={`text-[11px] leading-tight pb-1 ${isRed ? "text-red-500 font-bold" : isSat ? "text-blue-500" : "text-muted-foreground"}`}>
                                     {getDayOfWeek(date)}
                                   </div>
                                 </div>
@@ -645,6 +652,9 @@ export default function EventsPage() {
                                   );
                                 })}
                               </div>
+                            </div>
+                          );
+                        })}
                             </div>
                           );
                         })}
