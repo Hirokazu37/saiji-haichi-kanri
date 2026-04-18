@@ -37,6 +37,7 @@ type Event = {
 type StaffRow = {
   id: string;
   event_id: string;
+  person_type: "employee" | "mannequin" | null;
   start_date: string;
   end_date: string;
   role: string | null;
@@ -47,6 +48,7 @@ type StaffRow = {
   transport_outbound_status: string | null;
   transport_return_status: string | null;
   employees: { name: string } | null;
+  mannequin_people: { name: string } | null;
   events: { id: string; name: string | null; venue: string; store_name: string | null; prefecture: string; start_date: string; end_date: string } | null;
 };
 
@@ -144,7 +146,7 @@ export default function DashboardPage() {
       // 今月にかかる催事（end_date >= today の開催中/未開催のみ）
       supabase.from("events").select("*").gte("start_date", monthStart).lte("start_date", monthEnd).gte("end_date", t),
       supabase.from("events").select("*").gte("start_date", t).lte("start_date", twoWeeksLater).order("start_date"),
-      supabase.from("event_staff").select("id, event_id, start_date, end_date, role, hotel_name, hotel_check_in, hotel_check_out, hotel_status, transport_outbound_status, transport_return_status, employees(name), events(id, name, venue, store_name, prefecture, start_date, end_date)").lte("start_date", t).gte("end_date", t),
+      supabase.from("event_staff").select("id, event_id, person_type, start_date, end_date, role, hotel_name, hotel_check_in, hotel_check_out, hotel_status, transport_outbound_status, transport_return_status, employees(name), mannequin_people(name), events(id, name, venue, store_name, prefecture, start_date, end_date)").lte("start_date", t).gte("end_date", t),
       supabase.from("events").select("*").gte("start_date", t).lte("start_date", horizonEnd).order("start_date"),
       supabase.from("mannequins").select("event_id, arrangement_status"),
     ]);
@@ -419,7 +421,10 @@ export default function DashboardPage() {
                   <Link key={s.id} href={s.events ? `/events/${s.events.id}` : "/events"} className="block rounded-md border bg-white p-3 hover:bg-muted/30 transition-colors">
                     <div className="flex items-center gap-1.5">
                       <Users className="h-4 w-4 text-sky-600 shrink-0" />
-                      <span className="font-bold text-sm">{s.employees?.name || "不明"}</span>
+                      <span className="font-bold text-sm">{(s.person_type === "mannequin" ? s.mannequin_people?.name : s.employees?.name) || "不明"}</span>
+                      {s.person_type === "mannequin" && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-pink-100 text-pink-800 font-medium">マネキン</span>
+                      )}
                       <span className="text-xs text-muted-foreground">→</span>
                       <span className="text-sm font-medium truncate">{s.events ? venueLabel(s.events) : "催事不明"}</span>
                     </div>

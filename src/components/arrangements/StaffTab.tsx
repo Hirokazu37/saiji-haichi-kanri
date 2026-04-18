@@ -20,36 +20,72 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Plus, Pencil, Trash2, Users } from "lucide-react";
 import { addLog } from "@/lib/log";
 
+type PersonType = "employee" | "mannequin";
+
 type Employee = { id: string; name: string; position: string | null };
+type MannequinPerson = { id: string; name: string; agency_id: string | null };
+type Agency = { id: string; name: string };
+
 type StaffAssignment = {
   id: string;
-  employee_id: string;
+  person_type: PersonType;
+  employee_id: string | null;
+  mannequin_person_id: string | null;
   start_date: string;
   end_date: string;
   role: string | null;
   notes: string | null;
   employees: { name: string; position: string | null } | null;
+  mannequin_people: { name: string; agency_id: string | null } | null;
 };
 
-const emptyForm = { employee_id: "", start_date: "", end_date: "", role: "", notes: "" };
+type FormState = {
+  person_type: PersonType;
+  employee_id: string;
+  mannequin_person_id: string;
+  start_date: string;
+  end_date: string;
+  role: string;
+  notes: string;
+};
+
+const emptyForm: FormState = {
+  person_type: "employee",
+  employee_id: "",
+  mannequin_person_id: "",
+  start_date: "",
+  end_date: "",
+  role: "",
+  notes: "",
+};
 
 export function StaffTab({ eventId, startDate, endDate }: { eventId: string; startDate: string; endDate: string }) {
   const supabase = createClient();
   const [assignments, setAssignments] = useState<StaffAssignment[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [mannequinPeople, setMannequinPeople] = useState<MannequinPerson[]>([]);
+  const [agencies, setAgencies] = useState<Agency[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState<FormState>(emptyForm);
 
   const fetch = useCallback(async () => {
-    const [staffRes, empRes] = await Promise.all([
-      supabase.from("event_staff").select("*, employees(name, position)").eq("event_id", eventId).order("start_date"),
+    const [staffRes, empRes, mpRes, agRes] = await Promise.all([
+      supabase
+        .from("event_staff")
+        .select("id, person_type, employee_id, mannequin_person_id, start_date, end_date, role, notes, employees(name, position), mannequin_people(name, agency_id)")
+        .eq("event_id", eventId)
+        .order("start_date"),
       supabase.from("employees").select("id, name, position").order("sort_order").order("name"),
+      supabase.from("mannequin_people").select("id, name, agency_id").order("name"),
+      supabase.from("mannequin_agencies").select("id, name").order("name"),
     ]);
-    setAssignments(staffRes.data as StaffAssignment[] || []);
+    setAssignments((staffRes.data as unknown as StaffAssignment[]) || []);
     setEmployees(empRes.data || []);
+    setMannequinPeople(mpRes.data || []);
+    setAgencies(agRes.data || []);
   }, [supabase, eventId]);
 
   useEffect(() => { fetch(); }, [fetch]);
@@ -63,7 +99,9 @@ export function StaffTab({ eventId, startDate, endDate }: { eventId: string; sta
   const openEdit = (a: StaffAssignment) => {
     setEditingId(a.id);
     setForm({
-      employee_id: a.employee_id,
+      person_type: a.person_type,
+      employee_id: a.employee_id || "",
+      mannequin_person_id: a.mannequin_person_id || "",
       start_date: a.start_date,
       end_date: a.end_date,
       role: a.role || "",
@@ -72,23 +110,34 @@ export function StaffTab({ eventId, startDate, endDate }: { eventId: string; sta
     setDialogOpen(true);
   };
 
+  const canSave =
+    (form.person_type === "employee" ? !!form.employee_id : !!form.mannequin_person_id) &&
+    !!form.start_date &&
+    !!form.end_date;
+
   const save = async () => {
-    if (!form.employee_id || !form.start_date || !form.end_date) return;
+    if (!canSave) return;
     const payload = {
       event_id: eventId,
-      employee_id: form.employee_id,
+      person_type: form.person_type,
+      employee_id: form.person_type === "employee" ? form.employee_id : null,
+      mannequin_person_id: form.person_type === "mannequin" ? form.mannequin_person_id : null,
       start_date: form.start_date,
       end_date: form.end_date,
       role: form.role.trim() || null,
       notes: form.notes.trim() || null,
     };
-    const empName = employees.find((e) => e.id === form.employee_id)?.name || "";
+    const personName =
+      form.person_type === "employee"
+        ? employees.find((e) => e.id === form.employee_id)?.name || ""
+        : mannequinPeople.find((p) => p.id === form.mannequin_person_id)?.name || "";
+    const personLabel = form.person_type === "mannequin" ? `マネキン:${personName}` : personName;
     if (editingId) {
       await supabase.from("event_staff").update(payload).eq("id", editingId);
-      await addLog(supabase, eventId, "社員配置", `${empName}の配置を更新（${form.start_date}〜${form.end_date} ${form.role || ""}）`);
+      await addLog(supabase, eventId, "社員配置", `${personLabel}の配置を更新（${form.start_date}〜${form.end_date} ${form.role || ""}）`);
     } else {
       await supabase.from("event_staff").insert(payload);
-      await addLog(supabase, eventId, "社員配置", `${empName}を配置（${form.start_date}〜${form.end_date} ${form.role || ""}）`);
+      await addLog(supabase, eventId, "社員配置", `${personLabel}を配置（${form.start_date}〜${form.end_date} ${form.role || ""}）`);
     }
     setDialogOpen(false);
     fetch();
@@ -100,6 +149,24 @@ export function StaffTab({ eventId, startDate, endDate }: { eventId: string; sta
     setDeleteOpen(false);
     fetch();
   };
+
+  const displayName = (a: StaffAssignment): string => {
+    if (a.person_type === "mannequin") return a.mannequin_people?.name || "（削除済みマネキン）";
+    return a.employees?.name || "（削除済み社員）";
+  };
+
+  const selectedEmployeeLabel = form.employee_id
+    ? (employees.find((e) => e.id === form.employee_id)?.name ?? "（削除済み社員）")
+    : undefined;
+
+  const selectedMannequinLabel = form.mannequin_person_id
+    ? (() => {
+        const p = mannequinPeople.find((x) => x.id === form.mannequin_person_id);
+        if (!p) return "（削除済みマネキン）";
+        const agency = agencies.find((a) => a.id === p.agency_id)?.name;
+        return agency ? `${p.name}（${agency}）` : p.name;
+      })()
+    : undefined;
 
   return (
     <Card className="border-l-4 border-l-cyan-500 bg-cyan-50/50">
@@ -117,7 +184,8 @@ export function StaffTab({ eventId, startDate, endDate }: { eventId: string; sta
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>社員名</TableHead>
+                <TableHead className="w-20">種別</TableHead>
+                <TableHead>氏名</TableHead>
                 <TableHead>期間</TableHead>
                 <TableHead className="hidden md:table-cell">役割</TableHead>
                 <TableHead className="w-20">操作</TableHead>
@@ -126,7 +194,14 @@ export function StaffTab({ eventId, startDate, endDate }: { eventId: string; sta
             <TableBody>
               {assignments.map((a) => (
                 <TableRow key={a.id}>
-                  <TableCell className="font-medium">{a.employees?.name || "—"}</TableCell>
+                  <TableCell>
+                    {a.person_type === "mannequin" ? (
+                      <Badge className="bg-pink-100 text-pink-800 hover:bg-pink-100">マネキン</Badge>
+                    ) : (
+                      <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">社員</Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="font-medium">{displayName(a)}</TableCell>
                   <TableCell className="text-sm">{a.start_date} 〜 {a.end_date}</TableCell>
                   <TableCell className="hidden md:table-cell">
                     {a.role ? <Badge variant="outline">{a.role}</Badge> : "—"}
@@ -149,16 +224,65 @@ export function StaffTab({ eventId, startDate, endDate }: { eventId: string; sta
           <DialogHeader><DialogTitle>{editingId ? "社員配置を編集" : "社員配置を追加"}</DialogTitle></DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label>社員 *</Label>
-              <Select value={form.employee_id} onValueChange={(v) => v && setForm({ ...form, employee_id: v })}>
-                <SelectTrigger><SelectValue placeholder="社員を選択" /></SelectTrigger>
-                <SelectContent>
-                  {employees.map((e) => (
-                    <SelectItem key={e.id} value={e.id}>{e.name}{e.position ? ` (${e.position})` : ""}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>種別 *</Label>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant={form.person_type === "employee" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setForm({ ...form, person_type: "employee", mannequin_person_id: "" })}
+                >社員</Button>
+                <Button
+                  type="button"
+                  variant={form.person_type === "mannequin" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setForm({ ...form, person_type: "mannequin", employee_id: "" })}
+                >マネキン</Button>
+              </div>
             </div>
+
+            {form.person_type === "employee" ? (
+              <div className="space-y-2">
+                <Label>社員 *</Label>
+                <Select value={form.employee_id} onValueChange={(v) => v && setForm({ ...form, employee_id: v })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="社員を選択">
+                      {selectedEmployeeLabel}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {employees.map((e) => (
+                      <SelectItem key={e.id} value={e.id}>{e.name}{e.position ? ` (${e.position})` : ""}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label>マネキン *</Label>
+                <Select value={form.mannequin_person_id} onValueChange={(v) => v && setForm({ ...form, mannequin_person_id: v })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="マネキンを選択">
+                      {selectedMannequinLabel}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {mannequinPeople.map((p) => {
+                      const agency = agencies.find((a) => a.id === p.agency_id)?.name;
+                      return (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name}{agency ? `（${agency}）` : ""}
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+                {mannequinPeople.length === 0 && (
+                  <p className="text-xs text-muted-foreground">マネキンマスターに登録がありません。/mannequins で登録してください。</p>
+                )}
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>開始日 *</Label>
@@ -180,7 +304,7 @@ export function StaffTab({ eventId, startDate, endDate }: { eventId: string; sta
           </div>
           <DialogFooter>
             <DialogClose><Button variant="outline">キャンセル</Button></DialogClose>
-            <Button onClick={save} disabled={!form.employee_id || !form.start_date || !form.end_date}>{editingId ? "更新" : "追加"}</Button>
+            <Button onClick={save} disabled={!canSave}>{editingId ? "更新" : "追加"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

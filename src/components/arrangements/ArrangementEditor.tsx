@@ -15,7 +15,9 @@ export type ArrangementEditorHandle = {
 
 type StaffRow = {
   id: string;
-  employee_id: string;
+  person_type: "employee" | "mannequin" | null;
+  employee_id: string | null;
+  mannequin_person_id: string | null;
   start_date: string;
   end_date: string;
   role: string | null;
@@ -24,6 +26,7 @@ type StaffRow = {
   transport_outbound_status: string | null;
   transport_return_status: string | null;
   employees: { name: string } | null;
+  mannequin_people: { name: string } | null;
 };
 
 type ShipmentRow = {
@@ -66,7 +69,7 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
 
   const fetchData = useCallback(async () => {
     const [staffRes, shipRes, evtRes, venueRes, hmRes, hvlRes, mannRes, vmRes] = await Promise.all([
-      supabase.from("event_staff").select("id, employee_id, start_date, end_date, role, hotel_name, hotel_status, transport_outbound_status, transport_return_status, employees(name)").eq("event_id", eventId).order("start_date"),
+      supabase.from("event_staff").select("id, person_type, employee_id, mannequin_person_id, start_date, end_date, role, hotel_name, hotel_status, transport_outbound_status, transport_return_status, employees(name), mannequin_people(name)").eq("event_id", eventId).order("start_date"),
       supabase.from("shipments").select("id, item_name, recipient_name").eq("event_id", eventId),
       supabase.from("events").select("application_status, application_submitted_date, application_method, dm_status, dm_count, equipment_from, equipment_to").eq("id", eventId).single(),
       supabase.from("events").select("venue, store_name, start_date").order("start_date").limit(100),
@@ -259,7 +262,10 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
                 <div key={s.id} className="bg-white rounded border p-3 space-y-2">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold">{s.employees?.name || "不明"}</span>
+                      <span className="text-sm font-bold">{(s.person_type === "mannequin" ? s.mannequin_people?.name : s.employees?.name) || "不明"}</span>
+                      {s.person_type === "mannequin" && (
+                        <span className="text-[9px] px-1 py-0.5 rounded bg-pink-100 text-pink-800 font-medium">マネキン</span>
+                      )}
                       <span className="text-xs text-muted-foreground">{s.start_date}〜{s.end_date} {s.role || ""}</span>
                     </div>
                     <button
@@ -307,7 +313,10 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
               {staff.map((s, i) => (
                 <div key={s.id} className="bg-white rounded border p-3">
                   <div className="flex items-center gap-2 mb-2">
-                    <span className="text-sm font-bold">{s.employees?.name || "不明"}</span>
+                    <span className="text-sm font-bold">{(s.person_type === "mannequin" ? s.mannequin_people?.name : s.employees?.name) || "不明"}</span>
+                    {s.person_type === "mannequin" && (
+                      <span className="text-[9px] px-1 py-0.5 rounded bg-pink-100 text-pink-800 font-medium">マネキン</span>
+                    )}
                     <span className="text-xs text-muted-foreground">{s.start_date}〜{s.end_date}</span>
                   </div>
                   <div className="flex items-center gap-3">

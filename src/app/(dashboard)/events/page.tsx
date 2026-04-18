@@ -27,7 +27,9 @@ type MannequinSummary = { event_id: string; arrangement_status: string | null };
 type StaffWithArrangement = {
   id: string;
   event_id: string;
-  employee_id: string;
+  person_type: "employee" | "mannequin" | null;
+  employee_id: string | null;
+  mannequin_person_id: string | null;
   start_date: string;
   end_date: string;
   role: string | null;
@@ -42,6 +44,7 @@ type StaffWithArrangement = {
   transport_outbound_status: string | null;
   transport_return_status: string | null;
   employees: { name: string } | null;
+  mannequin_people: { name: string } | null;
 };
 
 type Event = {
@@ -309,7 +312,7 @@ export default function EventsPage() {
   const fetchEvents = useCallback(async () => {
     const [evtRes, staffRes, mannRes, venueRes, hmRes, hvlRes] = await Promise.all([
       supabase.from("events").select("*").order("start_date", { ascending: true }),
-      supabase.from("event_staff").select("id, event_id, employee_id, start_date, end_date, role, hotel_name, hotel_check_in, hotel_check_out, hotel_status, transport_type, transport_from, transport_to, transport_status, transport_outbound_status, transport_return_status, employees(name)"),
+      supabase.from("event_staff").select("id, event_id, person_type, employee_id, mannequin_person_id, start_date, end_date, role, hotel_name, hotel_check_in, hotel_check_out, hotel_status, transport_type, transport_from, transport_to, transport_status, transport_outbound_status, transport_return_status, employees(name), mannequin_people(name)"),
       supabase.from("mannequins").select("event_id, arrangement_status"),
       supabase.from("events").select("venue, store_name").order("created_at", { ascending: false }).limit(100),
       supabase.from("hotel_master").select("id, name").eq("is_active", true).order("name"),
@@ -975,7 +978,7 @@ export default function EventsPage() {
                       <div key={`hotel-${s.id}`} className="bg-white rounded border p-2 space-y-1">
                         <div className="flex items-center justify-between gap-2 flex-wrap">
                           <div className="flex items-center gap-2">
-                            <Badge variant="default" className="text-xs">{s.employees?.name || "不明"}</Badge>
+                            <Badge variant="default" className={`text-xs ${s.person_type === "mannequin" ? "bg-pink-600 hover:bg-pink-600" : ""}`}>{(s.person_type === "mannequin" ? s.mannequin_people?.name : s.employees?.name) || "不明"}{s.person_type === "mannequin" ? "(ﾏﾈｷﾝ)" : ""}</Badge>
                             <span className="text-[10px] text-muted-foreground">{s.start_date}〜{s.end_date}</span>
                           </div>
                           <button

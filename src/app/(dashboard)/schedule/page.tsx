@@ -16,9 +16,13 @@ import Link from "next/link";
 import { getHolidaysForRange } from "@/lib/holidays";
 
 type Employee = { id: string; name: string };
+type PersonKind = "employee" | "mannequin";
+type Person = { id: string; name: string; kind: PersonKind };
 type StaffAssignment = {
   id: string;
-  employee_id: string;
+  person_type: PersonKind | null;
+  employee_id: string | null;
+  mannequin_person_id: string | null;
   event_id: string;
   start_date: string;
   end_date: string;
@@ -28,6 +32,13 @@ type StaffAssignment = {
   hotel_check_out: string | null;
   events: { id: string; name: string | null; venue: string; store_name: string | null } | null;
 };
+
+const personKey = (a: StaffAssignment): string | null => {
+  if (a.person_type === "mannequin") return a.mannequin_person_id ? `m:${a.mannequin_person_id}` : null;
+  return a.employee_id ? `e:${a.employee_id}` : null;
+};
+
+const makePersonKey = (p: Person) => `${p.kind === "mannequin" ? "m" : "e"}:${p.id}`;
 
 // 重複バーの段組み計算
 function computeRows(assignments: StaffAssignment[]): Map<string, number> {
@@ -62,6 +73,7 @@ function getRowCount(assignments: StaffAssignment[]): number {
 export default function SchedulePage() {
   const supabase = createClient();
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [mannequinPeople, setMannequinPeople] = useState<Employee[]>([]);
   const [assignments, setAssignments] = useState<StaffAssignment[]>([]);
   const [loading, setLoading] = useState(true);
   const tableRef = useRef<HTMLDivElement>(null);
@@ -71,6 +83,11 @@ export default function SchedulePage() {
   const [month, setMonth] = useState(today.getMonth() + 1);
   const [monthSpan, setMonthSpan] = useState(1);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
+
+  const people: Person[] = useMemo(() => [
+    ...employees.map((e) => ({ id: e.id, name: e.name, kind: "employee" as const })),
+    ...mannequinPeople.map((m) => ({ id: m.id, name: m.name, kind: "mannequin" as const })),
+  ], [employees, mannequinPeople]);
 
   const getMonthRange = () => {
     const months: { year: number; month: number; days: number }[] = [];
@@ -99,16 +116,18 @@ export default function SchedulePage() {
     const startOfRange = `${firstMonth.year}-${String(firstMonth.month).padStart(2, "0")}-01`;
     const endOfRange = `${lastMonth.year}-${String(lastMonth.month).padStart(2, "0")}-${lastMonth.days}`;
 
-    const [empRes, staffRes] = await Promise.all([
+    const [empRes, mpRes, staffRes] = await Promise.all([
       supabase.from("employees").select("id, name").order("sort_order").order("name"),
+      supabase.from("mannequin_people").select("id, name").order("name"),
       supabase
         .from("event_staff")
-        .select("id, employee_id, event_id, start_date, end_date, role, hotel_name, hotel_check_in, hotel_check_out, events(id, name, venue, store_name)")
+        .select("id, person_type, employee_id, mannequin_person_id, event_id, start_date, end_date, role, hotel_name, hotel_check_in, hotel_check_out, events(id, name, venue, store_name)")
         .gte("end_date", startOfRange)
         .lte("start_date", endOfRange)
         .order("start_date"),
     ]);
     setEmployees(empRes.data || []);
+    setMannequinPeople(mpRes.data || []);
     setAssignments((staffRes.data as unknown as StaffAssignment[]) || []);
     setLoading(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -123,15 +142,15 @@ export default function SchedulePage() {
     if (month === 12) { setYear(year + 1); setMonth(1); } else { setMonth(month + 1); }
   };
 
-  const toggleEmployee = (id: string) => {
+  const togglePerson = (key: string) => {
     setSelectedEmployeeIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+      prev.includes(key) ? prev.filter((x) => x !== key) : [...prev, key]
     );
   };
 
-  const displayEmployees = selectedEmployeeIds.length > 0
-    ? employees.filter((e) => selectedEmployeeIds.includes(e.id))
-    : employees;
+  const displayPeople = selectedEmployeeIds.length > 0
+    ? people.filter((p) => selectedEmployeeIds.includes(makePersonKey(p)))
+    : people;
 
   // 全日付のフラットリスト
   const allDays: { year: number; month: number; day: number; date: Date; dateStr: string }[] = [];
@@ -156,7 +175,11 @@ export default function SchedulePage() {
   // 今日のインデックス（縦ライン用）
   const todayIndex = allDays.findIndex((d) => isToday(d.date));
 
-  const getAssignmentsForEmployee = (empId: string) => assignments.filter((a) => a.employee_id === empId);
+  const getAssignmentsForPerson = (p: Person) => assignments.filter((a) => {
+    const kind: PersonKind = a.person_type ?? "employee";
+    if (kind !== p.kind) return false;
+    return kind === "mannequin" ? a.mannequin_person_id === p.id : a.employee_id === p.id;
+  });
 
   const getBarStyle = (assignment: StaffAssignment) => {
     const start = new Date(assignment.start_date);
@@ -278,20 +301,22 @@ export default function SchedulePage() {
         </Select>
       </div>
 
-      {/* 社員フィルタ */}
+      {/* 社員・マネキンフィルタ */}
       <div className="print:hidden">
-        <p className="text-xs text-muted-foreground mb-1">表示する社員（未選択で全員表示）</p>
+        <p className="text-xs text-muted-foreground mb-1">表示する社員・マネキン（未選択で全員表示）</p>
         <div className="flex flex-wrap gap-1">
-          {employees.map((emp) => {
-            const selected = selectedEmployeeIds.includes(emp.id);
+          {people.map((p) => {
+            const key = makePersonKey(p);
+            const selected = selectedEmployeeIds.includes(key);
+            const isMann = p.kind === "mannequin";
             return (
               <Badge
-                key={emp.id}
+                key={key}
                 variant={selected ? "default" : "outline"}
-                className="cursor-pointer text-xs"
-                onClick={() => toggleEmployee(emp.id)}
+                className={`cursor-pointer text-xs ${selected && isMann ? "bg-pink-600 hover:bg-pink-600" : ""} ${!selected && isMann ? "border-pink-400 text-pink-700" : ""}`}
+                onClick={() => togglePerson(key)}
               >
-                {emp.name}
+                {p.name}{isMann ? "(ﾏﾈｷﾝ)" : ""}
                 {selected && <X className="h-3 w-3 ml-1" />}
               </Badge>
             );
@@ -359,7 +384,10 @@ export default function SchedulePage() {
             });
             const filteredGroups = selectedEmployeeIds.length > 0
               ? Array.from(byEvent.values()).filter((g) =>
-                  g.assignments.some((a) => selectedEmployeeIds.includes(a.employee_id))
+                  g.assignments.some((a) => {
+                    const k = personKey(a);
+                    return k !== null && selectedEmployeeIds.includes(k);
+                  })
                 )
               : Array.from(byEvent.values());
             const list = filteredGroups
@@ -379,13 +407,20 @@ export default function SchedulePage() {
             return list.map((g) => {
               const venueLabel = g.event.store_name ? `${g.event.venue} ${g.event.store_name}` : g.event.venue;
               const staff = g.assignments
-                .map((a) => ({
-                  id: a.id,
-                  name: employees.find((e) => e.id === a.employee_id)?.name || "不明",
-                  hotel: a.hotel_name,
-                  start: a.start_date,
-                  end: a.end_date,
-                }))
+                .map((a) => {
+                  const kind: PersonKind = a.person_type ?? "employee";
+                  const name = kind === "mannequin"
+                    ? mannequinPeople.find((p) => p.id === a.mannequin_person_id)?.name
+                    : employees.find((e) => e.id === a.employee_id)?.name;
+                  return {
+                    id: a.id,
+                    name: name || "不明",
+                    kind,
+                    hotel: a.hotel_name,
+                    start: a.start_date,
+                    end: a.end_date,
+                  };
+                })
                 .sort((a, b) => a.name.localeCompare(b.name, "ja"));
               return (
                 <Link key={g.eventId} href={`/events/${g.eventId}`} className="block active:opacity-80 transition-opacity">
@@ -408,6 +443,9 @@ export default function SchedulePage() {
                           <div key={s.id} className="flex items-center gap-2 text-sm flex-wrap">
                             <Users className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                             <span className="font-medium">{s.name}</span>
+                            {s.kind === "mannequin" && (
+                              <span className="text-[9px] px-1 py-0.5 rounded bg-pink-100 text-pink-800 font-medium">ﾏﾈｷﾝ</span>
+                            )}
                             {(s.start !== g.start || s.end !== g.end) && (
                               <span className="text-xs text-muted-foreground">
                                 ({fmt(s.start)}〜{fmt(s.end)})
@@ -479,9 +517,9 @@ export default function SchedulePage() {
                   </div>
                 </div>
 
-                {/* 各社員行 */}
-                {displayEmployees.map((emp, empIdx) => {
-                  const empAssignments = getAssignmentsForEmployee(emp.id);
+                {/* 各社員・マネキン行 */}
+                {displayPeople.map((p, empIdx) => {
+                  const empAssignments = getAssignmentsForPerson(p);
                   const rowCount = getRowCount(empAssignments);
                   const rowMap = computeRows(empAssignments);
                   const rowHeight = ROW_PADDING * 2 + rowCount * BAR_HEIGHT + (rowCount - 1) * BAR_GAP;
@@ -489,12 +527,15 @@ export default function SchedulePage() {
 
                   return (
                     <div
-                      key={emp.id}
+                      key={makePersonKey(p)}
                       className={`flex border-b last:border-b-0 ${empIdx % 2 === 1 ? "bg-muted/20" : ""}`}
                       style={{ minHeight }}
                     >
-                      <div className="w-28 shrink-0 p-2 border-r text-sm font-medium flex items-center">
-                        {emp.name}
+                      <div className="w-28 shrink-0 p-2 border-r text-sm font-medium flex items-center gap-1">
+                        <span className="truncate">{p.name}</span>
+                        {p.kind === "mannequin" && (
+                          <span className="text-[9px] px-1 py-0.5 rounded bg-pink-100 text-pink-800 font-medium shrink-0">ﾏﾈｷﾝ</span>
+                        )}
                       </div>
                       <div className="flex-1 relative">
                         {/* 背景グリッド */}
@@ -565,8 +606,8 @@ export default function SchedulePage() {
                   );
                 })}
 
-                {displayEmployees.length === 0 && (
-                  <div className="p-8 text-center text-muted-foreground">表示する社員がありません。</div>
+                {displayPeople.length === 0 && (
+                  <div className="p-8 text-center text-muted-foreground">表示する社員・マネキンがありません。</div>
                 )}
               </div>
             </CardContent>

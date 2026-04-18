@@ -21,7 +21,9 @@ import { usePermission } from "@/hooks/usePermission";
 type StaffRow = {
   id: string;
   event_id: string;
-  employee_id: string;
+  person_type: "employee" | "mannequin" | null;
+  employee_id: string | null;
+  mannequin_person_id: string | null;
   start_date: string;
   end_date: string;
   role: string | null;
@@ -30,6 +32,7 @@ type StaffRow = {
   transport_outbound_status: string | null;
   transport_return_status: string | null;
   employees: { name: string } | null;
+  mannequin_people: { name: string } | null;
 };
 
 type Event = {
@@ -218,7 +221,7 @@ export default function HotelTransportPage() {
   const fetchData = useCallback(async () => {
     const [evtRes, staffRes, hmRes, hvlRes] = await Promise.all([
       supabase.from("events").select("id, name, venue, store_name, prefecture, start_date, end_date, status").order("start_date"),
-      supabase.from("event_staff").select("id, event_id, employee_id, start_date, end_date, role, hotel_name, hotel_status, transport_outbound_status, transport_return_status, employees(name)"),
+      supabase.from("event_staff").select("id, event_id, person_type, employee_id, mannequin_person_id, start_date, end_date, role, hotel_name, hotel_status, transport_outbound_status, transport_return_status, employees(name), mannequin_people(name)"),
       supabase.from("hotel_master").select("id, name").eq("is_active", true).order("name"),
       supabase.from("hotel_venue_links").select("hotel_id, venue_name"),
     ]);
@@ -473,7 +476,7 @@ export default function HotelTransportPage() {
                                     { label: "ホテル", ok: status.hotel === "設定済", na: status.hotel === "未登録" },
                                     { label: "交通", ok: status.transport === "設定済", na: status.transport === "未登録" },
                                   ];
-                                  const staffNames = allStaff.filter((s) => s.event_id === evt.id).map((s) => s.employees?.name || "").filter(Boolean).join(", ");
+                                  const staffNames = allStaff.filter((s) => s.event_id === evt.id).map((s) => (s.person_type === "mannequin" ? s.mannequin_people?.name : s.employees?.name) || "").filter(Boolean).join(", ");
 
                                   return (
                                     <Tooltip key={evt.id}>
@@ -655,7 +658,7 @@ export default function HotelTransportPage() {
                 {panelStaff.map((s) => (
                   <div key={s.id} className="grid grid-cols-[100px_1fr_120px_120px] gap-0 border-b last:border-b-0 items-center hover:bg-muted/20">
                     <div className="px-3 py-2">
-                      <Badge variant="default" className="text-xs">{s.employees?.name || "不明"}</Badge>
+                      <Badge variant="default" className={`text-xs ${s.person_type === "mannequin" ? "bg-pink-600 hover:bg-pink-600" : ""}`}>{(s.person_type === "mannequin" ? s.mannequin_people?.name : s.employees?.name) || "不明"}{s.person_type === "mannequin" ? "(ﾏﾈｷﾝ)" : ""}</Badge>
                       <div className="text-[10px] text-muted-foreground mt-0.5">{s.start_date}〜{s.end_date}</div>
                     </div>
                     <div className="px-3 py-2 space-y-1">
