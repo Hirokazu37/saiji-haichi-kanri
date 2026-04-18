@@ -31,6 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Combobox, type ComboboxItem } from "@/components/ui/combobox";
 import {
   Plus, Pencil, Trash2, Search, X, History, ChevronDown, ChevronRight, Star,
 } from "lucide-react";
@@ -74,10 +75,18 @@ type AreaItem = { id: string; name: string; region: string | null; color: string
 type MannequinAreaLink = { mannequin_id: string; area_id: string };
 type AgencyAreaLink = { agency_id: string; area_id: string };
 
+// agency_value:
+//   ""                = 未選択（個人）
+//   "__individual__"  = 明示的に個人
+//   <UUID>            = 既存のマネキン会社ID
+//   <任意の文字列>    = 新規会社名（保存時に mannequin_agencies に作成）
+const AGENCY_INDIVIDUAL = "__individual__";
+
 const emptyPersonForm = {
   name: "", phone: "", mobile_phone: "", skills: "", notes: "",
-  area: "", evaluation: "", rating: 0, daily_rate: "", agency_id: "" as string,
-  new_agency_name: "", new_agency_phone: "", new_agency_contact: "",
+  area: "", evaluation: "", rating: 0, daily_rate: "",
+  agency_value: "" as string,
+  new_agency_phone: "", new_agency_contact: "",
 };
 
 function AreaPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
@@ -183,7 +192,6 @@ export default function AgenciesPage() {
   const [personDialogOpen, setPersonDialogOpen] = useState(false);
   const [editingPersonId, setEditingPersonId] = useState<string | null>(null);
   const [personForm, setPersonForm] = useState(emptyPersonForm);
-  const [agencyMode, setAgencyMode] = useState<"existing" | "new">("existing");
 
   // Delete dialog
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -313,7 +321,6 @@ export default function AgenciesPage() {
     setEditingPersonId(null);
     setPersonForm(emptyPersonForm);
     setSelectedAreaIds(new Set());
-    setAgencyMode("existing");
     setPersonDialogOpen(true);
   };
 
@@ -326,12 +333,11 @@ export default function AgenciesPage() {
       area: p.area || "", evaluation: "",
       rating: p.rating ?? 0,
       daily_rate: p.daily_rate ? String(p.daily_rate) : "",
-      agency_id: p.agency_id || "",
-      new_agency_name: "", new_agency_phone: "", new_agency_contact: "",
+      agency_value: p.agency_id || "",
+      new_agency_phone: "", new_agency_contact: "",
     });
     const linkedAreaIds = new Set(areaLinks.filter((l) => l.mannequin_id === p.id).map((l) => l.area_id));
     setSelectedAreaIds(linkedAreaIds);
-    setAgencyMode(p.agency_id ? "existing" : "new");
     setPersonDialogOpen(true);
   };
 
@@ -339,12 +345,17 @@ export default function AgenciesPage() {
   const savePerson = async () => {
     if (!personForm.name.trim()) return;
 
-    let agencyId: string | null = (personForm.agency_id && personForm.agency_id !== "none") ? personForm.agency_id : null;
-
-    // 新規マネキン会社を作成
-    if (agencyMode === "new" && personForm.new_agency_name.trim()) {
+    const v = personForm.agency_value.trim();
+    let agencyId: string | null = null;
+    if (!v || v === AGENCY_INDIVIDUAL) {
+      agencyId = null;
+    } else if (agencies.some((a) => a.id === v)) {
+      // 既存会社のIDをそのまま使用
+      agencyId = v;
+    } else {
+      // 新規会社を作成
       const { data } = await supabase.from("mannequin_agencies").insert({
-        name: personForm.new_agency_name.trim(),
+        name: v,
         phone: personForm.new_agency_phone.trim() || null,
         contact_person: personForm.new_agency_contact.trim() || null,
       }).select("id").single();
@@ -752,66 +763,50 @@ export default function AgenciesPage() {
             </div>
 
             {/* マネキン会社 */}
-            <div className="space-y-2 rounded-md border p-3">
-              <Label className="font-semibold">マネキン会社</Label>
-              <div className="flex gap-2">
-                <Badge
-                  variant={agencyMode === "existing" ? "default" : "outline"}
-                  className="cursor-pointer"
-                  onClick={() => setAgencyMode("existing")}
-                >
-                  既存の会社から選択
-                </Badge>
-                <Badge
-                  variant={agencyMode === "new" ? "default" : "outline"}
-                  className="cursor-pointer"
-                  onClick={() => setAgencyMode("new")}
-                >
-                  新規登録
-                </Badge>
-              </div>
-
-              {agencyMode === "existing" ? (
-                <Select
-                  value={personForm.agency_id || "none"}
-                  onValueChange={(v) => setPersonForm({ ...personForm, agency_id: v == null || v === "none" ? "" : v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="マネキン会社を選択（任意）">
-                      {personForm.agency_id && personForm.agency_id !== "none"
-                        ? agencies.find((a) => a.id === personForm.agency_id)?.name || "不明な会社"
-                        : "なし（個人）"}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">なし（個人）</SelectItem>
-                    {agencies.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <div className="space-y-2">
-                  <Input
-                    value={personForm.new_agency_name}
-                    onChange={(e) => setPersonForm({ ...personForm, new_agency_name: e.target.value })}
-                    placeholder="会社名"
+            {(() => {
+              const agencyItems: ComboboxItem[] = [
+                { value: AGENCY_INDIVIDUAL, label: "なし（個人）" },
+                ...agencies.map((a) => ({
+                  value: a.id,
+                  label: a.name,
+                  reading: a.name.toLowerCase(),
+                  sublabel: a.phone || undefined,
+                })),
+              ];
+              const v = personForm.agency_value;
+              const isExistingId = agencies.some((a) => a.id === v);
+              const isNewAgency = !!v && v !== AGENCY_INDIVIDUAL && !isExistingId;
+              return (
+                <div className="space-y-2 rounded-md border p-3">
+                  <Label className="font-semibold">マネキン会社</Label>
+                  <Combobox
+                    items={agencyItems}
+                    value={v}
+                    onChange={(nv) => setPersonForm({ ...personForm, agency_value: nv })}
+                    placeholder="会社名を選択または新規入力"
+                    searchPlaceholder="会社名で検索..."
+                    allowCustom={true}
                   />
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input
-                      value={personForm.new_agency_phone}
-                      onChange={(e) => setPersonForm({ ...personForm, new_agency_phone: e.target.value })}
-                      placeholder="電話番号"
-                    />
-                    <Input
-                      value={personForm.new_agency_contact}
-                      onChange={(e) => setPersonForm({ ...personForm, new_agency_contact: e.target.value })}
-                      placeholder="担当者名"
-                    />
-                  </div>
+                  {isNewAgency && (
+                    <div className="space-y-2 pl-3 border-l-2 border-primary/30">
+                      <p className="text-[11px] text-muted-foreground">新規会社として「{v}」を登録します</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Input
+                          value={personForm.new_agency_phone}
+                          onChange={(e) => setPersonForm({ ...personForm, new_agency_phone: e.target.value })}
+                          placeholder="電話番号（任意）"
+                        />
+                        <Input
+                          value={personForm.new_agency_contact}
+                          onChange={(e) => setPersonForm({ ...personForm, new_agency_contact: e.target.value })}
+                          placeholder="担当者名（任意）"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              );
+            })()}
 
             <div className="space-y-2">
               <Label>対応エリア</Label>
