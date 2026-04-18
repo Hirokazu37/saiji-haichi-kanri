@@ -134,6 +134,21 @@
   html {
     @apply font-sans;
   }
+
+  /* モバイルで input にフォーカスした時の iOS 自動ズームを防止
+     （16px 未満だと iOS Safari が勝手にピンチズームしてしまう） */
+  @media (max-width: 767px) {
+    input:not([type="checkbox"]):not([type="radio"]),
+    select,
+    textarea {
+      font-size: 16px;
+    }
+  }
+
+  /* タップ時のハイライトを穏やかに */
+  a, button, [role="button"] {
+    -webkit-tap-highlight-color: transparent;
+  }
 }
 
 /* 印刷用スタイル */
