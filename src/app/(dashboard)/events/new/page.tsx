@@ -32,6 +32,8 @@ type HotelMaster = { id: string; name: string; area_id: string | null };
 type HotelVenueLink = { hotel_id: string; venue_name: string };
 type AgencyMaster = { id: string; name: string };
 type AgencyAreaLink = { agency_id: string; area_id: string };
+type MannequinPerson = { id: string; name: string; agency_id: string | null; daily_rate: number | null; rating: number | null };
+type MannequinHistoryRow = { staff_name: string | null; events: { venue: string; store_name: string | null } | null };
 type AreaMaster = { id: string; name: string };
 
 const closingTimes = [
@@ -70,6 +72,8 @@ function NewEventPageInner() {
   const [agencyMasters, setAgencyMasters] = useState<AgencyMaster[]>([]);
   const [agencyAreaLinks, setAgencyAreaLinks] = useState<AgencyAreaLink[]>([]);
   const [areaMasters, setAreaMasters] = useState<AreaMaster[]>([]);
+  const [mannequinPeople, setMannequinPeople] = useState<MannequinPerson[]>([]);
+  const [mannequinHistory, setMannequinHistory] = useState<MannequinHistoryRow[]>([]);
 
   const [form, setForm] = useState({
     name: "",
@@ -89,7 +93,7 @@ function NewEventPageInner() {
   });
 
   const fetchData = useCallback(async () => {
-    const [empRes, evtRes, vmRes, hmRes, hvlRes, amRes, aalRes, arRes] = await Promise.all([
+    const [empRes, evtRes, vmRes, hmRes, hvlRes, amRes, aalRes, arRes, mpRes, mhRes] = await Promise.all([
       supabase.from("employees").select("id, name").order("sort_order").order("name"),
       supabase.from("events").select("venue, store_name").order("created_at", { ascending: false }).limit(100),
       supabase.from("venue_master").select("id, venue_name, store_name, prefecture, area_id, reading, is_active").eq("is_active", true),
@@ -98,6 +102,8 @@ function NewEventPageInner() {
       supabase.from("mannequin_agencies").select("id, name").order("name"),
       supabase.from("agency_area_links").select("agency_id, area_id"),
       supabase.from("area_master").select("id, name"),
+      supabase.from("mannequin_people").select("id, name, agency_id, daily_rate, rating").order("name"),
+      supabase.from("mannequins").select("staff_name, events:event_id(venue, store_name)"),
     ]);
     setEmployees(empRes.data || []);
     // 過去の催事会場を重複排除してリスト化
@@ -114,6 +120,8 @@ function NewEventPageInner() {
     setAgencyMasters((amRes.data || []) as AgencyMaster[]);
     setAgencyAreaLinks((aalRes.data || []) as AgencyAreaLink[]);
     setAreaMasters((arRes.data || []) as AreaMaster[]);
+    setMannequinPeople((mpRes.data || []) as MannequinPerson[]);
+    setMannequinHistory(((mhRes.data || []) as unknown) as MannequinHistoryRow[]);
   }, [supabase]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -348,6 +356,66 @@ function NewEventPageInner() {
       group: linkedAgencyIds.has(a.id) ? "このエリア対応" : "その他",
     })) as ComboboxItem[];
   }, [agencyMasters, agencyAreaLinks, currentVenueAreaId]);
+
+  // --- マネキンスタッフCombobox項目 ---
+  // カテゴリ: この百貨店の実績あり > 催事エリア対応の派遣会社所属 > その他
+  const staffItems: ComboboxItem[] = useMemo(() => {
+    // この百貨店(venueラベル)に過去入ったことのあるスタッフ名集合
+    const pastStaffSet = new Set<string>();
+    mannequinHistory.forEach((h) => {
+      if (!h.staff_name || !h.events) return;
+      const label = h.events.store_name ? `${h.events.venue} ${h.events.store_name}` : h.events.venue;
+      if (label === currentVenueLabel) pastStaffSet.add(h.staff_name);
+    });
+
+    const areaId = currentVenueAreaId;
+    const linkedAgencyIds = new Set(
+      areaId ? agencyAreaLinks.filter((l) => l.area_id === areaId).map((l) => l.agency_id) : []
+    );
+
+    return mannequinPeople.map((p) => {
+      const agency = agencyMasters.find((a) => a.id === p.agency_id);
+      const ratingStr = p.rating ? "★".repeat(p.rating) : "";
+      const rateStr = p.daily_rate ? `${p.daily_rate.toLocaleString()}円` : "";
+      const sublabel = [agency?.name, ratingStr, rateStr].filter(Boolean).join(" / ");
+      const group = pastStaffSet.has(p.name)
+        ? "この百貨店の実績あり"
+        : p.agency_id && linkedAgencyIds.has(p.agency_id)
+          ? "このエリア対応の派遣会社所属"
+          : "その他";
+      return {
+        value: p.name,
+        label: p.name,
+        reading: p.name,
+        sublabel,
+        group,
+      };
+    }) as ComboboxItem[];
+  }, [mannequinPeople, mannequinHistory, agencyMasters, agencyAreaLinks, currentVenueLabel, currentVenueAreaId]);
+
+  // スタッフ名変更時のハンドラ（マスター選択なら会社・日当を自動補完）
+  const handleStaffChange = (i: number, v: string) => {
+    const person = mannequinPeople.find((p) => p.name === v);
+    if (person) {
+      const agency = agencyMasters.find((a) => a.id === person.agency_id);
+      setMannequinEntries((prev) =>
+        prev.map((x, idx) =>
+          idx === i
+            ? {
+                ...x,
+                staff_name: v,
+                // 既に会社名が入っていなければ自動補完
+                agency_name: x.agency_name || agency?.name || "",
+                // 既に日当が入っていなければ自動補完
+                daily_rate: x.daily_rate || (person.daily_rate ? String(person.daily_rate) : ""),
+              }
+            : x
+        )
+      );
+    } else {
+      updateMannequin(i, "staff_name", v);
+    }
+  };
   const shipmentDestinations = [
     { label: "本社（安岡蒲鉾）", type: "return" as const },
     ...(currentVenueLabel ? [{ label: currentVenueLabel, type: "send" as const }] : []),
@@ -820,7 +888,16 @@ function NewEventPageInner() {
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">スタッフ名</Label>
-                  <Input value={m.staff_name} onChange={(e) => updateMannequin(i, "staff_name", e.target.value)} placeholder="山田花子" className="h-8 text-xs" />
+                  <Combobox
+                    items={staffItems}
+                    value={m.staff_name}
+                    onChange={(v) => handleStaffChange(i, v)}
+                    placeholder="スタッフを選択"
+                    searchPlaceholder="スタッフ名で検索..."
+                    allowCustom
+                    inputClassName="h-8 text-xs"
+                    className="h-8 text-xs"
+                  />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">勤務開始</Label>
