@@ -62,6 +62,7 @@ type AreaItem = { id: string; name: string; region: string | null; prefecture: s
 type HotelMasterItem = { id: string; name: string; area_id: string | null };
 type HotelVenueLink = { id: string; hotel_id: string; venue_name: string };
 type MannequinPerson = { id: string; name: string; agency_name: string | null };
+type MannequinAgency = { id: string; name: string };
 type VenueMannequinLink = { id: string; venue_id: string; mannequin_person_id: string | null; mannequin_agency_id: string | null };
 
 const emptyForm = {
@@ -80,6 +81,7 @@ export default function VenueMasterPage() {
   const [hotelMasters, setHotelMasters] = useState<HotelMasterItem[]>([]);
   const [hotelLinks, setHotelLinks] = useState<HotelVenueLink[]>([]);
   const [mannequinPeople, setMannequinPeople] = useState<MannequinPerson[]>([]);
+  const [mannequinAgencies, setMannequinAgencies] = useState<MannequinAgency[]>([]);
   const [mannequinLinks, setMannequinLinks] = useState<VenueMannequinLink[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -90,8 +92,10 @@ export default function VenueMasterPage() {
   const [form, setForm] = useState(emptyForm);
   const [selectedHotelIds, setSelectedHotelIds] = useState<Set<string>>(new Set());
   const [selectedMannequinIds, setSelectedMannequinIds] = useState<Set<string>>(new Set());
+  const [selectedMannequinAgencyIds, setSelectedMannequinAgencyIds] = useState<Set<string>>(new Set());
   const [hotelSearch, setHotelSearch] = useState("");
   const [mannequinSearch, setMannequinSearch] = useState("");
+  const [agencySearch, setAgencySearch] = useState("");
   const [saving, setSaving] = useState(false);
 
   // エリア新規作成
@@ -168,12 +172,13 @@ export default function VenueMasterPage() {
   };
 
   const fetchData = useCallback(async () => {
-    const [venueRes, areaRes, hmRes, hlRes, mpRes, mlRes] = await Promise.all([
+    const [venueRes, areaRes, hmRes, hlRes, mpRes, maRes, mlRes] = await Promise.all([
       supabase.from("venue_master").select("*").order("sort_order").order("venue_name"),
       supabase.from("area_master").select("id, name, region, prefecture, color").order("sort_order"),
       supabase.from("hotel_master").select("id, name, area_id").eq("is_active", true).order("name"),
       supabase.from("hotel_venue_links").select("*"),
       supabase.from("mannequin_people").select("id, name, mannequin_agencies(name)").order("name"),
+      supabase.from("mannequin_agencies").select("id, name").order("name"),
       supabase.from("venue_mannequin_links").select("*"),
     ]);
     setVenues(venueRes.data || []);
@@ -184,6 +189,7 @@ export default function VenueMasterPage() {
       ((mpRes.data || []) as unknown as { id: string; name: string; mannequin_agencies: { name: string } | null }[])
         .map((p) => ({ id: p.id, name: p.name, agency_name: p.mannequin_agencies?.name || null }))
     );
+    setMannequinAgencies((maRes.data || []) as MannequinAgency[]);
     setMannequinLinks((mlRes.data || []) as VenueMannequinLink[]);
     setLoading(false);
   }, [supabase]);
@@ -208,6 +214,10 @@ export default function VenueMasterPage() {
   const getMannequinsForVenue = (v: VenueMaster) => {
     const pids = mannequinLinks.filter((l) => l.venue_id === v.id).map((l) => l.mannequin_person_id).filter(Boolean) as string[];
     return mannequinPeople.filter((p) => pids.includes(p.id));
+  };
+  const getAgenciesForVenue = (v: VenueMaster) => {
+    const aids = mannequinLinks.filter((l) => l.venue_id === v.id).map((l) => l.mannequin_agency_id).filter(Boolean) as string[];
+    return mannequinAgencies.filter((a) => aids.includes(a.id));
   };
 
   // フィルタ（停止も常に表示）
@@ -341,8 +351,10 @@ export default function VenueMasterPage() {
     setForm(emptyForm);
     setSelectedHotelIds(new Set());
     setSelectedMannequinIds(new Set());
+    setSelectedMannequinAgencyIds(new Set());
     setHotelSearch("");
     setMannequinSearch("");
+    setAgencySearch("");
     resetAreaForm();
     resetHotelForm();
     resetMannequinForm();
@@ -371,8 +383,11 @@ export default function VenueMasterPage() {
     setSelectedHotelIds(hids);
     const pids = new Set(mannequinLinks.filter((l) => l.venue_id === v.id).map((l) => l.mannequin_person_id).filter(Boolean) as string[]);
     setSelectedMannequinIds(pids);
+    const aids = new Set(mannequinLinks.filter((l) => l.venue_id === v.id).map((l) => l.mannequin_agency_id).filter(Boolean) as string[]);
+    setSelectedMannequinAgencyIds(aids);
     setHotelSearch("");
     setMannequinSearch("");
+    setAgencySearch("");
     setDialogOpen(true);
   };
 
@@ -415,12 +430,14 @@ export default function VenueMasterPage() {
         );
       }
 
-      // マネキン紐づけ更新
+      // マネキン紐づけ更新（個人・会社の両方）
       await supabase.from("venue_mannequin_links").delete().eq("venue_id", venueId);
-      if (selectedMannequinIds.size > 0) {
-        await supabase.from("venue_mannequin_links").insert(
-          Array.from(selectedMannequinIds).map((pid) => ({ venue_id: venueId, mannequin_person_id: pid }))
-        );
+      const linkRows: { venue_id: string; mannequin_person_id?: string; mannequin_agency_id?: string }[] = [
+        ...Array.from(selectedMannequinIds).map((pid) => ({ venue_id: venueId!, mannequin_person_id: pid })),
+        ...Array.from(selectedMannequinAgencyIds).map((aid) => ({ venue_id: venueId!, mannequin_agency_id: aid })),
+      ];
+      if (linkRows.length > 0) {
+        await supabase.from("venue_mannequin_links").insert(linkRows);
       }
     }
 
@@ -451,6 +468,10 @@ export default function VenueMasterPage() {
   const mannequinCandidates = mannequinSearch
     ? mannequinPeople.filter((p) => !selectedMannequinIds.has(p.id) && (p.name.toLowerCase().includes(mannequinSearch.toLowerCase()) || (p.agency_name || "").toLowerCase().includes(mannequinSearch.toLowerCase())))
     : [];
+  // 検索付きコンボ: マネキン会社候補
+  const agencyCandidates = agencySearch
+    ? mannequinAgencies.filter((a) => !selectedMannequinAgencyIds.has(a.id) && a.name.toLowerCase().includes(agencySearch.toLowerCase()))
+    : [];
 
   if (loading) return <p className="text-muted-foreground">読み込み中...</p>;
 
@@ -459,6 +480,7 @@ export default function VenueMasterPage() {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: v.id });
     const hotels = getHotelsForVenue(v);
     const mannequins = getMannequinsForVenue(v);
+    const agencies = getAgenciesForVenue(v);
     const venueColor = getVenueColor(v);
     const venueRegion = getVenueRegion(v);
     const style = {
@@ -488,7 +510,9 @@ export default function VenueMasterPage() {
         </TableCell>
         <TableCell className="hidden md:table-cell">
           <div className="flex flex-wrap gap-1">
-            {mannequins.length > 0 ? mannequins.map((m) => <Badge key={m.id} variant="outline" className="text-xs">{m.name}</Badge>) : <span className="text-xs text-muted-foreground">—</span>}
+            {agencies.map((a) => <Badge key={`a-${a.id}`} variant="secondary" className="text-xs bg-fuchsia-100 text-fuchsia-800 border-fuchsia-200">{a.name}</Badge>)}
+            {mannequins.map((m) => <Badge key={`p-${m.id}`} variant="outline" className="text-xs">{m.name}</Badge>)}
+            {agencies.length === 0 && mannequins.length === 0 && <span className="text-xs text-muted-foreground">—</span>}
           </div>
         </TableCell>
         <TableCell className="hidden md:table-cell">
@@ -796,6 +820,33 @@ export default function VenueMasterPage() {
                   {mannequinCandidates.slice(0, 10).map((p) => (
                     <div key={p.id} className="px-2 py-1 text-sm hover:bg-purple-100 dark:hover:bg-purple-900/30 rounded cursor-pointer" onClick={() => { setSelectedMannequinIds((prev) => new Set(prev).add(p.id)); setMannequinSearch(""); }}>
                       {p.name}{p.agency_name ? <span className="text-muted-foreground ml-1">({p.agency_name})</span> : ""}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ⑤ マネキン会社紐づけ */}
+            <div className="rounded-lg border-2 border-fuchsia-300 dark:border-fuchsia-700 p-3 space-y-2">
+              <p className="text-xs font-semibold text-fuchsia-700 dark:text-fuchsia-400">よく使うマネキン会社</p>
+              {selectedMannequinAgencyIds.size > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {Array.from(selectedMannequinAgencyIds).map((aid) => {
+                    const a = mannequinAgencies.find((x) => x.id === aid);
+                    return a ? (
+                      <Badge key={aid} variant="default" className="text-xs cursor-pointer bg-fuchsia-600 hover:bg-fuchsia-700" onClick={() => setSelectedMannequinAgencyIds((prev) => { const next = new Set(prev); next.delete(aid); return next; })}>
+                        {a.name}<X className="h-3 w-3 ml-1" />
+                      </Badge>
+                    ) : null;
+                  })}
+                </div>
+              )}
+              <Input value={agencySearch} onChange={(e) => setAgencySearch(e.target.value)} placeholder="会社名で検索して追加..." className="h-7 text-xs" />
+              {agencyCandidates.length > 0 && (
+                <div className="border rounded p-1 max-h-28 overflow-y-auto space-y-0.5">
+                  {agencyCandidates.slice(0, 10).map((a) => (
+                    <div key={a.id} className="px-2 py-1 text-sm hover:bg-fuchsia-100 dark:hover:bg-fuchsia-900/30 rounded cursor-pointer" onClick={() => { setSelectedMannequinAgencyIds((prev) => new Set(prev).add(a.id)); setAgencySearch(""); }}>
+                      {a.name}
                     </div>
                   ))}
                 </div>

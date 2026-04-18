@@ -34,6 +34,7 @@ type AgencyMaster = { id: string; name: string };
 type AgencyAreaLink = { agency_id: string; area_id: string };
 type MannequinPerson = { id: string; name: string; agency_id: string | null; daily_rate: number | null; rating: number | null };
 type MannequinHistoryRow = { staff_name: string | null; events: { venue: string; store_name: string | null } | null };
+type VenueMannequinLink = { venue_id: string; mannequin_person_id: string | null; mannequin_agency_id: string | null };
 type AreaMaster = { id: string; name: string };
 
 const closingTimes = [
@@ -76,6 +77,7 @@ function NewEventPageInner() {
   const [areaMasters, setAreaMasters] = useState<AreaMaster[]>([]);
   const [mannequinPeople, setMannequinPeople] = useState<MannequinPerson[]>([]);
   const [mannequinHistory, setMannequinHistory] = useState<MannequinHistoryRow[]>([]);
+  const [venueMannequinLinks, setVenueMannequinLinks] = useState<VenueMannequinLink[]>([]);
 
   const [form, setForm] = useState({
     name: "",
@@ -99,7 +101,7 @@ function NewEventPageInner() {
     const oneYearAgo = new Date();
     oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
     const oneYearAgoStr = oneYearAgo.toISOString().slice(0, 10);
-    const [empRes, evtRes, vmRes, hmRes, hvlRes, amRes, aalRes, arRes, mpRes, mhRes] = await Promise.all([
+    const [empRes, evtRes, vmRes, hmRes, hvlRes, amRes, aalRes, arRes, mpRes, mhRes, vmlRes] = await Promise.all([
       supabase.from("employees").select("id, name").order("sort_order").order("name"),
       supabase.from("events").select("venue, store_name, start_date").gte("start_date", oneYearAgoStr).order("start_date", { ascending: false }),
       supabase.from("venue_master").select("id, venue_name, store_name, prefecture, area_id, reading, is_active").eq("is_active", true),
@@ -110,6 +112,7 @@ function NewEventPageInner() {
       supabase.from("area_master").select("id, name"),
       supabase.from("mannequin_people").select("id, name, agency_id, daily_rate, rating").order("name"),
       supabase.from("mannequins").select("staff_name, events:event_id(venue, store_name)"),
+      supabase.from("venue_mannequin_links").select("venue_id, mannequin_person_id, mannequin_agency_id"),
     ]);
     setEmployees(empRes.data || []);
     // 過去の催事会場を重複排除してリスト化＋使用頻度もカウント
@@ -131,6 +134,7 @@ function NewEventPageInner() {
     setAreaMasters((arRes.data || []) as AreaMaster[]);
     setMannequinPeople((mpRes.data || []) as MannequinPerson[]);
     setMannequinHistory(((mhRes.data || []) as unknown) as MannequinHistoryRow[]);
+    setVenueMannequinLinks((vmlRes.data || []) as VenueMannequinLink[]);
   }, [supabase]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -360,19 +364,45 @@ function NewEventPageInner() {
     })) as ComboboxItem[];
   }, [hotelMasters, hotelVenueLinks, currentVenueLabel, currentVenueAreaId]);
 
+  // 現在の百貨店に紐づくマネキン会社/個人 (マスター設定)
+  const currentVenueMasterId = useMemo(() => {
+    const m = venueMasters.find((v) => v.venue_name === form.venue && (v.store_name ?? "") === form.store_name);
+    return m?.id ?? null;
+  }, [venueMasters, form.venue, form.store_name]);
+  const venueLinkedAgencyIds = useMemo(() => {
+    if (!currentVenueMasterId) return new Set<string>();
+    return new Set(
+      venueMannequinLinks
+        .filter((l) => l.venue_id === currentVenueMasterId && l.mannequin_agency_id)
+        .map((l) => l.mannequin_agency_id!)
+    );
+  }, [venueMannequinLinks, currentVenueMasterId]);
+  const venueLinkedPersonIds = useMemo(() => {
+    if (!currentVenueMasterId) return new Set<string>();
+    return new Set(
+      venueMannequinLinks
+        .filter((l) => l.venue_id === currentVenueMasterId && l.mannequin_person_id)
+        .map((l) => l.mannequin_person_id!)
+    );
+  }, [venueMannequinLinks, currentVenueMasterId]);
+
   // --- マネキン会社Combobox項目 ---
   const agencyItems: ComboboxItem[] = useMemo(() => {
     const areaId = currentVenueAreaId;
-    const linkedAgencyIds = new Set(
+    const areaLinkedAgencyIds = new Set(
       areaId ? agencyAreaLinks.filter((l) => l.area_id === areaId).map((l) => l.agency_id) : []
     );
     return agencyMasters.map((a) => ({
       value: a.name,
       label: a.name,
       reading: a.name,
-      group: linkedAgencyIds.has(a.id) ? "このエリア対応" : "その他",
+      group: venueLinkedAgencyIds.has(a.id)
+        ? "この百貨店の常連"
+        : areaLinkedAgencyIds.has(a.id)
+          ? "このエリア対応"
+          : "その他",
     })) as ComboboxItem[];
-  }, [agencyMasters, agencyAreaLinks, currentVenueAreaId]);
+  }, [agencyMasters, agencyAreaLinks, currentVenueAreaId, venueLinkedAgencyIds]);
 
   // --- マネキンスタッフCombobox項目 ---
   // カテゴリ: この百貨店の実績あり > 催事エリア対応の派遣会社所属 > その他
@@ -386,7 +416,7 @@ function NewEventPageInner() {
     });
 
     const areaId = currentVenueAreaId;
-    const linkedAgencyIds = new Set(
+    const areaLinkedAgencyIds = new Set(
       areaId ? agencyAreaLinks.filter((l) => l.area_id === areaId).map((l) => l.agency_id) : []
     );
 
@@ -397,9 +427,13 @@ function NewEventPageInner() {
       const sublabel = [agency?.name, ratingStr, rateStr].filter(Boolean).join(" / ");
       const group = pastStaffSet.has(p.name)
         ? "この百貨店の実績あり"
-        : p.agency_id && linkedAgencyIds.has(p.agency_id)
-          ? "このエリア対応の派遣会社所属"
-          : "その他";
+        : venueLinkedPersonIds.has(p.id)
+          ? "この百貨店のおすすめ"
+          : p.agency_id && venueLinkedAgencyIds.has(p.agency_id)
+            ? "この百貨店の常連会社所属"
+            : p.agency_id && areaLinkedAgencyIds.has(p.agency_id)
+              ? "このエリア対応会社所属"
+              : "その他";
       return {
         value: p.name,
         label: p.name,
@@ -408,7 +442,7 @@ function NewEventPageInner() {
         group,
       };
     }) as ComboboxItem[];
-  }, [mannequinPeople, mannequinHistory, agencyMasters, agencyAreaLinks, currentVenueLabel, currentVenueAreaId]);
+  }, [mannequinPeople, mannequinHistory, agencyMasters, agencyAreaLinks, currentVenueLabel, currentVenueAreaId, venueLinkedAgencyIds, venueLinkedPersonIds]);
 
   // スタッフ名変更時のハンドラ（マスター選択なら会社・日当を自動補完）
   const handleStaffChange = (i: number, v: string) => {
