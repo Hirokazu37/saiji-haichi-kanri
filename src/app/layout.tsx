@@ -26,6 +26,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   userScalable: true,
+  themeColor: "#1e3a5f",
 };
 
 export const metadata: Metadata = {
@@ -34,12 +35,24 @@ export const metadata: Metadata = {
     template: "%s | 催事手配管理",
   },
   description: "安岡蒲鉾 催事手配管理システム",
+  manifest: "/manifest.webmanifest",
+  applicationName: "催事手配管理",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "催事手配",
+  },
   icons: {
     icon: [
       { url: "/favicon.ico" },
       { url: "/brand/logo-square.png", type: "image/png" },
     ],
     apple: "/brand/logo-square.png",
+  },
+  formatDetection: {
+    telephone: true,
+    email: true,
+    address: false,
   },
 };
 
