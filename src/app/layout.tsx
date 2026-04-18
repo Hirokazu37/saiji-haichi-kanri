@@ -13,10 +13,17 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "催事手配管理",
+  title: {
+    default: "催事手配管理 | 安岡蒲鉾",
+    template: "%s | 催事手配管理",
+  },
   description: "安岡蒲鉾 催事手配管理システム",
   icons: {
-    icon: "/favicon.ico",
+    icon: [
+      { url: "/favicon.ico" },
+      { url: "/brand/logo-square.png", type: "image/png" },
+    ],
+    apple: "/brand/logo-square.png",
   },
 };
 

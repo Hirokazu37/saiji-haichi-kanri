@@ -66,9 +66,13 @@ export function Header() {
         <SheetTrigger className="md:hidden mr-2 inline-flex items-center justify-center rounded-md p-2 hover:bg-muted">
           <Menu className="h-5 w-5" />
         </SheetTrigger>
-        <SheetContent side="left" className="w-60 p-0">
-          <SheetTitle className="flex h-14 items-center border-b px-4 font-bold text-lg">
-            催事手配管理
+        <SheetContent side="left" className="w-60 p-0 bg-sidebar">
+          <SheetTitle className="flex items-center gap-3 border-b border-sidebar-border px-4 py-3">
+            <img src="/brand/logo-square.png" alt="安岡蒲鉾" className="h-10 w-10 shrink-0 object-contain" />
+            <div className="flex flex-col leading-tight min-w-0 text-left">
+              <span className="text-[11px] font-normal tracking-wider text-muted-foreground">安岡蒲鉾</span>
+              <span className="font-bold text-base text-sidebar-foreground truncate">催事手配管理</span>
+            </div>
           </SheetTitle>
           <nav className="p-3 space-y-1">
             {navItems.map((item) => {
@@ -97,8 +101,8 @@ export function Header() {
         </SheetContent>
       </Sheet>
 
-      {/* PC: ページタイトル */}
-      <h1 className="text-lg font-semibold md:hidden">催事手配管理</h1>
+      {/* モバイル: タイトル */}
+      <h1 className="text-base font-bold md:hidden">催事手配管理</h1>
 
       {/* 右端: ユーザー名 + ログアウト */}
       <div className="ml-auto flex items-center gap-2">

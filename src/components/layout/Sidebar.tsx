@@ -41,11 +41,14 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="hidden md:flex md:w-60 md:flex-col md:fixed md:inset-y-0 border-r bg-background">
-      <div className="flex items-center gap-2 border-b px-4 py-2">
-        <Link href="/" className="flex items-center gap-2">
-          <img src="/logo.jpg" alt="安岡蒲鉾" className="h-10 w-10 rounded object-contain" />
-          <span className="font-bold text-lg">催事手配管理</span>
+    <aside className="hidden md:flex md:w-60 md:flex-col md:fixed md:inset-y-0 border-r bg-sidebar">
+      <div className="flex items-center gap-3 border-b border-sidebar-border px-4 py-3">
+        <Link href="/" className="flex items-center gap-3 min-w-0">
+          <img src="/brand/logo-square.png" alt="安岡蒲鉾" className="h-10 w-10 shrink-0 object-contain" />
+          <div className="flex flex-col leading-tight min-w-0">
+            <span className="text-[11px] tracking-wider text-muted-foreground">安岡蒲鉾</span>
+            <span className="font-bold text-base text-sidebar-foreground truncate">催事手配管理</span>
+          </div>
         </Link>
       </div>
       <nav className="flex-1 p-3 space-y-1">
