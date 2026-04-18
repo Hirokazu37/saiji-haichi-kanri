@@ -403,8 +403,87 @@ export default function ShipmentsPage() {
           <h2 className="text-base font-bold">備品の流れ — {monthLabel}</h2>
         </div>
 
+        {/* ===== モバイル: カードビュー ===== */}
+        <div className="md:hidden space-y-3">
+          {(() => {
+            const todayStr = new Date().toISOString().slice(0, 10);
+            const visible = sortedEvents.filter((e) => e.end_date >= todayStr);
+            if (visible.length === 0) {
+              return (
+                <p className="text-sm text-muted-foreground text-center py-8">
+                  この期間の催事はありません。
+                </p>
+              );
+            }
+            const fmt = (ymd: string) => {
+              const d = new Date(ymd + "T00:00:00");
+              return `${d.getMonth() + 1}/${d.getDate()}(${["日", "月", "火", "水", "木", "金", "土"][d.getDay()]})`;
+            };
+            return visible.map((evt) => {
+              const venueLabel = getVenueLabel(evt);
+              const hasFrom = !!evt.equipment_from;
+              const hasTo = !!evt.equipment_to;
+              const hasWarn = evtHasWarning.has(evt.id);
+              return (
+                <Card
+                  key={evt.id}
+                  className={`border-l-4 ${hasWarn ? "border-l-red-500" : "border-l-primary"} ${canEdit ? "cursor-pointer active:opacity-80 transition-opacity" : ""}`}
+                  onClick={canEdit ? () => openEditPanel(evt) : undefined}
+                >
+                  <CardContent className="p-3 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="font-bold text-base leading-tight truncate flex items-center gap-1">
+                          {venueLabel}
+                          {hasWarn && <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />}
+                        </div>
+                        {evt.name && (
+                          <div className="text-xs text-muted-foreground truncate mt-0.5">{evt.name}</div>
+                        )}
+                      </div>
+                      <div className="text-xs text-muted-foreground text-right shrink-0 leading-tight">
+                        <div>{fmt(evt.start_date)}</div>
+                        <div>〜 {fmt(evt.end_date)}</div>
+                      </div>
+                    </div>
+                    <div className="pt-2 border-t space-y-1.5 text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-muted-foreground w-12 shrink-0">搬入元</span>
+                        {hasFrom ? (
+                          <span className="font-medium flex items-center gap-1">
+                            {evt.equipment_from === HONSHA && <Warehouse className="h-3.5 w-3.5 text-amber-600" />}
+                            {evt.equipment_from}
+                          </span>
+                        ) : (
+                          <Badge variant="outline" className="text-xs text-orange-600 border-orange-300 bg-orange-50">
+                            <AlertTriangle className="h-3 w-3 mr-0.5" />未設定
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-muted-foreground w-12 shrink-0">搬出先</span>
+                        {hasTo ? (
+                          <span className="font-medium flex items-center gap-1">
+                            {evt.equipment_to === HONSHA && <Warehouse className="h-3.5 w-3.5 text-amber-600" />}
+                            {evt.equipment_to}
+                          </span>
+                        ) : (
+                          <Badge variant="outline" className="text-xs text-orange-600 border-orange-300 bg-orange-50">
+                            <AlertTriangle className="h-3 w-3 mr-0.5" />未設定
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            });
+          })()}
+        </div>
+
+        {/* ===== PC: ガントチャート ===== */}
         <TooltipProvider>
-          <Card>
+          <Card className="hidden md:block">
             <CardContent className="p-0 overflow-x-auto print:overflow-visible print:text-[8px] [touch-action:pan-x_pan-y_pinch-zoom]">
               <div>
                 {/* 月ヘッダー */}
