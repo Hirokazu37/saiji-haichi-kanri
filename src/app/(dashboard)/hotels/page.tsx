@@ -404,10 +404,10 @@ export default function HotelTransportPage() {
                             {isFirstSub && <span className="text-sky-700 text-base font-black leading-none">{cm.month}<span className="text-xs">月</span></span>}
                             {cm.halfLabel && <span className={`text-[11px] text-sky-600 font-semibold leading-none ${isFirstSub ? "mt-0.5" : ""}`}>{cm.halfLabel}</span>}
                           </div>
-                          <div className="flex-1 flex">
+                          <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${cellCount}, minmax(0, 1fr))` }}>
                             {Array.from({ length: cellCount }, (_, i) => {
                               const day = dayStart + i;
-                              if (day > daysInMonth) return <div key={day} className="flex-1 bg-muted/10" />;
+                              if (day > daysInMonth) return <div key={day} className="bg-muted/10" />;
                               const date = new Date(cm.year, cm.month - 1, day);
                               const dow = date.getDay();
                               const dateStr = `${cm.year}-${String(cm.month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -415,7 +415,7 @@ export default function HotelTransportPage() {
                               const isRed = dow === 0 || isHoliday;
                               const isToday = date.toDateString() === today.toDateString();
                               return (
-                                <div key={day} className={`flex-1 text-center border-r ${isToday ? "bg-primary/10" : isRed ? "bg-red-50/50" : dow === 6 ? "bg-blue-50/50" : ""}`}>
+                                <div key={day} className={`text-center border-r ${isToday ? "bg-primary/10" : isRed ? "bg-red-50/50" : dow === 6 ? "bg-blue-50/50" : ""}`}>
                                   <div className="text-[14px] font-bold leading-tight pt-1">{day}</div>
                                   <div className={`text-[11px] leading-tight pb-1 ${isRed ? "text-red-500 font-bold" : dow === 6 ? "text-blue-500" : "text-muted-foreground"}`}>
                                     {getDayOfWeek(date)}
@@ -436,10 +436,10 @@ export default function HotelTransportPage() {
                               </div>
                               <div className="flex-1 relative">
                                 {/* 背景グリッド */}
-                                <div className="absolute inset-0 flex">
+                                <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${cellCount}, minmax(0, 1fr))` }}>
                                   {Array.from({ length: cellCount }, (_, i) => {
                                     const day = dayStart + i;
-                                    if (day > daysInMonth) return <div key={i} className="flex-1 bg-muted/10" />;
+                                    if (day > daysInMonth) return <div key={i} className="bg-muted/10" />;
                                     const date = new Date(cm.year, cm.month - 1, day);
                                     const dow = date.getDay();
                                     const dateStr = `${cm.year}-${String(cm.month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -447,7 +447,7 @@ export default function HotelTransportPage() {
                                     const isRed = dow === 0 || isHoliday;
                                     const isToday = date.toDateString() === today.toDateString();
                                     return (
-                                      <div key={i} className={`flex-1 border-r last:border-r-0 ${isToday ? "bg-primary/5" : isRed ? "bg-red-50/30" : dow === 6 ? "bg-blue-50/30" : ""}`} />
+                                      <div key={i} className={`border-r ${isToday ? "bg-primary/5" : isRed ? "bg-red-50/30" : dow === 6 ? "bg-blue-50/30" : ""}`} />
                                     );
                                   })}
                                 </div>

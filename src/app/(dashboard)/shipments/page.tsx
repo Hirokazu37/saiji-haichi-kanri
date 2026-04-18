@@ -424,13 +424,13 @@ export default function ShipmentsPage() {
                 {/* 日付ヘッダー */}
                 <div className="flex border-b sticky top-0 bg-background z-10">
                   <div className="w-48 print:w-32 shrink-0 p-2 border-r font-medium text-sm">催事 / 備品の流れ</div>
-                  <div className="flex-1 flex">
+                  <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${allDays.length}, minmax(0, 1fr))` }}>
                     {allDays.map((d, i) => {
                       const holiday = holidays.get(d.dateStr);
                       const red = isRedDay(d.date, d.dateStr);
                       const sat = isSaturday(d.date);
                       return (
-                        <div key={i} className={`flex-1 text-center text-xs py-1 border-r last:border-r-0 ${isToday(d.date) ? "bg-primary/10 font-bold" : ""} ${red ? "bg-red-50/60" : sat ? "bg-blue-50/60" : ""}`} title={holiday || undefined}>
+                        <div key={i} className={`text-center text-xs py-1 border-r ${isToday(d.date) ? "bg-primary/10 font-bold" : ""} ${red ? "bg-red-50/60" : sat ? "bg-blue-50/60" : ""}`} title={holiday || undefined}>
                           <div>{d.day}</div>
                           <div className={red ? "text-red-500" : sat ? "text-blue-500" : "text-muted-foreground"}>{getDayOfWeek(d.date)}</div>
                         </div>
@@ -494,11 +494,11 @@ export default function ShipmentsPage() {
 
                         {/* ガントエリア */}
                         <div className="flex-1 relative">
-                          <div className="absolute inset-0 flex">
+                          <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${allDays.length}, minmax(0, 1fr))` }}>
                             {allDays.map((d, i) => {
                               const red = isRedDay(d.date, d.dateStr);
                               const sat = isSaturday(d.date);
-                              return (<div key={i} className={`flex-1 border-r last:border-r-0 ${isToday(d.date) ? "bg-primary/5" : ""} ${red ? "bg-red-50/30" : sat ? "bg-blue-50/30" : ""}`} />);
+                              return (<div key={i} className={`border-r ${isToday(d.date) ? "bg-primary/5" : ""} ${red ? "bg-red-50/30" : sat ? "bg-blue-50/30" : ""}`} />);
                             })}
                           </div>
                           {todayIndex >= 0 && (<div className="absolute top-0 bottom-0 w-0.5 bg-red-400 z-[5] pointer-events-none" style={{ left: `${((todayIndex + 0.5) / totalDays) * 100}%` }} />)}

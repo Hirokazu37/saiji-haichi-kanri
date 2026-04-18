@@ -353,7 +353,7 @@ export default function SchedulePage() {
                 {/* 日付ヘッダー */}
                 <div className="flex border-b sticky top-0 bg-background z-10">
                   <div className="w-28 shrink-0 p-2 border-r font-medium text-sm">社員名</div>
-                  <div className="flex-1 flex">
+                  <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${allDays.length}, minmax(0, 1fr))` }}>
                     {allDays.map((d, i) => {
                       const holiday = holidays.get(d.dateStr);
                       const red = isRedDay(d.date, d.dateStr);
@@ -361,7 +361,7 @@ export default function SchedulePage() {
                       return (
                         <div
                           key={i}
-                          className={`flex-1 text-center text-xs py-1 border-r last:border-r-0 ${
+                          className={`text-center text-xs py-1 border-r ${
                             isToday(d.date) ? "bg-primary/10 font-bold" : ""
                           } ${red ? "bg-red-50/60" : sat ? "bg-blue-50/60" : ""}`}
                           title={holiday || undefined}
@@ -395,14 +395,14 @@ export default function SchedulePage() {
                       </div>
                       <div className="flex-1 relative">
                         {/* 背景グリッド */}
-                        <div className="absolute inset-0 flex">
+                        <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${allDays.length}, minmax(0, 1fr))` }}>
                           {allDays.map((d, i) => {
                             const red = isRedDay(d.date, d.dateStr);
                             const sat = isSaturday(d.date);
                             return (
                               <div
                                 key={i}
-                                className={`flex-1 border-r last:border-r-0 ${
+                                className={`border-r ${
                                   isToday(d.date) ? "bg-primary/5" : ""
                                 } ${red ? "bg-red-50/30" : sat ? "bg-blue-50/30" : ""}`}
                               />
