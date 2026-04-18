@@ -405,7 +405,7 @@ export default function ShipmentsPage() {
 
         <TooltipProvider>
           <Card>
-            <CardContent className="p-0 overflow-x-auto print:overflow-visible print:text-[8px]">
+            <CardContent className="p-0 overflow-x-auto print:overflow-visible print:text-[8px] [touch-action:pan-x_pan-y_pinch-zoom]">
               <div>
                 {/* 月ヘッダー */}
                 {monthSpan > 1 && (

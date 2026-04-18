@@ -493,13 +493,13 @@ export default function EventsPage() {
       ) : viewMode === "gantt" ? (
         /* ===== ガントチャート日程表 ===== */
         <>
-        <div className="flex items-center gap-3 mb-4 print:hidden">
+        <div className="flex items-center gap-2 sm:gap-3 mb-4 flex-wrap print:hidden">
           <Button variant="outline" size="icon" onClick={prevMonth}><ChevronLeft className="h-4 w-4" /></Button>
-          <span className="text-lg font-semibold min-w-[240px] text-center">{ganttSpanLabel}</span>
+          <span className="text-base sm:text-lg font-semibold min-w-[180px] sm:min-w-[240px] text-center">{ganttSpanLabel}</span>
           <Button variant="outline" size="icon" onClick={nextMonth}><ChevronRight className="h-4 w-4" /></Button>
           <Button variant="ghost" size="sm" onClick={() => { setCalYear(today.getFullYear()); setCalMonth(today.getMonth() + 1); }}>今月</Button>
           <Select value={ganttSpanSel} onValueChange={(v) => v && setGanttSpanSel(v)}>
-            <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-32 sm:w-36"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="half-3">半月×3ヶ月</SelectItem>
               <SelectItem value="1">1ヶ月</SelectItem>
@@ -535,7 +535,7 @@ export default function EventsPage() {
                 const cardKey = `${firstBlock.year}-${firstBlock.month}`;
                 return (
                   <Card key={cardKey} className={`overflow-hidden ${gIdx > 0 && gIdx % 2 === 0 ? "print:page-break" : ""}`}>
-                    <CardContent className="p-0 overflow-x-auto print:overflow-visible">
+                    <CardContent className="p-0 overflow-x-auto print:overflow-visible [touch-action:pan-x_pan-y_pinch-zoom]">
                       <div className="min-w-[600px]">
                         {group.map((cm, subIdx) => {
                           const daysInMonth = new Date(cm.year, cm.month, 0).getDate();

@@ -330,7 +330,7 @@ export default function SchedulePage() {
 
         <TooltipProvider>
           <Card>
-            <CardContent className="p-0 overflow-x-auto print:overflow-visible">
+            <CardContent className="p-0 overflow-x-auto print:overflow-visible [touch-action:pan-x_pan-y_pinch-zoom]">
               <div>
                 {/* 月ヘッダー（複数月時） */}
                 {monthSpan > 1 && (

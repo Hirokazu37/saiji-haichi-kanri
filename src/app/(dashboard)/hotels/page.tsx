@@ -375,14 +375,14 @@ export default function HotelTransportPage() {
       </div>
 
       {/* メインビュー */}
-      <div ref={chartRef} className="space-y-4 overflow-x-auto print:overflow-visible">
+      <div ref={chartRef} className="space-y-4 overflow-x-auto print:overflow-visible [touch-action:pan-x_pan-y_pinch-zoom]">
         <TooltipProvider>
         {viewMode === "gantt" ? (
         ganttCardGroups.map((group, gIdx) => {
           const firstBlock = group[0];
           return (
             <Card key={`${firstBlock.year}-${firstBlock.month}`} className={`overflow-hidden ${gIdx > 0 && gIdx % 2 === 0 ? "print:page-break" : ""}`}>
-              <CardContent className="p-0 overflow-x-auto">
+              <CardContent className="p-0 overflow-x-auto [touch-action:pan-x_pan-y_pinch-zoom]">
                 <div className="min-w-[600px]">
                   {group.map((cm, subIdx) => {
                     const daysInMonth = new Date(cm.year, cm.month, 0).getDate();
