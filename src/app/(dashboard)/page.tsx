@@ -6,8 +6,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  Sheet, SheetContent, SheetHeader, SheetTitle,
+} from "@/components/ui/sheet";
+import {
   CalendarDays, AlertTriangle, CheckCircle, MapPin, Train, Hotel as HotelIcon,
-  LogIn, LogOut, FileText, ChevronLeft, ChevronRight, Users,
+  LogIn, LogOut, FileText, ChevronLeft, ChevronRight, Users, Plus,
 } from "lucide-react";
 import Link from "next/link";
 import { getHolidaysForRange } from "@/lib/holidays";
@@ -126,6 +129,8 @@ export default function DashboardPage() {
   const [calYear, setCalYear] = useState(() => new Date().getFullYear());
   const [calMonth, setCalMonth] = useState(() => new Date().getMonth() + 1);
   const [expandedCard, setExpandedCard] = useState<"thisMonth" | "preparing" | "active" | null>(null);
+  // カレンダー日付タップで表示するボトムシート（選択日の催事一覧）
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     const t = todayStr();
@@ -563,17 +568,23 @@ export default function DashboardPage() {
               const dateStr = fmtLocalYmd(cell.date);
               const dayEvents = eventsByDate.get(dateStr) || [];
               const isToday = dateStr === today;
+              const isSelected = dateStr === selectedDate;
               const isHoliday = holidays.has(dateStr);
               const dow = cell.date.getDay();
               const isSun = dow === 0;
               const isSat = dow === 6;
               const dayColor = isSun || isHoliday ? "text-red-600" : isSat ? "text-blue-600" : "";
-              const bg = isToday ? "bg-amber-100 border-amber-400" : "bg-white";
+              const bg = isSelected
+                ? "bg-primary/10 border-primary ring-2 ring-primary"
+                : isToday
+                  ? "bg-amber-100 border-amber-400"
+                  : "bg-white";
               return (
-                <Link
+                <button
                   key={idx}
-                  href={`/events`}
-                  className={`relative border rounded p-1.5 min-h-[96px] md:min-h-[110px] hover:bg-sky-50 transition-colors ${bg}`}
+                  type="button"
+                  onClick={() => setSelectedDate(dateStr)}
+                  className={`relative border rounded p-1.5 min-h-[96px] md:min-h-[110px] hover:bg-sky-50 transition-colors text-left w-full ${bg}`}
                   title={dayEvents.map((e) => venueLabel(e)).join("\n")}
                 >
                   <div className={`text-sm font-bold ${dayColor}`}>{cell.date.getDate()}</div>
@@ -587,7 +598,7 @@ export default function DashboardPage() {
                       <div className="text-[10px] text-muted-foreground px-1">+{dayEvents.length - 3}件</div>
                     )}
                   </div>
-                </Link>
+                </button>
               );
             })}
           </div>
@@ -631,6 +642,74 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* ===== 日付タップで表示するボトムシート（その日の催事一覧） ===== */}
+      <Sheet open={!!selectedDate} onOpenChange={(open) => { if (!open) setSelectedDate(null); }}>
+        <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto rounded-t-2xl pb-8">
+          {selectedDate && (() => {
+            const dayEvents = eventsByDate.get(selectedDate) || [];
+            const d = parseLocalYmd(selectedDate);
+            const weekday = ["日","月","火","水","木","金","土"][d.getDay()];
+            const title = `${d.getMonth() + 1}月${d.getDate()}日（${weekday}）の催事`;
+            return (
+              <>
+                <SheetHeader>
+                  <SheetTitle>{title}</SheetTitle>
+                </SheetHeader>
+                <div className="px-4 pb-4 space-y-2">
+                  {dayEvents.length === 0 ? (
+                    <div className="text-center py-6 space-y-3">
+                      <p className="text-sm text-muted-foreground">この日に催事はありません。</p>
+                      {canEdit && (
+                        <Link
+                          href="/events/new"
+                          onClick={() => setSelectedDate(null)}
+                          className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                        >
+                          <Plus className="h-4 w-4" />この日で新規作成
+                        </Link>
+                      )}
+                    </div>
+                  ) : (
+                    dayEvents.map((e) => (
+                      <Link
+                        key={e.id}
+                        href={`/events/${e.id}`}
+                        onClick={() => setSelectedDate(null)}
+                        className="block p-3 rounded-md border hover:bg-muted active:bg-muted transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="font-bold text-base truncate">{venueLabel(e)}</div>
+                            {e.name && <div className="text-xs text-muted-foreground truncate mt-0.5">{e.name}</div>}
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {fmtDateShort(e.start_date)}（{fmtWeekday(e.start_date)}）〜 {fmtDateShort(e.end_date)}（{fmtWeekday(e.end_date)}）
+                            </div>
+                            {e.person_in_charge && (
+                              <div className="text-xs text-muted-foreground">担当: {e.person_in_charge}</div>
+                            )}
+                          </div>
+                          <Badge variant="outline" className={`shrink-0 ${statusColor[e.status] || ""}`}>{e.status}</Badge>
+                        </div>
+                        <div className="flex gap-1.5 flex-wrap mt-2">
+                          <Badge variant="outline" className={e.application_status === "提出済" ? "bg-green-100 text-green-800 text-[11px]" : "bg-red-100 text-red-800 text-[11px]"}>
+                            申込書: {e.application_status || "未提出"}
+                          </Badge>
+                          {e.dm_status && (
+                            <Badge variant="outline" className={e.dm_status === "印刷済み" ? "bg-green-100 text-green-800 text-[11px]" : "bg-amber-100 text-amber-800 text-[11px]"}>
+                              DM: {e.dm_status}{e.dm_count ? ` ${e.dm_count}枚` : ""}
+                            </Badge>
+                          )}
+                        </div>
+                      </Link>
+                    ))
+                  )}
+                </div>
+              </>
+            );
+          })()}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
