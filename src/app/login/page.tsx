@@ -61,7 +61,7 @@ export default function LoginPage() {
           </p>
         </div>
         <div className="relative z-10 text-xs text-primary-foreground/60">
-          安岡蒲鉾株式会社
+          有限会社 安岡蒲鉾店
         </div>
       </aside>
 

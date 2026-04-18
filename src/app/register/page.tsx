@@ -40,7 +40,7 @@ function BrandShell({ children }: { children: React.ReactNode }) {
           </p>
         </div>
         <div className="relative z-10 text-xs text-primary-foreground/60">
-          安岡蒲鉾株式会社
+          有限会社 安岡蒲鉾店
         </div>
       </aside>
       <main className="flex items-center justify-center px-6 py-12">
