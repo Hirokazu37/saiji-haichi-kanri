@@ -194,6 +194,13 @@ export default function EventsPage() {
   const [viewMode, setViewMode] = useState<"gantt" | "calendar" | "card">("gantt");
   const listRef = useRef<HTMLDivElement>(null);
 
+  // モバイル幅(768px未満)は初期表示をカードビューに切り替える
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches) {
+      setViewMode("card");
+    }
+  }, []);
+
   // 手配データ
   const [allStaff, setAllStaff] = useState<StaffWithArrangement[]>([]);
   const [mannequinSummaries, setMannequinSummaries] = useState<MannequinSummary[]>([]);
@@ -836,27 +843,64 @@ export default function EventsPage() {
             {filterStatus === "all" ? "催事がまだありません。「新規作成」から登録してください。" : `「${filterStatus}」の催事はありません。`}
           </p>
         ) : (
-          <div ref={listRef} className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {filtered.map((event) => (
-              <Link key={event.id} href={`/events/${event.id}`}>
-                <Card className="hover:shadow-md transition-shadow cursor-pointer">
-                  <CardHeader className="pb-2">
-                    <div className="flex items-start justify-between">
-                      <CardTitle className="text-base">{event.venue}{event.store_name ? ` ${event.store_name}` : ""}</CardTitle>
-                      <Badge variant="outline" className={statusColor[event.status] || ""}>{event.status}</Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-1 text-sm text-muted-foreground">
-                    <div className="flex items-center gap-1"><MapPin className="h-3 w-3" />{event.name || `${event.venue}${event.store_name ? ` ${event.store_name}` : ""}`}（{event.prefecture}）</div>
-                    <div className="flex items-center gap-1"><Calendar className="h-3 w-3" />{event.start_date} 〜 {event.end_date}</div>
-                    {event.person_in_charge && <div>担当: {event.person_in_charge}</div>}
-                    <Badge variant="outline" className={event.application_status === "提出済" ? "bg-green-100 text-green-800 text-xs" : "bg-red-100 text-red-800 text-xs"}>
-                      申込書: {event.application_status || "未提出"}
-                    </Badge>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
+          <div ref={listRef} className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {filtered.map((event) => {
+              const arr = getArrangementStatus(event);
+              type StatusKind = "ok" | "partial" | "ng" | "na";
+              const classify = (label: string, v: string | null): { kind: StatusKind; text: string } => {
+                if (label === "申込") return { kind: v === "提出済" ? "ok" : "ng", text: v === "提出済" ? "提出済" : "未提出" };
+                if (label === "DM") return v === null ? { kind: "na", text: "なし" } : v === "印刷済み" ? { kind: "ok", text: "印刷済" } : { kind: "partial", text: v };
+                if (label === "マネキン") return v === "na" ? { kind: "na", text: "不要" } : v === "ok" ? { kind: "ok", text: "手配済" } : { kind: "ng", text: "未手配" };
+                // hotel / transport / shipment
+                if (v === "設定済") return { kind: "ok", text: "設定済" };
+                if (v === "一部未設定") return { kind: "partial", text: "一部" };
+                if (v === "未登録") return { kind: "na", text: "未登録" };
+                return { kind: "ng", text: "未設定" };
+              };
+              const rows: { label: string; status: { kind: StatusKind; text: string } }[] = [
+                { label: "申込", status: classify("申込", arr.application) },
+                { label: "DM", status: classify("DM", arr.dm) },
+                { label: "ホテル", status: classify("ホテル", arr.hotel) },
+                { label: "交通", status: classify("交通", arr.transport) },
+                { label: "マネキン", status: classify("マネキン", arr.mannequin) },
+                { label: "備品", status: classify("備品", arr.shipment) },
+              ];
+              const kindClass: Record<StatusKind, string> = {
+                ok: "bg-green-100 text-green-800 border-green-200",
+                partial: "bg-amber-100 text-amber-800 border-amber-200",
+                ng: "bg-red-100 text-red-800 border-red-200",
+                na: "bg-muted text-muted-foreground border-border",
+              };
+              return (
+                <Link key={event.id} href={`/events/${event.id}`} className="block active:opacity-80 transition-opacity">
+                  <Card className="hover:shadow-md transition-shadow">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <CardTitle className="text-base leading-tight">
+                          {event.venue}{event.store_name ? ` ${event.store_name}` : ""}
+                        </CardTitle>
+                        <Badge variant="outline" className={`shrink-0 ${statusColor[event.status] || ""}`}>{event.status}</Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                      <div className="space-y-1 text-muted-foreground">
+                        <div className="flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" />{event.start_date} 〜 {event.end_date}</div>
+                        <div className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" />{event.prefecture}{event.name ? `・${event.name}` : ""}</div>
+                        {event.person_in_charge && <div>担当: {event.person_in_charge}</div>}
+                      </div>
+                      <div className="grid grid-cols-3 gap-1.5 pt-1">
+                        {rows.map((r) => (
+                          <div key={r.label} className={`text-[11px] rounded-md border px-1.5 py-1 text-center leading-tight ${kindClass[r.status.kind]}`}>
+                            <div className="font-semibold">{r.label}</div>
+                            <div className="font-medium">{r.status.text}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              );
+            })}
           </div>
         )
       )}
