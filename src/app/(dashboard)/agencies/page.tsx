@@ -196,7 +196,15 @@ export default function AgenciesPage() {
 
   // 会社編集
   const [agencyAreaLinks, setAgencyAreaLinks] = useState<AgencyAreaLink[]>([]);
-  const [expandedAgencyId, setExpandedAgencyId] = useState<string | null>(null);
+  const [expandedAgencyIds, setExpandedAgencyIds] = useState<Set<string>>(new Set());
+  const toggleAgencyExpand = (id: string) => {
+    setExpandedAgencyIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
   const [selectedAgencyAreaIds, setSelectedAgencyAreaIds] = useState<Set<string>>(new Set());
   const [agencyDialogOpen, setAgencyDialogOpen] = useState(false);
   const [editingAgencyId, setEditingAgencyId] = useState<string | null>(null);
@@ -493,11 +501,11 @@ export default function AgenciesPage() {
             <div className="space-y-1">
               {agencies.map((a) => {
                 const count = getPeopleCountForAgency(a.id);
-                const isExpanded = expandedAgencyId === a.id;
+                const isExpanded = expandedAgencyIds.has(a.id);
                 const members = people.filter((p) => p.agency_id === a.id);
                 return (
                   <div key={a.id}>
-                    <div className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-muted/50 text-sm cursor-pointer" onClick={() => setExpandedAgencyId(isExpanded ? null : a.id)}>
+                    <div className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-muted/50 text-sm cursor-pointer" onClick={() => toggleAgencyExpand(a.id)}>
                       <div className="flex items-center gap-2">
                         {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
                         <span className="font-medium">{a.name}</span>
