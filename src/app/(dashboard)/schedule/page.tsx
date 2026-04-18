@@ -336,12 +336,12 @@ export default function SchedulePage() {
                 {monthSpan > 1 && (
                   <div className="flex border-b">
                     <div className="w-28 shrink-0 border-r" />
-                    <div className="flex-1 flex">
+                    <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${allDays.length}, minmax(0, 1fr))` }}>
                       {monthRange.map((m) => (
                         <div
                           key={`${m.year}-${m.month}`}
-                          className="text-center text-xs font-bold py-1 border-r last:border-r-0 bg-muted/50"
-                          style={{ width: `${(m.days / totalDays) * 100}%` }}
+                          className="text-center text-xs font-bold py-1 border-r bg-muted/50"
+                          style={{ gridColumn: `span ${m.days}` }}
                         >
                           {m.year}年{m.month}月
                         </div>
