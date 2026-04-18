@@ -505,19 +505,27 @@ export default function AgenciesPage() {
                 const members = people.filter((p) => p.agency_id === a.id);
                 return (
                   <div key={a.id}>
-                    <div className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-muted/50 text-sm cursor-pointer" onClick={() => toggleAgencyExpand(a.id)}>
-                      <div className="flex items-center gap-2">
-                        {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
-                        <span className="font-medium">{a.name}</span>
-                        {a.contact_person && <span className="text-muted-foreground text-xs hidden sm:inline">担当: {a.contact_person}</span>}
-                        {a.phone && <a href={`tel:${a.phone.replace(/[^0-9+]/g, "")}`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline text-xs hidden sm:inline">📞 {a.phone}</a>}
-                        {a.email && <a href={`mailto:${a.email}`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline text-xs hidden sm:inline">✉️ {a.email}</a>}
-                        {a.url && <a href={a.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs" onClick={(e) => e.stopPropagation()}>HP</a>}
-                        <Badge variant="outline" className="text-[10px]">{count}名</Badge>
-                        {getAreaNamesForAgency(a.id).map((n) => <Badge key={n} variant="secondary" className="text-[10px]">{n}</Badge>)}
+                    <div className="flex items-start justify-between gap-2 py-1.5 px-2 rounded hover:bg-muted/50 text-sm cursor-pointer" onClick={() => toggleAgencyExpand(a.id)}>
+                      <div className="flex-1 min-w-0 space-y-1">
+                        {/* 1行目: 名前 + 連絡先 */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+                          <span className="font-medium">{a.name}</span>
+                          <Badge variant="outline" className="text-[10px]">{count}名</Badge>
+                          {a.contact_person && <span className="text-muted-foreground text-xs">担当: {a.contact_person}</span>}
+                          {a.phone && <a href={`tel:${a.phone.replace(/[^0-9+]/g, "")}`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline text-xs">📞 {a.phone}</a>}
+                          {a.email && <a href={`mailto:${a.email}`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline text-xs">✉️ {a.email}</a>}
+                          {a.url && <a href={a.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs" onClick={(e) => e.stopPropagation()}>HP</a>}
+                        </div>
+                        {/* 2行目: エリアバッジ（多くなっても改行で見やすく） */}
+                        {getAreaNamesForAgency(a.id).length > 0 && (
+                          <div className="flex items-center gap-1 flex-wrap pl-5">
+                            {getAreaNamesForAgency(a.id).map((n) => <Badge key={n} variant="secondary" className="text-[10px]">{n}</Badge>)}
+                          </div>
+                        )}
                       </div>
                       {canEdit && (
-                        <div className="flex gap-1">
+                        <div className="flex gap-1 shrink-0">
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); openAgencyEdit(a); }}>
                             <Pencil className="h-3 w-3" />
                           </Button>
