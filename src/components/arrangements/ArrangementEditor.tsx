@@ -60,18 +60,20 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
   const [dmStatus, setDmStatus] = useState<string | null>(null);
   const [dmCount, setDmCount] = useState<string>("");
   const [dirty, setDirty] = useState(false);
-  const [hotelMasters, setHotelMasters] = useState<{ id: string; name: string }[]>([]);
+  const [hotelMasters, setHotelMasters] = useState<{ id: string; name: string; area_id: string | null }[]>([]);
   const [hotelVenueLinks, setHotelVenueLinks] = useState<{ hotel_id: string; venue_name: string }[]>([]);
+  const [venueAreaId, setVenueAreaId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
-    const [staffRes, shipRes, evtRes, venueRes, hmRes, hvlRes, mannRes] = await Promise.all([
+    const [staffRes, shipRes, evtRes, venueRes, hmRes, hvlRes, mannRes, vmRes] = await Promise.all([
       supabase.from("event_staff").select("id, employee_id, start_date, end_date, role, hotel_name, hotel_status, transport_outbound_status, transport_return_status, employees(name)").eq("event_id", eventId).order("start_date"),
       supabase.from("shipments").select("id, item_name, recipient_name").eq("event_id", eventId),
       supabase.from("events").select("application_status, application_submitted_date, application_method, dm_status, dm_count, equipment_from, equipment_to").eq("id", eventId).single(),
       supabase.from("events").select("venue, store_name, start_date").order("start_date").limit(100),
-      supabase.from("hotel_master").select("id, name").eq("is_active", true).order("name"),
+      supabase.from("hotel_master").select("id, name, area_id").eq("is_active", true).order("name"),
       supabase.from("hotel_venue_links").select("hotel_id, venue_name"),
       supabase.from("mannequins").select("id, agency_name, staff_name, work_start_date, work_end_date, daily_rate, arrangement_status").eq("event_id", eventId).order("work_start_date"),
+      supabase.from("venue_master").select("venue_name, store_name, area_id").eq("venue_name", venue),
     ]);
     setStaff((staffRes.data || []) as unknown as StaffRow[]);
     setShipments((shipRes.data || []) as ShipmentRow[]);
@@ -97,9 +99,13 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
       if (!seen.has(label)) { seen.add(label); venues.push(label); }
     });
     setPastVenues(venues);
-    setHotelMasters((hmRes.data || []) as { id: string; name: string }[]);
+    setHotelMasters((hmRes.data || []) as { id: string; name: string; area_id: string | null }[]);
     setHotelVenueLinks((hvlRes.data || []) as { hotel_id: string; venue_name: string }[]);
-  }, [supabase, eventId]);
+    // 当該百貨店(venue + store_name)のエリアを確定
+    const vmRows = (vmRes.data || []) as { venue_name: string; store_name: string | null; area_id: string | null }[];
+    const matched = vmRows.find((r) => (r.store_name ?? "") === (storeName ?? ""));
+    setVenueAreaId(matched?.area_id ?? null);
+  }, [supabase, eventId, venue, storeName]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -116,8 +122,15 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
   const hotelCandidates = useMemo(() => {
     const venueLabel = storeName ? `${venue} ${storeName}` : venue;
     const linkedIds = new Set(hotelVenueLinks.filter((l) => l.venue_name === venueLabel).map((l) => l.hotel_id));
-    return linkedIds.size > 0 ? hotelMasters.filter((h) => linkedIds.has(h.id)) : hotelMasters;
-  }, [venue, storeName, hotelMasters, hotelVenueLinks]);
+    // 1. 該当百貨店に直接紐づくホテル
+    // 2. 百貨店と同じエリアに属するホテル
+    // どちらかに該当するホテルだけを候補に。両方該当なしなら空リスト(マスタ全件を出さない)
+    return hotelMasters.filter((h) => {
+      if (linkedIds.has(h.id)) return true;
+      if (venueAreaId && h.area_id === venueAreaId) return true;
+      return false;
+    });
+  }, [venue, storeName, hotelMasters, hotelVenueLinks, venueAreaId]);
 
   const updateStaffField = (i: number, field: string, value: string | null) => {
     const next = [...staff]; next[i] = { ...next[i], [field]: value }; setStaff(next);
