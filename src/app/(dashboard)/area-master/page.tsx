@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, Fragment } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel,
 } from "@/components/ui/select";
-import { Plus, Pencil, Trash2, GripVertical, MapPin } from "lucide-react";
+import { Plus, Pencil, Trash2, GripVertical, MapPin, ChevronDown, ChevronRight } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -119,6 +119,16 @@ export default function AreaMasterPage() {
 
   const [deleteTarget, setDeleteTarget] = useState<Area | null>(null);
 
+  // 地方アコーディオン（折りたたみ中の地方名）
+  const [collapsedRegions, setCollapsedRegions] = useState<Set<string>>(new Set());
+  const toggleRegion = (region: string) => {
+    setCollapsedRegions((prev) => {
+      const next = new Set(prev);
+      if (next.has(region)) next.delete(region); else next.add(region);
+      return next;
+    });
+  };
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -148,14 +158,39 @@ export default function AreaMasterPage() {
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    const oldIndex = areas.findIndex((a) => a.id === active.id);
-    const newIndex = areas.findIndex((a) => a.id === over.id);
-    const reordered = arrayMove(areas, oldIndex, newIndex);
-    setAreas(reordered);
-    const updates = reordered.map((a, i) =>
-      supabase.from("area_master").update({ sort_order: i }).eq("id", a.id)
+    const activeId = String(active.id);
+    const overId = String(over.id);
+
+    const activeArea = areas.find((a) => a.id === activeId);
+    const overArea = areas.find((a) => a.id === overId);
+    if (!activeArea || !overArea) return;
+    // 違う地方グループへのドロップは無視（地方内でのみ並べ替え）
+    const activeRegion = activeArea.region || "未分類";
+    const overRegion = overArea.region || "未分類";
+    if (activeRegion !== overRegion) return;
+
+    // 同じ地方内のエリアだけを取り出して並べ替え
+    const regionAreas = areas.filter((a) => (a.region || "未分類") === activeRegion);
+    const oldIndex = regionAreas.findIndex((a) => a.id === activeId);
+    const newIndex = regionAreas.findIndex((a) => a.id === overId);
+    if (oldIndex < 0 || newIndex < 0) return;
+    const reordered = arrayMove(regionAreas, oldIndex, newIndex);
+    const originalOrders = regionAreas.map((a) => a.sort_order);
+    const updateMap = new Map<string, number>();
+    reordered.forEach((a, i) => updateMap.set(a.id, originalOrders[i]));
+
+    // オプティミスティック更新
+    setAreas((prev) => prev.map((a) => {
+      const newOrder = updateMap.get(a.id);
+      return newOrder !== undefined ? { ...a, sort_order: newOrder } : a;
+    }));
+
+    // DB更新
+    await Promise.all(
+      Array.from(updateMap.entries()).map(([id, order]) =>
+        supabase.from("area_master").update({ sort_order: order }).eq("id", id)
+      )
     );
-    await Promise.all(updates);
   };
 
   const openCreate = () => { setEditingId(null); setForm(emptyForm); setDialogOpen(true); };
@@ -204,12 +239,18 @@ export default function AreaMasterPage() {
 
   if (loading) return <p className="text-muted-foreground">読み込み中...</p>;
 
-  // 地方でグルーピング表示
+  // 地方でグルーピング表示（地方の並び順を固定）
+  const regionOrder = ["北海道", "東北", "関東", "北陸", "中部", "関西", "中国", "四国", "九州", "沖縄", "未分類"];
   const regionGroups = new Map<string, Area[]>();
   areas.forEach((a) => {
     const key = a.region || "未分類";
     if (!regionGroups.has(key)) regionGroups.set(key, []);
     regionGroups.get(key)!.push(a);
+  });
+  const orderedRegionEntries = Array.from(regionGroups.entries()).sort(([ra], [rb]) => {
+    const ia = regionOrder.indexOf(ra);
+    const ib = regionOrder.indexOf(rb);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
   });
 
   return (
@@ -238,21 +279,45 @@ export default function AreaMasterPage() {
               </TableRow>
             </TableHeader>
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              <SortableContext items={areas.map((a) => a.id)} strategy={verticalListSortingStrategy}>
-                <TableBody>
-                  {areas.map((area) => (
-                    <SortableRow
-                      key={area.id}
-                      area={area}
-                      hotelCount={hotelCounts[area.id] || 0}
-                      venueCount={venueCounts[area.id] || 0}
-                      onEdit={openEdit}
-                      onDelete={setDeleteTarget}
-                      canEdit={canEdit}
-                    />
-                  ))}
-                </TableBody>
-              </SortableContext>
+              <TableBody>
+                {orderedRegionEntries.map(([regionName, regionAreas]) => {
+                  const regionColor = regionColors[regionName] || "#CBD5E1";
+                  const isCollapsed = collapsedRegions.has(regionName);
+                  const colSpan = canEdit ? 7 : 6;
+                  return (
+                    <Fragment key={regionName}>
+                      <TableRow
+                        className="hover:bg-muted/60 cursor-pointer"
+                        style={{ backgroundColor: `${regionColor}22` }}
+                        onClick={() => toggleRegion(regionName)}
+                      >
+                        <TableCell colSpan={colSpan} className="py-1.5 font-semibold text-xs">
+                          <span className="inline-flex items-center gap-2">
+                            {isCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                            <span className="inline-block w-3 h-3 rounded" style={{ backgroundColor: regionColor }} />
+                            {regionName}（{regionAreas.length}件）
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                      {!isCollapsed && (
+                        <SortableContext items={regionAreas.map((a) => a.id)} strategy={verticalListSortingStrategy}>
+                          {regionAreas.map((area) => (
+                            <SortableRow
+                              key={area.id}
+                              area={area}
+                              hotelCount={hotelCounts[area.id] || 0}
+                              venueCount={venueCounts[area.id] || 0}
+                              onEdit={openEdit}
+                              onDelete={setDeleteTarget}
+                              canEdit={canEdit}
+                            />
+                          ))}
+                        </SortableContext>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </TableBody>
             </DndContext>
           </Table>
         </div>
