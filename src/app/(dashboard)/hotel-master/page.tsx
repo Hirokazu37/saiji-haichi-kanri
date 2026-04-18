@@ -316,7 +316,13 @@ export default function HotelMasterPage() {
                             {venues.length === 0 && <span className="text-xs text-muted-foreground">—</span>}
                           </div>
                         </TableCell>
-                        <TableCell className="text-sm hidden md:table-cell">{h.phone || "—"}</TableCell>
+                        <TableCell className="text-sm hidden md:table-cell">
+                          {h.phone ? (
+                            <a href={`tel:${h.phone.replace(/[^0-9+]/g, "")}`} className="text-primary hover:underline">
+                              {h.phone}
+                            </a>
+                          ) : "—"}
+                        </TableCell>
                         <TableCell className="text-sm hidden md:table-cell">{h.price_per_night ? `${h.price_per_night.toLocaleString()}円` : "—"}</TableCell>
                         <TableCell className="text-xs text-muted-foreground hidden lg:table-cell truncate max-w-[150px]">{h.notes || "—"}</TableCell>
                         {canEdit && (

@@ -502,7 +502,8 @@ export default function AgenciesPage() {
                         {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
                         <span className="font-medium">{a.name}</span>
                         {a.contact_person && <span className="text-muted-foreground text-xs hidden sm:inline">担当: {a.contact_person}</span>}
-                        {a.phone && <span className="text-muted-foreground text-xs hidden sm:inline">{a.phone}</span>}
+                        {a.phone && <a href={`tel:${a.phone.replace(/[^0-9+]/g, "")}`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline text-xs hidden sm:inline">📞 {a.phone}</a>}
+                        {a.email && <a href={`mailto:${a.email}`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline text-xs hidden sm:inline">✉️ {a.email}</a>}
                         {a.url && <a href={a.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs" onClick={(e) => e.stopPropagation()}>HP</a>}
                         <Badge variant="outline" className="text-[10px]">{count}名</Badge>
                         {getAreaNamesForAgency(a.id).map((n) => <Badge key={n} variant="secondary" className="text-[10px]">{n}</Badge>)}
@@ -526,7 +527,15 @@ export default function AgenciesPage() {
                           members.map((m) => (
                             <div key={m.id} className="flex items-center gap-3 py-1 text-xs">
                               <span className="font-medium">{m.name}</span>
-                              {(m.mobile_phone || m.phone) && <span className="text-muted-foreground">{m.mobile_phone || m.phone}</span>}
+                              {(m.mobile_phone || m.phone) && (
+                                <a
+                                  href={`tel:${(m.mobile_phone || m.phone || "").replace(/[^0-9+]/g, "")}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="text-primary hover:underline"
+                                >
+                                  📞 {m.mobile_phone || m.phone}
+                                </a>
+                              )}
                               {getAreaNamesForPerson(m.id).length > 0 && (
                                 <div className="flex gap-0.5">
                                   {getAreaNamesForPerson(m.id).map((n) => <Badge key={n} variant="outline" className="text-[9px] py-0">{n}</Badge>)}
@@ -651,7 +660,11 @@ export default function AgenciesPage() {
                           <TableCell className="font-medium">{person.name}</TableCell>
                           <TableCell>{getAgencyName(person.agency_id)}</TableCell>
                           <TableCell className="hidden md:table-cell text-sm">
-                            {person.mobile_phone || person.phone || "—"}
+                            {(person.mobile_phone || person.phone) ? (
+                              <a href={`tel:${(person.mobile_phone || person.phone || "").replace(/[^0-9+]/g, "")}`} className="text-primary hover:underline">
+                                {person.mobile_phone || person.phone}
+                              </a>
+                            ) : "—"}
                           </TableCell>
                           <TableCell className="hidden md:table-cell max-w-[200px]">
                             {areaNames2.length > 0 ? (

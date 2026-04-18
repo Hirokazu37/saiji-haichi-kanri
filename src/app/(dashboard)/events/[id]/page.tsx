@@ -26,12 +26,13 @@ import {
   DialogFooter,
   DialogClose,
 } from "@/components/ui/dialog";
-import { Trash2, ArrowLeft, X, Building2, Save, Check, Copy, TrendingUp } from "lucide-react";
+import { Trash2, ArrowLeft, X, Building2, Save, Check, Copy, TrendingUp, MapPin, CalendarPlus } from "lucide-react";
 import Link from "next/link";
 import { prefectures, eventStatuses } from "@/lib/prefectures";
 import { ArrangementEditor, type ArrangementEditorHandle } from "@/components/arrangements/ArrangementEditor";
 import { StaffTab } from "@/components/arrangements/StaffTab";
 import { usePermission } from "@/hooks/usePermission";
+import { downloadIcs, mapsUrl } from "@/lib/ics";
 
 type EventData = {
   id: string;
@@ -289,6 +290,43 @@ export default function EventDetailPage({
           >
             {event.status}
           </Badge>
+          <Button
+            variant="outline"
+            size="sm"
+            asChild
+            title="会場を Google マップで開く"
+          >
+            <a
+              href={mapsUrl(`${event.venue}${event.store_name ? ` ${event.store_name}` : ""} ${event.prefecture}`)}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <MapPin className="h-4 w-4 mr-1" />
+              地図
+            </a>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              downloadIcs({
+                id: event.id,
+                title: `${event.venue}${event.store_name ? ` ${event.store_name}` : ""}${event.name ? ` - ${event.name}` : ""}`,
+                startDate: event.start_date,
+                endDate: event.end_date,
+                location: `${event.venue}${event.store_name ? ` ${event.store_name}` : ""} (${event.prefecture})`,
+                description: [
+                  event.person_in_charge ? `担当: ${event.person_in_charge}` : "",
+                  event.closing_time ? `閉場: ${event.closing_time}` : "",
+                  event.notes || "",
+                ].filter(Boolean).join("\n"),
+              })
+            }
+            title="iPhone/Googleカレンダーに追加"
+          >
+            <CalendarPlus className="h-4 w-4 mr-1" />
+            カレンダー
+          </Button>
           {canEdit && <SaveButton />}
           {canEdit && (
             <Button
