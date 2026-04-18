@@ -67,6 +67,8 @@ function NewEventPageInner() {
   const [shipmentEntries, setShipmentEntries] = useState<ShipmentEntry[]>([]);
   const [pastVenues, setPastVenues] = useState<VenueOption[]>([]);
   const [venueMasters, setVenueMasters] = useState<VenueMaster[]>([]);
+  // 直近12ヶ月の使用頻度マップ（label -> 回数）
+  const [venueUsageMap, setVenueUsageMap] = useState<Map<string, number>>(new Map());
   const [hotelMasters, setHotelMasters] = useState<HotelMaster[]>([]);
   const [hotelVenueLinks, setHotelVenueLinks] = useState<HotelVenueLink[]>([]);
   const [agencyMasters, setAgencyMasters] = useState<AgencyMaster[]>([]);
@@ -93,9 +95,13 @@ function NewEventPageInner() {
   });
 
   const fetchData = useCallback(async () => {
+    // 直近12ヶ月の催事から使用頻度を集計
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    const oneYearAgoStr = oneYearAgo.toISOString().slice(0, 10);
     const [empRes, evtRes, vmRes, hmRes, hvlRes, amRes, aalRes, arRes, mpRes, mhRes] = await Promise.all([
       supabase.from("employees").select("id, name").order("sort_order").order("name"),
-      supabase.from("events").select("venue, store_name").order("created_at", { ascending: false }).limit(100),
+      supabase.from("events").select("venue, store_name, start_date").gte("start_date", oneYearAgoStr).order("start_date", { ascending: false }),
       supabase.from("venue_master").select("id, venue_name, store_name, prefecture, area_id, reading, is_active").eq("is_active", true),
       supabase.from("hotel_master").select("id, name, area_id").eq("is_active", true).order("name"),
       supabase.from("hotel_venue_links").select("hotel_id, venue_name"),
@@ -106,14 +112,17 @@ function NewEventPageInner() {
       supabase.from("mannequins").select("staff_name, events:event_id(venue, store_name)"),
     ]);
     setEmployees(empRes.data || []);
-    // 過去の催事会場を重複排除してリスト化
+    // 過去の催事会場を重複排除してリスト化＋使用頻度もカウント
     const seen = new Set<string>();
     const venues: VenueOption[] = [];
-    (evtRes.data || []).forEach((e: { venue: string; store_name: string | null }) => {
+    const usage = new Map<string, number>();
+    (evtRes.data || []).forEach((e: { venue: string; store_name: string | null; start_date: string }) => {
       const label = e.store_name ? `${e.venue} ${e.store_name}` : e.venue;
       if (!seen.has(label)) { seen.add(label); venues.push({ label }); }
+      usage.set(label, (usage.get(label) || 0) + 1);
     });
     setPastVenues(venues);
+    setVenueUsageMap(usage);
     setVenueMasters((vmRes.data || []) as VenueMaster[]);
     setHotelMasters((hmRes.data || []) as HotelMaster[]);
     setHotelVenueLinks((hvlRes.data || []) as HotelVenueLink[]);
@@ -266,6 +275,8 @@ function NewEventPageInner() {
       // area_master は id/name のみ取得中。prefecture → region で判定
       return getAreaForPrefecture(v.prefecture || "") || "その他";
     };
+    const labelOf = (v: VenueMaster) =>
+      v.store_name ? `${v.venue_name} ${v.store_name}` : v.venue_name;
     const sorted = [...venueMasters].sort((a, b) => {
       // 地方順
       const ra = getRegion(a);
@@ -275,6 +286,10 @@ function NewEventPageInner() {
       const riSafe = ri < 0 ? 999 : ri;
       const rjSafe = rj < 0 ? 999 : rj;
       if (riSafe !== rjSafe) return riSafe - rjSafe;
+      // 使用頻度順（直近12ヶ月の回数が多い会場を上位に）
+      const ua = venueUsageMap.get(labelOf(a)) || 0;
+      const ub = venueUsageMap.get(labelOf(b)) || 0;
+      if (ua !== ub) return ub - ua;
       // エリア順（area_master の sort_order）
       const ai = a.area_id ? (areaIdOrder.get(a.area_id) ?? 9999) : 9999;
       const bi = b.area_id ? (areaIdOrder.get(b.area_id) ?? 9999) : 9999;
@@ -285,16 +300,18 @@ function NewEventPageInner() {
       return read_a.localeCompare(read_b, "ja");
     });
     return sorted.map((v) => {
-      const label = v.store_name ? `${v.venue_name} ${v.store_name}` : v.venue_name;
+      const label = labelOf(v);
+      const count = venueUsageMap.get(label) || 0;
+      const parts = [v.prefecture, count > 0 ? `1年${count}回` : null].filter(Boolean);
       return {
         value: `${v.id}`,
         label,
         reading: v.reading ?? "",
-        sublabel: v.prefecture ?? "",
+        sublabel: parts.join(" · "),
         group: getRegion(v),
       } as ComboboxItem;
     });
-  }, [venueMasters, areaMasters]);
+  }, [venueMasters, areaMasters, venueUsageMap]);
 
   // 百貨店選択時のハンドラ（Combobox value=id形式。id→マスター情報で自動入力）
   const handleVenueSelect = (id: string) => {
