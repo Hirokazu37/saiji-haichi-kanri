@@ -195,6 +195,7 @@ export default function EventsPage() {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [showPast, setShowPast] = useState(false);
   const [viewMode, setViewMode] = useState<"gantt" | "calendar" | "card">("gantt");
+  const [showArrangementIcons, setShowArrangementIcons] = useState(true);
   const listRef = useRef<HTMLDivElement>(null);
 
   // モバイル幅(768px未満)は初期表示をカードビューに切り替える
@@ -518,6 +519,14 @@ export default function EventsPage() {
               <SelectItem value="12">12ヶ月</SelectItem>
             </SelectContent>
           </Select>
+          <Button
+            variant={showArrangementIcons ? "default" : "outline"}
+            size="sm"
+            onClick={() => setShowArrangementIcons((v) => !v)}
+            title="手配アイコンの表示/非表示を切替"
+          >
+            手配アイコン: {showArrangementIcons ? "ON" : "OFF"}
+          </Button>
         </div>
 
         <div ref={listRef}>
@@ -602,8 +611,9 @@ export default function EventsPage() {
                         {/* トラック行 */}
                         {Array.from({ length: trackCount }, (_, trackIdx) => {
                           const trackEvents = monthEvents.filter((e) => trackMap.get(e.id) === trackIdx);
+                          const rowMinHeight = showArrangementIcons ? 76 : 44;
                           return (
-                            <div key={trackIdx} className={`flex border-b last:border-b-0 ${trackIdx % 2 === 1 ? "bg-slate-50/50" : "bg-white"}`} style={{ minHeight: 76 }}>
+                            <div key={trackIdx} className={`flex border-b last:border-b-0 ${trackIdx % 2 === 1 ? "bg-slate-50/50" : "bg-white"}`} style={{ minHeight: rowMinHeight }}>
                               <div className="w-14 shrink-0 border-r flex items-center justify-center text-[10px] font-bold text-muted-foreground">
                                 {TRACK_LABELS[trackIdx] || String(trackIdx + 1)}
                               </div>
@@ -655,6 +665,7 @@ export default function EventsPage() {
                                     { label: "マネキン", ok: arr.mannequin === "ok", na: arr.mannequin === "na" },
                                     { label: "備品", ok: arr.shipment === "設定済", na: false },
                                   ];
+                                  const barHeight = showArrangementIcons ? 72 : 40;
                                   return (
                                     <Tooltip key={evt.id}>
                                       <TooltipTrigger
@@ -664,23 +675,31 @@ export default function EventsPage() {
                                             style={{
                                               left: `${left}%`,
                                               width: `${width}%`,
-                                              height: 72,
+                                              height: barHeight,
                                             }}
                                             onClick={() => openDialog(evt)}
                                           >
                                             <div className="truncate font-semibold leading-tight text-[11px] mb-0.5">{label}</div>
-                                            <div className="flex gap-0.5 flex-wrap">
-                                              {icons.map((ic) => (
-                                                <span key={ic.label} className={`inline-block text-[11px] leading-none px-1 py-0.5 rounded font-bold ${ic.label === "申込" ? "cursor-pointer hover:opacity-70" : ""} ${ic.na ? "bg-gray-200 text-gray-500" : ic.ok ? "bg-green-600 text-white" : "bg-red-500 text-white"}`}
-                                                  onMouseDown={ic.label === "申込" ? (e) => e.stopPropagation() : undefined}
-                                                  onClick={ic.label === "申込" ? (e) => toggleApplicationStatus(e, evt.id, evt.application_status) : undefined}
-                                                >{ic.label}{ic.na ? "" : ic.ok ? "✓" : "✗"}</span>
-                                              ))}
-                                            </div>
-                                            {(arr.equipmentFrom || arr.equipmentTo) && (
-                                              <div className="truncate text-[10px] text-black/70 mt-0.5">
-                                                {arr.equipmentFrom ? `←${arr.equipmentFrom}` : ""}{arr.equipmentFrom && arr.equipmentTo ? " " : ""}{arr.equipmentTo ? `→${arr.equipmentTo}` : ""}
-                                              </div>
+                                            {showArrangementIcons ? (
+                                              <>
+                                                <div className="flex gap-0.5 flex-wrap">
+                                                  {icons.map((ic) => (
+                                                    <span key={ic.label} className={`inline-block text-[11px] leading-none px-1 py-0.5 rounded font-bold ${ic.label === "申込" ? "cursor-pointer hover:opacity-70" : ""} ${ic.na ? "bg-gray-200 text-gray-500" : ic.ok ? "bg-green-600 text-white" : "bg-red-500 text-white"}`}
+                                                      onMouseDown={ic.label === "申込" ? (e) => e.stopPropagation() : undefined}
+                                                      onClick={ic.label === "申込" ? (e) => toggleApplicationStatus(e, evt.id, evt.application_status) : undefined}
+                                                    >{ic.label}{ic.na ? "" : ic.ok ? "✓" : "✗"}</span>
+                                                  ))}
+                                                </div>
+                                                {(arr.equipmentFrom || arr.equipmentTo) && (
+                                                  <div className="truncate text-[10px] text-black/70 mt-0.5">
+                                                    {arr.equipmentFrom ? `←${arr.equipmentFrom}` : ""}{arr.equipmentFrom && arr.equipmentTo ? " " : ""}{arr.equipmentTo ? `→${arr.equipmentTo}` : ""}
+                                                  </div>
+                                                )}
+                                              </>
+                                            ) : (
+                                              evt.person_in_charge && (
+                                                <div className="truncate text-[10px] text-black/70 leading-tight">担当: {evt.person_in_charge}</div>
+                                              )
                                             )}
                                           </div>
                                         }
