@@ -7,6 +7,7 @@ import { Fab } from "./Fab";
 import { PermissionProvider } from "@/hooks/usePermission";
 import { ConsentDialog } from "./ConsentDialog";
 import { AutoLogout } from "./AutoLogout";
+import { RouteGuard } from "./RouteGuard";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -18,7 +19,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="md:pl-60">
           <Header />
           <main className="p-4 md:p-6 pb-[calc(env(safe-area-inset-bottom)+72px)] md:pb-6">
-            {children}
+            <RouteGuard>{children}</RouteGuard>
           </main>
         </div>
         <BottomNav />

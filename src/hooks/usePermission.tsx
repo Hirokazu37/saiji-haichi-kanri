@@ -3,27 +3,40 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { createClient } from "@/lib/supabase/client";
 
+export type UserRole = "admin" | "viewer" | "limited";
+
 type PermissionContextType = {
+  role: UserRole;
   canEdit: boolean;
+  canViewRatings: boolean;
+  canViewAll: boolean;
   loading: boolean;
   displayName: string;
   userId: string | null;
 };
 
-const PermissionContext = createContext<PermissionContextType>({
+const defaultState: PermissionContextType = {
+  role: "viewer",
   canEdit: false,
+  canViewRatings: false,
+  canViewAll: true,
   loading: true,
   displayName: "",
   userId: null,
-});
+};
+
+const PermissionContext = createContext<PermissionContextType>(defaultState);
+
+function derive(role: UserRole): Pick<PermissionContextType, "canEdit" | "canViewRatings" | "canViewAll"> {
+  return {
+    canEdit: role === "admin",
+    canViewRatings: role === "admin",
+    canViewAll: role === "admin" || role === "viewer",
+  };
+}
 
 export function PermissionProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<PermissionContextType>({
-    canEdit: false,
-    loading: true,
-    displayName: "",
-    userId: null,
-  });
+  const [state, setState] = useState<PermissionContextType>(defaultState);
 
   useEffect(() => {
     const supabase = createClient();
@@ -33,12 +46,14 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
       if (user) {
         const { data } = await supabase
           .from("user_profiles")
-          .select("id, display_name, can_edit")
+          .select("id, display_name, can_edit, role")
           .eq("id", user.id)
           .single();
         if (data) {
+          const role = (data.role ?? (data.can_edit ? "admin" : "viewer")) as UserRole;
           setState({
-            canEdit: data.can_edit,
+            role,
+            ...derive(role),
             loading: false,
             displayName: data.display_name,
             userId: data.id,

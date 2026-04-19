@@ -2,6 +2,13 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
+const VALID_ROLES = ["admin", "viewer", "limited"] as const;
+type Role = (typeof VALID_ROLES)[number];
+
+function isRole(v: unknown): v is Role {
+  return typeof v === "string" && (VALID_ROLES as readonly string[]).includes(v);
+}
+
 // PATCH /api/users/[id] — ユーザー更新
 export async function PATCH(
   request: Request,
@@ -9,14 +16,21 @@ export async function PATCH(
 ) {
   const { id } = await params;
   const body = await request.json();
-  const { display_name, password, can_edit } = body;
+  const { display_name, password, role } = body;
 
   const admin = createAdminClient();
 
-  // プロフィールの更新（表示名・編集権限）
+  // プロフィールの更新
   const profileUpdate: Record<string, unknown> = {};
   if (display_name !== undefined) profileUpdate.display_name = display_name;
-  if (can_edit !== undefined) profileUpdate.can_edit = can_edit;
+  if (role !== undefined) {
+    if (!isRole(role)) {
+      return NextResponse.json({ error: "権限の値が不正です" }, { status: 400 });
+    }
+    profileUpdate.role = role;
+    // can_edit は role から派生させる（RLS 側は can_edit を参照しているため）
+    profileUpdate.can_edit = role === "admin";
+  }
 
   if (Object.keys(profileUpdate).length > 0) {
     const { error } = await admin
@@ -44,7 +58,6 @@ export async function PATCH(
     }
   }
 
-  // 更新後のプロフィールを返す
   const { data: profile } = await admin
     .from("user_profiles")
     .select("*")
@@ -61,7 +74,6 @@ export async function DELETE(
 ) {
   const { id } = await params;
 
-  // 自分自身の削除を禁止
   const supabase = await createClient();
   const {
     data: { user },
@@ -76,7 +88,6 @@ export async function DELETE(
 
   const admin = createAdminClient();
 
-  // Auth ユーザー削除（CASCADE で user_profiles も削除される）
   const { error } = await admin.auth.admin.deleteUser(id);
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

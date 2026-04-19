@@ -10,17 +10,31 @@ import {
   MoreHorizontal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { usePermission, type UserRole } from "@/hooks/usePermission";
 
-const tabs = [
-  { label: "ホーム", href: "/", icon: LayoutDashboard, match: (p: string) => p === "/" },
-  { label: "日程表", href: "/events", icon: CalendarDays, match: (p: string) => p.startsWith("/events") || p.startsWith("/archive") },
-  { label: "社員", href: "/schedule", icon: CalendarClock, match: (p: string) => p.startsWith("/schedule") },
-  { label: "備品", href: "/shipments", icon: Package, match: (p: string) => p.startsWith("/shipments") },
-  { label: "メニュー", href: "/menu", icon: MoreHorizontal, match: (p: string) => p.startsWith("/menu") || p.startsWith("/hotels") || p.startsWith("/applications") || p.startsWith("/dm") || p.startsWith("/venue-master") || p.startsWith("/area-master") || p.startsWith("/hotel-master") || p.startsWith("/employees") || p.startsWith("/agencies") || p.startsWith("/users") },
+type Tab = {
+  label: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+  match: (p: string) => boolean;
+  roles: UserRole[];
+};
+
+const allTabs: Tab[] = [
+  { label: "ホーム", href: "/", icon: LayoutDashboard, match: (p) => p === "/", roles: ["admin", "viewer", "limited"] },
+  { label: "日程表", href: "/events", icon: CalendarDays, match: (p) => p.startsWith("/events") || p.startsWith("/archive"), roles: ["admin", "viewer", "limited"] },
+  { label: "社員", href: "/schedule", icon: CalendarClock, match: (p) => p.startsWith("/schedule"), roles: ["admin", "viewer", "limited"] },
+  { label: "備品", href: "/shipments", icon: Package, match: (p) => p.startsWith("/shipments"), roles: ["admin", "viewer"] },
+  { label: "メニュー", href: "/menu", icon: MoreHorizontal, match: (p) => p.startsWith("/menu") || p.startsWith("/hotels") || p.startsWith("/applications") || p.startsWith("/dm") || p.startsWith("/venue-master") || p.startsWith("/area-master") || p.startsWith("/hotel-master") || p.startsWith("/employees") || p.startsWith("/agencies") || p.startsWith("/users"), roles: ["admin", "viewer", "limited"] },
 ];
 
 export function BottomNav() {
   const pathname = usePathname();
+  const { role, loading } = usePermission();
+
+  const tabs = loading ? [] : allTabs.filter((t) => t.roles.includes(role));
+
+  if (tabs.length === 0) return null;
 
   return (
     <nav
@@ -28,7 +42,10 @@ export function BottomNav() {
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       aria-label="主要ナビゲーション"
     >
-      <ul className="grid grid-cols-5">
+      <ul
+        className="grid"
+        style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
+      >
         {tabs.map((tab) => {
           const active = tab.match(pathname);
           const Icon = tab.icon;

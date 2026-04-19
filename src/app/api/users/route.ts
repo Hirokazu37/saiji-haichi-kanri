@@ -2,6 +2,13 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
+const VALID_ROLES = ["admin", "viewer", "limited"] as const;
+type Role = (typeof VALID_ROLES)[number];
+
+function isRole(v: unknown): v is Role {
+  return typeof v === "string" && (VALID_ROLES as readonly string[]).includes(v);
+}
+
 // GET /api/users — ユーザー一覧
 export async function GET() {
   const supabase = await createClient();
@@ -19,7 +26,7 @@ export async function GET() {
 // POST /api/users — ユーザー作成
 export async function POST(request: Request) {
   const body = await request.json();
-  const { username, display_name, password, can_edit } = body;
+  const { username, display_name, password, role } = body;
 
   if (!username || !display_name || !password) {
     return NextResponse.json(
@@ -42,10 +49,11 @@ export async function POST(request: Request) {
     );
   }
 
+  const finalRole: Role = isRole(role) ? role : "viewer";
+
   const admin = createAdminClient();
   const email = `${username}@yasuoka.app`;
 
-  // Supabase Auth にユーザー作成
   const { data: authUser, error: authError } =
     await admin.auth.admin.createUser({
       email,
@@ -63,20 +71,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: authError.message }, { status: 500 });
   }
 
-  // user_profiles に登録
   const { data: profile, error: profileError } = await admin
     .from("user_profiles")
     .insert({
       id: authUser.user.id,
       username,
       display_name,
-      can_edit: can_edit ?? false,
+      can_edit: finalRole === "admin",
+      role: finalRole,
     })
     .select()
     .single();
 
   if (profileError) {
-    // プロフィール作成失敗時はAuthユーザーも削除
     await admin.auth.admin.deleteUser(authUser.user.id);
     return NextResponse.json({ error: profileError.message }, { status: 500 });
   }

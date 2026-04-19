@@ -10,7 +10,6 @@ import {
   Building2,
   Package,
   Hotel,
-  Train,
   FileText,
   Mail,
   Store,
@@ -19,26 +18,37 @@ import {
   Archive,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { usePermission, type UserRole } from "@/hooks/usePermission";
 
-const navItems = [
-  { label: "ダッシュボード", href: "/", icon: LayoutDashboard },
-  { label: "日程表", href: "/events", icon: CalendarDays },
-  { label: "履歴（終了した催事）", href: "/archive", icon: Archive },
-  { label: "社員スケジュール", href: "/schedule", icon: CalendarClock },
-  { label: "ホテル・交通", href: "/hotels", icon: Hotel },
-  { label: "備品の流れ", href: "/shipments", icon: Package },
-  { label: "出店申込書", href: "/applications", icon: FileText },
-  { label: "DMハガキ", href: "/dm", icon: Mail },
-  { label: "百貨店マスター", href: "/venue-master", icon: Store },
-  { label: "エリアマスター", href: "/area-master", icon: MapPin },
-  { label: "ホテルマスター", href: "/hotel-master", icon: Hotel },
-  { label: "社員マスター", href: "/employees", icon: Users },
-  { label: "マネキン", href: "/agencies", icon: Building2 },
-  { label: "ユーザー管理", href: "/users", icon: UserCog },
+type NavItem = {
+  label: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+  roles: UserRole[];
+};
+
+const navItems: NavItem[] = [
+  { label: "ダッシュボード", href: "/", icon: LayoutDashboard, roles: ["admin", "viewer", "limited"] },
+  { label: "日程表", href: "/events", icon: CalendarDays, roles: ["admin", "viewer", "limited"] },
+  { label: "履歴（終了した催事）", href: "/archive", icon: Archive, roles: ["admin", "viewer"] },
+  { label: "社員スケジュール", href: "/schedule", icon: CalendarClock, roles: ["admin", "viewer", "limited"] },
+  { label: "ホテル・交通", href: "/hotels", icon: Hotel, roles: ["admin", "viewer"] },
+  { label: "備品の流れ", href: "/shipments", icon: Package, roles: ["admin", "viewer"] },
+  { label: "出店申込書", href: "/applications", icon: FileText, roles: ["admin", "viewer"] },
+  { label: "DMハガキ", href: "/dm", icon: Mail, roles: ["admin", "viewer"] },
+  { label: "百貨店マスター", href: "/venue-master", icon: Store, roles: ["admin", "viewer"] },
+  { label: "エリアマスター", href: "/area-master", icon: MapPin, roles: ["admin", "viewer"] },
+  { label: "ホテルマスター", href: "/hotel-master", icon: Hotel, roles: ["admin", "viewer"] },
+  { label: "社員マスター", href: "/employees", icon: Users, roles: ["admin", "viewer"] },
+  { label: "マネキン", href: "/agencies", icon: Building2, roles: ["admin", "viewer"] },
+  { label: "ユーザー管理", href: "/users", icon: UserCog, roles: ["admin"] },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { role, loading } = usePermission();
+
+  const items = loading ? [] : navItems.filter((item) => item.roles.includes(role));
 
   return (
     <aside className="hidden md:flex md:w-60 md:flex-col md:fixed md:inset-y-0 border-r bg-sidebar">
@@ -52,7 +62,7 @@ export function Sidebar() {
         </Link>
       </div>
       <nav className="flex-1 p-3 space-y-1">
-        {navItems.map((item) => {
+        {items.map((item) => {
           const isActive =
             item.href === "/"
               ? pathname === "/"

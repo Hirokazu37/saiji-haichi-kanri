@@ -164,7 +164,7 @@ function AreaPicker({ value, onChange }: { value: string; onChange: (v: string) 
 }
 
 export default function AgenciesPage() {
-  const { canEdit } = usePermission();
+  const { canEdit, canViewRatings } = usePermission();
   const supabase = createClient();
   const [agencies, setAgencies] = useState<Agency[]>([]);
   const [people, setPeople] = useState<MannequinPerson[]>([]);
@@ -646,14 +646,14 @@ export default function AgenciesPage() {
               <TableHead>マネキン会社</TableHead>
               <TableHead className="hidden md:table-cell">電話番号</TableHead>
               <TableHead className="hidden md:table-cell max-w-[200px]">エリア</TableHead>
-              <TableHead className="hidden lg:table-cell">評価</TableHead>
+              {canViewRatings && <TableHead className="hidden lg:table-cell">評価</TableHead>}
               {canEdit && <TableHead className="w-28">操作</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredPeople.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={canEdit ? 8 : 7} className="text-center text-muted-foreground">
+                <TableCell colSpan={6 + (canViewRatings ? 1 : 0) + (canEdit ? 1 : 0)} className="text-center text-muted-foreground">
                   {hasSearch ? "該当するマネキンさんが見つかりません。" : "マネキンさんが登録されていません。「マネキン追加」から登録してください。"}
                 </TableCell>
               </TableRow>
@@ -669,7 +669,7 @@ export default function AgenciesPage() {
                       onClick={() => toggleRegion(regionName)}
                     >
                       <TableCell className="p-0" style={{ backgroundColor: regionColor, width: 6 }} />
-                      <TableCell colSpan={canEdit ? 7 : 6} className="py-1.5 font-semibold text-xs">
+                      <TableCell colSpan={5 + (canViewRatings ? 1 : 0) + (canEdit ? 1 : 0)} className="py-1.5 font-semibold text-xs">
                         <span className="inline-flex items-center gap-2">
                           {isCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                           <span className="inline-block w-3 h-3 rounded" style={{ backgroundColor: regionColor }} />
@@ -700,18 +700,20 @@ export default function AgenciesPage() {
                               </div>
                             ) : <span className="text-xs text-muted-foreground">—</span>}
                           </TableCell>
-                          <TableCell className="hidden lg:table-cell">
-                            {person.rating && person.rating > 0 ? (
-                              <div className="flex items-center gap-0.5">
-                                {[1, 2, 3, 4, 5].map((n) => (
-                                  <Star
-                                    key={n}
-                                    className={`h-3.5 w-3.5 ${n <= (person.rating ?? 0) ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground/30"}`}
-                                  />
-                                ))}
-                              </div>
-                            ) : <span className="text-xs text-muted-foreground">—</span>}
-                          </TableCell>
+                          {canViewRatings && (
+                            <TableCell className="hidden lg:table-cell">
+                              {person.rating && person.rating > 0 ? (
+                                <div className="flex items-center gap-0.5">
+                                  {[1, 2, 3, 4, 5].map((n) => (
+                                    <Star
+                                      key={n}
+                                      className={`h-3.5 w-3.5 ${n <= (person.rating ?? 0) ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground/30"}`}
+                                    />
+                                  ))}
+                                </div>
+                              ) : <span className="text-xs text-muted-foreground">—</span>}
+                            </TableCell>
+                          )}
                           {canEdit && (
                             <TableCell>
                               <div className="flex gap-1">

@@ -5,7 +5,6 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -13,16 +12,21 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose,
 } from "@/components/ui/dialog";
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Pencil, Trash2, UserCog, Link2, Copy, Check } from "lucide-react";
+import type { UserRole } from "@/hooks/usePermission";
 
 type UserProfile = {
   id: string;
   username: string;
   display_name: string;
   can_edit: boolean;
+  role: UserRole;
   created_at: string;
 };
 
@@ -34,7 +38,24 @@ type InviteToken = {
   created_at: string;
 };
 
-const emptyForm = { display_name: "", password: "", password_confirm: "", can_edit: false };
+const ROLE_LABEL: Record<UserRole, string> = {
+  admin: "編集可能",
+  viewer: "閲覧のみ",
+  limited: "製造スタッフ（日程表のみ）",
+};
+
+const ROLE_DESC: Record<UserRole, string> = {
+  admin: "催事・マスターデータの追加・編集・削除が可能。マネキン評価★も閲覧可能。",
+  viewer: "全画面を閲覧のみ可能（編集不可）。マネキン評価★は非表示。",
+  limited: "ダッシュボード・日程表・社員スケジュールのみ閲覧可能。製造スタッフなど共有範囲を絞りたい人向け。",
+};
+
+const emptyForm: { display_name: string; password: string; password_confirm: string; role: UserRole } = {
+  display_name: "",
+  password: "",
+  password_confirm: "",
+  role: "viewer",
+};
 
 export default function UsersPage() {
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -62,7 +83,16 @@ export default function UsersPage() {
       fetch("/api/users"),
       fetch("/api/invites"),
     ]);
-    if (usersRes.ok) setUsers(await usersRes.json());
+    if (usersRes.ok) {
+      const data = (await usersRes.json()) as UserProfile[];
+      // role が無い既存データは can_edit から補完
+      setUsers(
+        data.map((u) => ({
+          ...u,
+          role: (u.role ?? (u.can_edit ? "admin" : "viewer")) as UserRole,
+        }))
+      );
+    }
     if (invitesRes.ok) setInvites(await invitesRes.json());
     setLoading(false);
   }, []);
@@ -74,7 +104,6 @@ export default function UsersPage() {
     });
   }, [fetchData, supabase.auth]);
 
-  // 招待リンク生成
   const handleGenerateInvite = async () => {
     setGeneratingInvite(true);
     const res = await fetch("/api/invites", { method: "POST" });
@@ -95,11 +124,15 @@ export default function UsersPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // 編集
   const openEdit = (user: UserProfile) => {
     setEditingId(user.id);
     setEditingUsername(user.username);
-    setForm({ display_name: user.display_name, password: "", password_confirm: "", can_edit: user.can_edit });
+    setForm({
+      display_name: user.display_name,
+      password: "",
+      password_confirm: "",
+      role: user.role,
+    });
     setError("");
     setEditDialogOpen(true);
   };
@@ -112,7 +145,7 @@ export default function UsersPage() {
     }
 
     setSaving(true);
-    const body: Record<string, unknown> = { display_name: form.display_name, can_edit: form.can_edit };
+    const body: Record<string, unknown> = { display_name: form.display_name, role: form.role };
     if (form.password) body.password = form.password;
 
     const res = await fetch(`/api/users/${editingId}`, {
@@ -133,20 +166,28 @@ export default function UsersPage() {
     fetchData();
   };
 
-  // 編集権限トグル
-  const handleToggleCanEdit = async (userId: string, newValue: boolean) => {
-    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, can_edit: newValue } : u)));
+  // 行の権限セレクト直接変更
+  const handleChangeRole = async (userId: string, newRole: UserRole) => {
+    const prev = users.find((u) => u.id === userId);
+    if (!prev) return;
+
+    setUsers((list) =>
+      list.map((u) => (u.id === userId ? { ...u, role: newRole, can_edit: newRole === "admin" } : u))
+    );
+
     const res = await fetch(`/api/users/${userId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ can_edit: newValue }),
+      body: JSON.stringify({ role: newRole }),
     });
+
     if (!res.ok) {
-      setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, can_edit: !newValue } : u)));
+      setUsers((list) =>
+        list.map((u) => (u.id === userId ? { ...u, role: prev.role, can_edit: prev.can_edit } : u))
+      );
     }
   };
 
-  // 削除
   const handleDelete = async () => {
     if (!deletingId) return;
     const res = await fetch(`/api/users/${deletingId}`, { method: "DELETE" });
@@ -159,7 +200,6 @@ export default function UsersPage() {
     fetchData();
   };
 
-  // 未使用の招待リンク
   const pendingInvites = invites.filter((i) => !i.used_at && new Date(i.expires_at) > new Date());
 
   return (
@@ -202,6 +242,16 @@ export default function UsersPage() {
         </div>
       )}
 
+      {/* 権限レベルの説明 */}
+      <div className="rounded-lg border bg-muted/40 p-3 text-xs space-y-1.5">
+        <p className="font-semibold text-foreground">権限レベル</p>
+        {(["admin", "viewer", "limited"] as UserRole[]).map((r) => (
+          <p key={r}>
+            <span className="font-medium">{ROLE_LABEL[r]}</span>: <span className="text-muted-foreground">{ROLE_DESC[r]}</span>
+          </p>
+        ))}
+      </div>
+
       {/* ユーザー一覧 */}
       {loading ? (
         <p className="text-muted-foreground">読み込み中...</p>
@@ -214,7 +264,7 @@ export default function UsersPage() {
               <TableRow>
                 <TableHead>ユーザー名</TableHead>
                 <TableHead>表示名</TableHead>
-                <TableHead className="text-center">編集権限</TableHead>
+                <TableHead>権限</TableHead>
                 <TableHead className="hidden md:table-cell">作成日</TableHead>
                 <TableHead className="w-24">操作</TableHead>
               </TableRow>
@@ -229,12 +279,20 @@ export default function UsersPage() {
                       <span className="ml-2 text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">自分</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-center">
-                    <Switch
-                      checked={user.can_edit}
-                      onCheckedChange={(v) => handleToggleCanEdit(user.id, v)}
-                      className="data-[state=checked]:bg-green-700"
-                    />
+                  <TableCell>
+                    <Select
+                      value={user.role}
+                      onValueChange={(v) => handleChangeRole(user.id, v as UserRole)}
+                    >
+                      <SelectTrigger className="w-[200px] h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="admin">{ROLE_LABEL.admin}</SelectItem>
+                        <SelectItem value="viewer">{ROLE_LABEL.viewer}</SelectItem>
+                        <SelectItem value="limited">{ROLE_LABEL.limited}</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </TableCell>
                   <TableCell className="hidden md:table-cell text-muted-foreground">
                     {new Date(user.created_at).toLocaleDateString("ja-JP")}
@@ -264,7 +322,7 @@ export default function UsersPage() {
           </DialogHeader>
           <div className="space-y-3 py-2">
             <p className="text-sm text-muted-foreground">
-              以下のリンクを共有してください。リンクは7日間有効です。
+              以下のリンクを共有してください。リンクは7日間有効です。新規アカウントは「閲覧のみ」で作成されます。
             </p>
             <div className="flex gap-2">
               <Input value={inviteUrl} readOnly className="text-xs font-mono" />
@@ -314,18 +372,20 @@ export default function UsersPage() {
                 onChange={(e) => setForm({ ...form, password_confirm: e.target.value })}
               />
             </div>
-            <div className="flex items-center justify-between py-2">
-              <Label htmlFor="can_edit">編集権限</Label>
-              <Switch
-                id="can_edit"
-                checked={form.can_edit}
-                onCheckedChange={(v) => setForm({ ...form, can_edit: v })}
-                className="data-[state=checked]:bg-green-700"
-              />
+            <div className="space-y-2">
+              <Label htmlFor="role">権限</Label>
+              <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v as UserRole })}>
+                <SelectTrigger id="role">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="admin">{ROLE_LABEL.admin}</SelectItem>
+                  <SelectItem value="viewer">{ROLE_LABEL.viewer}</SelectItem>
+                  <SelectItem value="limited">{ROLE_LABEL.limited}</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">{ROLE_DESC[form.role]}</p>
             </div>
-            <p className="text-xs text-muted-foreground">
-              ONにすると催事・マスターデータの追加・編集・削除ができます。OFFの場合は閲覧のみです。
-            </p>
             {error && <p className="text-sm text-destructive">{error}</p>}
           </div>
           <DialogFooter>

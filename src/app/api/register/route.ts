@@ -77,7 +77,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: authError.message }, { status: 500 });
   }
 
-  // user_profiles に登録
+  // 招待経由の新規ユーザーは閲覧のみで作成（管理者が後で権限を昇格する）
   const { error: profileError } = await admin
     .from("user_profiles")
     .insert({
@@ -85,6 +85,7 @@ export async function POST(request: Request) {
       username,
       display_name,
       can_edit: false,
+      role: "viewer",
     });
 
   if (profileError) {

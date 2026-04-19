@@ -16,34 +16,42 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
-import { usePermission } from "@/hooks/usePermission";
+import { usePermission, type UserRole } from "@/hooks/usePermission";
 
-type Item = { label: string; href: string; icon: React.ComponentType<{ className?: string }>; desc?: string };
+type Item = {
+  label: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+  desc?: string;
+  roles: UserRole[];
+};
 
-const sections: { title: string; items: Item[] }[] = [
+type Section = { title: string; items: Item[] };
+
+const sections: Section[] = [
   {
     title: "日々の手配",
     items: [
-      { label: "ホテル・交通", href: "/hotels", icon: Hotel, desc: "社員ごとの宿泊と行き帰り" },
-      { label: "出店申込書", href: "/applications", icon: FileText, desc: "提出状況の一覧管理" },
-      { label: "DMハガキ", href: "/dm", icon: Mail, desc: "制作ステータスと枚数" },
+      { label: "ホテル・交通", href: "/hotels", icon: Hotel, desc: "社員ごとの宿泊と行き帰り", roles: ["admin", "viewer"] },
+      { label: "出店申込書", href: "/applications", icon: FileText, desc: "提出状況の一覧管理", roles: ["admin", "viewer"] },
+      { label: "DMハガキ", href: "/dm", icon: Mail, desc: "制作ステータスと枚数", roles: ["admin", "viewer"] },
     ],
   },
   {
     title: "履歴・振り返り",
     items: [
-      { label: "履歴（終了した催事）", href: "/archive", icon: Archive, desc: "売上・振り返りメモ" },
+      { label: "履歴（終了した催事）", href: "/archive", icon: Archive, desc: "売上・振り返りメモ", roles: ["admin", "viewer"] },
     ],
   },
   {
     title: "マスター管理",
     items: [
-      { label: "百貨店マスター", href: "/venue-master", icon: Store },
-      { label: "エリアマスター", href: "/area-master", icon: MapPin },
-      { label: "ホテルマスター", href: "/hotel-master", icon: Hotel },
-      { label: "社員マスター", href: "/employees", icon: Users },
-      { label: "マネキン（派遣会社）", href: "/agencies", icon: Building2 },
-      { label: "ユーザー管理", href: "/users", icon: UserCog },
+      { label: "百貨店マスター", href: "/venue-master", icon: Store, roles: ["admin", "viewer"] },
+      { label: "エリアマスター", href: "/area-master", icon: MapPin, roles: ["admin", "viewer"] },
+      { label: "ホテルマスター", href: "/hotel-master", icon: Hotel, roles: ["admin", "viewer"] },
+      { label: "社員マスター", href: "/employees", icon: Users, roles: ["admin", "viewer"] },
+      { label: "マネキン（派遣会社）", href: "/agencies", icon: Building2, roles: ["admin", "viewer"] },
+      { label: "ユーザー管理", href: "/users", icon: UserCog, roles: ["admin"] },
     ],
   },
 ];
@@ -51,13 +59,19 @@ const sections: { title: string; items: Item[] }[] = [
 export default function MenuPage() {
   const router = useRouter();
   const supabase = createClient();
-  const { displayName } = usePermission();
+  const { displayName, role, loading } = usePermission();
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push("/login");
     router.refresh();
   };
+
+  const visibleSections = loading
+    ? []
+    : sections
+        .map((s) => ({ ...s, items: s.items.filter((i) => i.roles.includes(role)) }))
+        .filter((s) => s.items.length > 0);
 
   return (
     <div className="space-y-6 pb-8">
@@ -68,7 +82,7 @@ export default function MenuPage() {
         )}
       </div>
 
-      {sections.map((section) => (
+      {visibleSections.map((section) => (
         <section key={section.title} className="space-y-2">
           <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">
             {section.title}
