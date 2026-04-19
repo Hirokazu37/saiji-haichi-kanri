@@ -182,9 +182,21 @@ export default function UsersPage() {
     });
 
     if (!res.ok) {
+      // 失敗したらロールバックしてエラー内容を出す
       setUsers((list) =>
         list.map((u) => (u.id === userId ? { ...u, role: prev.role, can_edit: prev.can_edit } : u))
       );
+      let message = "権限の更新に失敗しました";
+      try {
+        const data = await res.json();
+        if (data?.error) message += `\n\n${data.error}`;
+      } catch {
+        // ignore
+      }
+      if (/role/i.test(message) && /column|schema|does not exist/i.test(message)) {
+        message += "\n\nSupabase の SQL Editor で migration 012_user_role.sql が実行されているか確認してください。";
+      }
+      alert(message);
     }
   };
 
