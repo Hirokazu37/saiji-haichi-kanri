@@ -77,8 +77,8 @@ export default function SchedulePage() {
   const [assignments, setAssignments] = useState<StaffAssignment[]>([]);
   const [loading, setLoading] = useState(true);
   const tableRef = useRef<HTMLDivElement>(null);
-  // 横スクロール用のコンテナ ref（今日の位置に自動スクロール）
-  const ganttScrollRef = useRef<HTMLDivElement>(null);
+  // 横スワイプで月切替するためのタッチ開始位置
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
@@ -232,27 +232,25 @@ export default function SchedulePage() {
     }
   });
 
-  // 今日を画面中央に寄せて自動スクロール
-  const scrollToToday = useCallback(() => {
-    const container = ganttScrollRef.current;
-    if (!container || todayIndex < 0 || allDays.length === 0) return;
-    // 日付グリッドは社員名列（w-28=112px）を除いた右側に広がっている
-    const labelColWidth = 112;
-    const gridWidth = container.scrollWidth - labelColWidth;
-    if (gridWidth <= 0) return;
-    const colWidth = gridWidth / allDays.length;
-    const todayLeft = labelColWidth + todayIndex * colWidth + colWidth / 2;
-    const targetLeft = todayLeft - container.clientWidth / 2;
-    container.scrollTo({ left: Math.max(0, targetLeft), behavior: "smooth" });
-  }, [todayIndex, allDays.length]);
-
-  // 月切替・表示月数変更・ロード完了で今日へ自動スクロール
-  useEffect(() => {
-    if (loading) return;
-    // DOM 更新後にスクロール（レイアウト反映待ち）
-    const t = setTimeout(() => scrollToToday(), 150);
-    return () => clearTimeout(t);
-  }, [year, month, monthSpan, loading, scrollToToday]);
+  // 横スワイプで月切り替え（左スワイプ=翌月、右スワイプ=前月）
+  const SWIPE_THRESHOLD = 60; // px。これ以上横に動いたらスワイプ扱い
+  const onGanttTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length !== 1) return;
+    swipeStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  };
+  const onGanttTouchEnd = (e: React.TouchEvent) => {
+    const start = swipeStartRef.current;
+    swipeStartRef.current = null;
+    if (!start) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    // 横方向が十分大きく、縦方向の動きより大きい時だけスワイプ扱い
+    if (Math.abs(dx) < SWIPE_THRESHOLD) return;
+    if (Math.abs(dx) < Math.abs(dy) * 1.3) return;
+    if (dx < 0) nextMonth();
+    else prevMonth();
+  };
 
   const handlePrint = () => { window.print(); };
 
@@ -495,12 +493,12 @@ export default function SchedulePage() {
         {/* ===== PC: ガントチャート ===== */}
         <TooltipProvider>
           <Card className="hidden md:block">
-            <CardContent className="p-0">
-              <div
-                ref={ganttScrollRef}
-                className="overflow-x-auto print:overflow-visible [touch-action:pan-x_pan-y_pinch-zoom]"
-              >
-                <div style={{ minWidth: `${112 + allDays.length * 60}px` }}>
+            <CardContent
+              className="p-0 [touch-action:pan-y_pinch-zoom]"
+              onTouchStart={onGanttTouchStart}
+              onTouchEnd={onGanttTouchEnd}
+            >
+              <div>
                 {/* 月ヘッダー（複数月時） */}
                 {monthSpan > 1 && (
                   <div className="flex border-b">
@@ -637,7 +635,6 @@ export default function SchedulePage() {
                 {displayPeople.length === 0 && (
                   <div className="p-8 text-center text-muted-foreground">表示する社員・マネキンがありません。</div>
                 )}
-                </div>
               </div>
             </CardContent>
           </Card>
