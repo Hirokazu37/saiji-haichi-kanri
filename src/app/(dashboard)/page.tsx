@@ -109,7 +109,7 @@ const venueLabel = (e: { venue: string; store_name: string | null }) =>
 
 export default function DashboardPage() {
   const supabase = createClient();
-  const { canEdit, displayName } = usePermission();
+  const { canEdit } = usePermission();
   const [loading, setLoading] = useState(true);
   // SSR時にサーバー(UTC)とクライアント(JST)で日付がズレるため、クライアントマウント後に初期化する
   const [mounted, setMounted] = useState(false);
@@ -308,9 +308,7 @@ export default function DashboardPage() {
       {/* ヘッダー */}
       <div className="flex items-end justify-between flex-wrap gap-2">
         <div>
-          <h1 className="text-2xl font-bold">
-            ご苦労様です。{displayName && <span>{displayName}さん</span>}
-          </h1>
+          <h1 className="text-2xl font-bold">ダッシュボード</h1>
           <p className="text-xl md:text-2xl font-bold text-foreground mt-1">{todayFmt}</p>
         </div>
         <div className="flex gap-2">
