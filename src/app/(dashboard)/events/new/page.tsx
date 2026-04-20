@@ -70,6 +70,8 @@ function NewEventPageInner() {
   const [mannequinEntries, setMannequinEntries] = useState<MannequinEntry[]>([]);
   const [shipmentEntries, setShipmentEntries] = useState<ShipmentEntry[]>([]);
   const [pastVenues, setPastVenues] = useState<VenueOption[]>([]);
+  // 備品の流れの候補算出に使う：催事の開催期間を全部保持
+  const [allEvents, setAllEvents] = useState<Array<{ venue: string; store_name: string | null; start_date: string; end_date: string }>>([]);
   const [venueMasters, setVenueMasters] = useState<VenueMaster[]>([]);
   // 直近12ヶ月の使用頻度マップ（label -> 回数）
   const [venueUsageMap, setVenueUsageMap] = useState<Map<string, number>>(new Map());
@@ -106,7 +108,7 @@ function NewEventPageInner() {
     const oneYearAgoStr = oneYearAgo.toISOString().slice(0, 10);
     const [empRes, evtRes, vmRes, hmRes, hvlRes, amRes, aalRes, arRes, mpRes, mhRes, vmlRes] = await Promise.all([
       supabase.from("employees").select("id, name").order("sort_order").order("name"),
-      supabase.from("events").select("venue, store_name, start_date").gte("start_date", oneYearAgoStr).order("start_date", { ascending: false }),
+      supabase.from("events").select("venue, store_name, start_date, end_date").gte("start_date", oneYearAgoStr).order("start_date", { ascending: false }),
       supabase.from("venue_master").select("id, venue_name, store_name, prefecture, area_id, reading, is_active").eq("is_active", true),
       supabase.from("hotel_master").select("id, name, area_id").eq("is_active", true).order("name"),
       supabase.from("hotel_venue_links").select("hotel_id, venue_name"),
@@ -122,13 +124,16 @@ function NewEventPageInner() {
     const seen = new Set<string>();
     const venues: VenueOption[] = [];
     const usage = new Map<string, number>();
-    (evtRes.data || []).forEach((e: { venue: string; store_name: string | null; start_date: string }) => {
+    const eventRows: Array<{ venue: string; store_name: string | null; start_date: string; end_date: string }> = [];
+    (evtRes.data || []).forEach((e: { venue: string; store_name: string | null; start_date: string; end_date: string }) => {
       const label = e.store_name ? `${e.venue} ${e.store_name}` : e.venue;
       if (!seen.has(label)) { seen.add(label); venues.push({ label }); }
       usage.set(label, (usage.get(label) || 0) + 1);
+      eventRows.push(e);
     });
     setPastVenues(venues);
     setVenueUsageMap(usage);
+    setAllEvents(eventRows);
     setVenueMasters((vmRes.data || []) as VenueMaster[]);
     setHotelMasters((hmRes.data || []) as HotelMaster[]);
     setHotelVenueLinks((hvlRes.data || []) as HotelVenueLink[]);
@@ -477,6 +482,73 @@ function NewEventPageInner() {
       .filter((v) => v.label !== currentVenueLabel)
       .map((v) => ({ label: v.label, type: "send" as const })),
   ];
+
+  // ----- 備品の流れ候補（3週間窓で絞り込み） -----
+  const SHIPMENT_WINDOW_DAYS = 21;
+
+  // 日付文字列 "YYYY-MM-DD" からローカル Date を作る（TZ ズレ防止）
+  const parseYmd = (s: string): Date | null => {
+    if (!s) return null;
+    const [y, m, d] = s.split("-").map(Number);
+    if (!y || !m || !d) return null;
+    return new Date(y, m - 1, d);
+  };
+  const daysBetween = (a: Date, b: Date) => Math.round((b.getTime() - a.getTime()) / 86400000);
+  const fmtMd = (s: string) => {
+    const d = parseYmd(s);
+    return d ? `${d.getMonth() + 1}/${d.getDate()}` : s;
+  };
+
+  // 搬入元候補: 新催事の start_date より前 3週間以内に終わる催事
+  const equipmentFromCandidates = useMemo(() => {
+    const startDate = parseYmd(form.start_date);
+    if (!startDate) return [];
+    const list: Array<{ label: string; date: string; days: number }> = [];
+    const seen = new Set<string>();
+    for (const e of allEvents) {
+      const endDate = parseYmd(e.end_date);
+      if (!endDate) continue;
+      const diff = daysBetween(endDate, startDate); // 正 = 先方が過去
+      if (diff < 0 || diff > SHIPMENT_WINDOW_DAYS) continue;
+      const label = e.store_name ? `${e.venue} ${e.store_name}` : e.venue;
+      if (label === currentVenueLabel) continue;
+      // 同ラベルは「日付が新催事に一番近いもの」を残す
+      const key = label;
+      const existing = list.find((x) => x.label === key);
+      if (!existing) {
+        list.push({ label, date: e.end_date, days: diff });
+        seen.add(key);
+      } else if (diff < existing.days) {
+        existing.date = e.end_date;
+        existing.days = diff;
+      }
+    }
+    // 近い順（0日前 → 21日前）
+    return list.sort((a, b) => a.days - b.days);
+  }, [allEvents, form.start_date, currentVenueLabel]);
+
+  // 搬出先候補: 新催事の end_date より後 3週間以内に始まる催事
+  const equipmentToCandidates = useMemo(() => {
+    const endDate = parseYmd(form.end_date);
+    if (!endDate) return [];
+    const list: Array<{ label: string; date: string; days: number }> = [];
+    for (const e of allEvents) {
+      const nextStart = parseYmd(e.start_date);
+      if (!nextStart) continue;
+      const diff = daysBetween(endDate, nextStart); // 正 = 先方が未来
+      if (diff < 0 || diff > SHIPMENT_WINDOW_DAYS) continue;
+      const label = e.store_name ? `${e.venue} ${e.store_name}` : e.venue;
+      if (label === currentVenueLabel) continue;
+      const existing = list.find((x) => x.label === label);
+      if (!existing) {
+        list.push({ label, date: e.start_date, days: diff });
+      } else if (diff < existing.days) {
+        existing.date = e.start_date;
+        existing.days = diff;
+      }
+    }
+    return list.sort((a, b) => a.days - b.days);
+  }, [allEvents, form.end_date, currentVenueLabel]);
 
   const addShipmentTo = (dest: { label: string; type: "send" | "return" }) => {
     setShipmentEntries((prev) => [...prev, { recipient_name: dest.label, direction: dest.type }]);
@@ -992,6 +1064,7 @@ function NewEventPageInner() {
         <CardHeader className="pt-4 pb-2 px-6">
           <CardTitle className="flex items-center gap-2 text-sm font-bold text-amber-800">
             <Package className="h-4 w-4 text-amber-600" />備品の流れ
+            <span className="text-[10px] font-normal text-amber-700/70">（3週間以内の催事のみ）</span>
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -1010,16 +1083,40 @@ function NewEventPageInner() {
               >
                 本社（安岡蒲鉾）
               </Badge>
-              {pastVenues.filter((v) => v.label !== currentVenueLabel).map((v) => (
+              {!form.start_date ? (
+                <span className="text-[11px] text-muted-foreground self-center">開催開始日を入力すると近い催事候補が表示されます</span>
+              ) : equipmentFromCandidates.length === 0 ? (
+                <span className="text-[11px] text-muted-foreground self-center">3週間以内に終わる催事はありません</span>
+              ) : (
+                equipmentFromCandidates.map((v) => (
+                  <Badge
+                    key={v.label}
+                    variant={form.equipment_from === v.label ? "default" : "outline"}
+                    className={`cursor-pointer text-xs ${form.equipment_from !== v.label ? "bg-white" : ""}`}
+                    onClick={() => setForm({ ...form, equipment_from: form.equipment_from === v.label ? "" : v.label })}
+                    title={`${v.label} は ${v.date} 終了（${v.days}日前）`}
+                  >
+                    {v.label}
+                    <span className="ml-1 text-[10px] opacity-70">
+                      {fmtMd(v.date)}終了{v.days === 0 ? "（当日）" : `（${v.days}日前）`}
+                    </span>
+                  </Badge>
+                ))
+              )}
+              {/* 入力済みで候補外の値は「その他」として出す */}
+              {form.equipment_from &&
+                form.equipment_from !== "本社（安岡蒲鉾）" &&
+                !equipmentFromCandidates.some((c) => c.label === form.equipment_from) && (
                 <Badge
-                  key={v.label}
-                  variant={form.equipment_from === v.label ? "default" : "outline"}
-                  className={`cursor-pointer text-xs ${form.equipment_from !== v.label ? "bg-white" : ""}`}
-                  onClick={() => setForm({ ...form, equipment_from: form.equipment_from === v.label ? "" : v.label })}
+                  variant="default"
+                  className="cursor-pointer text-xs"
+                  onClick={() => setForm({ ...form, equipment_from: "" })}
+                  title="解除するにはクリック"
                 >
-                  {v.label}
+                  {form.equipment_from}
+                  <span className="ml-1 text-[10px] opacity-70">（その他）</span>
                 </Badge>
-              ))}
+              )}
             </div>
           </div>
 
@@ -1038,16 +1135,39 @@ function NewEventPageInner() {
               >
                 本社（安岡蒲鉾）
               </Badge>
-              {pastVenues.filter((v) => v.label !== currentVenueLabel).map((v) => (
+              {!form.end_date ? (
+                <span className="text-[11px] text-muted-foreground self-center">開催終了日を入力すると近い催事候補が表示されます</span>
+              ) : equipmentToCandidates.length === 0 ? (
+                <span className="text-[11px] text-muted-foreground self-center">3週間以内に始まる催事はありません</span>
+              ) : (
+                equipmentToCandidates.map((v) => (
+                  <Badge
+                    key={v.label}
+                    variant={form.equipment_to === v.label ? "default" : "outline"}
+                    className={`cursor-pointer text-xs ${form.equipment_to !== v.label ? "bg-white" : ""}`}
+                    onClick={() => setForm({ ...form, equipment_to: form.equipment_to === v.label ? "" : v.label })}
+                    title={`${v.label} は ${v.date} 開始（${v.days}日後）`}
+                  >
+                    {v.label}
+                    <span className="ml-1 text-[10px] opacity-70">
+                      {fmtMd(v.date)}開始{v.days === 0 ? "（当日）" : `（${v.days}日後）`}
+                    </span>
+                  </Badge>
+                ))
+              )}
+              {form.equipment_to &&
+                form.equipment_to !== "本社（安岡蒲鉾）" &&
+                !equipmentToCandidates.some((c) => c.label === form.equipment_to) && (
                 <Badge
-                  key={v.label}
-                  variant={form.equipment_to === v.label ? "default" : "outline"}
-                  className={`cursor-pointer text-xs ${form.equipment_to !== v.label ? "bg-white" : ""}`}
-                  onClick={() => setForm({ ...form, equipment_to: form.equipment_to === v.label ? "" : v.label })}
+                  variant="default"
+                  className="cursor-pointer text-xs"
+                  onClick={() => setForm({ ...form, equipment_to: "" })}
+                  title="解除するにはクリック"
                 >
-                  {v.label}
+                  {form.equipment_to}
+                  <span className="ml-1 text-[10px] opacity-70">（その他）</span>
                 </Badge>
-              ))}
+              )}
             </div>
           </div>
         </CardContent>
