@@ -215,6 +215,8 @@ export default function EventsPage() {
   const [pastVenues, setPastVenues] = useState<VenueOption[]>([]);
   const [hotelMasters, setHotelMasters] = useState<{ id: string; name: string }[]>([]);
   const [hotelVenueLinks, setHotelVenueLinks] = useState<{ hotel_id: string; venue_name: string }[]>([]);
+  // 百貨店マスターのフリガナ（検索で「たかしまや」→「高島屋」を拾うため）
+  const [venueReadings, setVenueReadings] = useState<Map<string, string>>(new Map());
 
   // 全手配ダイアログ
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -315,19 +317,28 @@ export default function EventsPage() {
   };
 
   const fetchEvents = useCallback(async () => {
-    const [evtRes, staffRes, mannRes, venueRes, hmRes, hvlRes] = await Promise.all([
+    const [evtRes, staffRes, mannRes, venueRes, hmRes, hvlRes, vmRes] = await Promise.all([
       supabase.from("events").select("*").order("start_date", { ascending: true }),
       supabase.from("event_staff").select("id, event_id, person_type, employee_id, mannequin_person_id, start_date, end_date, role, hotel_name, hotel_check_in, hotel_check_out, hotel_status, transport_type, transport_from, transport_to, transport_status, transport_outbound_status, transport_return_status, employees(name), mannequin_people(name)"),
       supabase.from("mannequins").select("event_id, arrangement_status"),
       supabase.from("events").select("venue, store_name").order("created_at", { ascending: false }).limit(100),
       supabase.from("hotel_master").select("id, name").eq("is_active", true).order("name"),
       supabase.from("hotel_venue_links").select("hotel_id, venue_name"),
+      supabase.from("venue_master").select("venue_name, store_name, reading"),
     ]);
     setEvents(evtRes.data || []);
     setAllStaff((staffRes.data || []) as unknown as StaffWithArrangement[]);
     setMannequinSummaries((mannRes.data || []) as MannequinSummary[]);
     setHotelMasters((hmRes.data || []) as { id: string; name: string }[]);
     setHotelVenueLinks((hvlRes.data || []) as { hotel_id: string; venue_name: string }[]);
+    // reading マップ: 「venue_name」「venue_name store_name」「store_name」で引けるようにする
+    const rmap = new Map<string, string>();
+    for (const v of (vmRes.data || []) as { venue_name: string; store_name: string | null; reading: string | null }[]) {
+      if (!v.reading) continue;
+      rmap.set(v.venue_name, v.reading);
+      if (v.store_name) rmap.set(`${v.venue_name} ${v.store_name}`, v.reading);
+    }
+    setVenueReadings(rmap);
     const seen = new Set<string>();
     const venues: VenueOption[] = [];
     (venueRes.data || []).forEach((e: { venue: string; store_name: string | null }) => {
@@ -341,7 +352,13 @@ export default function EventsPage() {
   useEffect(() => { fetchEvents(); }, [fetchEvents]);
 
   const todayIsoStr = fmtLocalYmd(new Date());
-  const trimmedQuery = searchQuery.trim().toLowerCase();
+  // カタカナをひらがなへ揃えて比較（ひらがな/カタカナどちらで入力しても当たるように）
+  const toHiragana = (s: string) =>
+    s.replace(/[\u30a1-\u30f6]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60));
+  const normalize = (s: string) => toHiragana(s).toLowerCase();
+  const trimmedQuery = searchQuery.trim();
+  const normalizedQuery = normalize(trimmedQuery);
+
   const filtered = events.filter((e) => {
     if (!showPast && e.end_date < todayIsoStr) return false;
     if (filterStatus !== "all" && e.status !== filterStatus) return false;
@@ -351,14 +368,20 @@ export default function EventsPage() {
     }
     if (filterPrefecture !== "all" && e.prefecture !== filterPrefecture) return false;
     if (trimmedQuery) {
+      const venueLabel = e.store_name ? `${e.venue} ${e.store_name}` : e.venue;
+      const reading =
+        venueReadings.get(venueLabel) ||
+        venueReadings.get(e.venue) ||
+        "";
       const haystack = [
         e.name ?? "",
         e.venue,
         e.store_name ?? "",
         e.prefecture,
         e.person_in_charge ?? "",
-      ].join(" ").toLowerCase();
-      if (!haystack.includes(trimmedQuery)) return false;
+        reading,
+      ].join(" ");
+      if (!normalize(haystack).includes(normalizedQuery)) return false;
     }
     return true;
   });
@@ -503,7 +526,7 @@ export default function EventsPage() {
         <div className="relative">
           <Input
             type="search"
-            placeholder="催事名・百貨店・担当者で検索"
+            placeholder="催事名・百貨店・担当者（ひらがなOK）"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-60 h-9 pr-8"
@@ -519,37 +542,44 @@ export default function EventsPage() {
             </button>
           )}
         </div>
+        {/* 地方・都道府県を1つのSelectに統合。先頭に地方、インデントで都道府県を並べる */}
         <Select
-          value={filterRegion}
+          value={
+            filterPrefecture !== "all"
+              ? `pref:${filterPrefecture}`
+              : filterRegion !== "all"
+                ? `region:${filterRegion}`
+                : "all"
+          }
           onValueChange={(v) => {
-            setFilterRegion(v);
-            // 地方が変わったら都道府県の選択をリセット（矛盾防止）
-            setFilterPrefecture("all");
+            if (v === "all") {
+              setFilterRegion("all");
+              setFilterPrefecture("all");
+            } else if (v.startsWith("region:")) {
+              setFilterRegion(v.slice(7));
+              setFilterPrefecture("all");
+            } else if (v.startsWith("pref:")) {
+              const pref = v.slice(5);
+              setFilterPrefecture(pref);
+              const region = areaNames.find((a) => areaMap[a].includes(pref));
+              setFilterRegion(region ?? "all");
+            }
           }}
         >
-          <SelectTrigger className="w-[140px] h-9">
-            <SelectValue placeholder="地方" />
+          <SelectTrigger className="w-[200px] h-9">
+            <SelectValue placeholder="地域で絞り込み" />
           </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">すべての地方</SelectItem>
+          <SelectContent className="max-h-[400px]">
+            <SelectItem value="all">すべての地域</SelectItem>
             {areaNames.map((a) => (
-              <SelectItem key={a} value={a}>{a}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={filterPrefecture} onValueChange={setFilterPrefecture}>
-          <SelectTrigger className="w-[140px] h-9">
-            <SelectValue placeholder="都道府県" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{filterRegion === "all" ? "すべての都道府県" : "地方内すべて"}</SelectItem>
-            {(filterRegion === "all" ? areaNames : [filterRegion]).map((a) => (
               <Fragment key={a}>
-                {filterRegion === "all" && (
-                  <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground">{a}</div>
-                )}
+                <SelectItem value={`region:${a}`} className="font-semibold">
+                  {a}（全県）
+                </SelectItem>
                 {areaMap[a].map((p) => (
-                  <SelectItem key={p} value={p}>{p}</SelectItem>
+                  <SelectItem key={p} value={`pref:${p}`} className="pl-8 text-muted-foreground">
+                    {p}
+                  </SelectItem>
                 ))}
               </Fragment>
             ))}
