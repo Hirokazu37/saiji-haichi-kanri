@@ -18,7 +18,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Plus, MapPin, Calendar, Printer, ImageDown, ChevronLeft, ChevronRight, LayoutGrid, CalendarDays, CalendarRange, X, Package, Users, Clock, UserCheck } from "lucide-react";
 import Link from "next/link";
-import { eventStatuses } from "@/lib/prefectures";
 import { areaMap, areaNames } from "@/lib/areas";
 import { getHolidaysForRange } from "@/lib/holidays";
 import { usePermission } from "@/hooks/usePermission";
@@ -197,7 +196,8 @@ export default function EventsPage() {
   const [filterRegion, setFilterRegion] = useState<string>("all");
   const [filterPrefecture, setFilterPrefecture] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
-  const [showPast, setShowPast] = useState(false);
+  // 終了した催事もカレンダー・一覧に残す運用（ユーザー要望: 過去を隠さない）
+  const [showPast] = useState(true);
   const [viewMode, setViewMode] = useState<"gantt" | "calendar" | "card">("gantt");
   const [showArrangementIcons, setShowArrangementIcons] = useState(true);
   const listRef = useRef<HTMLDivElement>(null);
@@ -597,21 +597,13 @@ export default function EventsPage() {
         )}
       </div>
 
-      {/* ステータスフィルタ */}
+      {/* ステータスフィルタ（「すべて」「開催中」「終了」のみに簡素化） */}
       <div className="flex gap-2 flex-wrap print:hidden items-center">
         <Button variant={filterStatus === "all" ? "default" : "outline"} size="sm" onClick={() => setFilterStatus("all")}>すべて</Button>
-        {eventStatuses.map((s) => (
+        {(["開催中", "終了"] as const).map((s) => (
           <Button key={s} variant={filterStatus === s ? "default" : "outline"} size="sm" onClick={() => setFilterStatus(s)}>{s}</Button>
         ))}
         <div className="ml-auto flex items-center gap-2">
-          <Button
-            variant={showPast ? "default" : "outline"}
-            size="sm"
-            onClick={() => setShowPast(!showPast)}
-            title="終了した催事も表示"
-          >
-            {showPast ? "過去を隠す" : "過去を表示"}
-          </Button>
           <Link href="/archive" className="text-xs text-muted-foreground hover:text-foreground hover:underline">
             履歴ページ →
           </Link>
