@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo, Fragment } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -195,6 +195,7 @@ export default function EventsPage() {
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterRegion, setFilterRegion] = useState<string>("all");
+  const [filterPrefecture, setFilterPrefecture] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [showPast, setShowPast] = useState(false);
   const [viewMode, setViewMode] = useState<"gantt" | "calendar" | "card">("gantt");
@@ -348,6 +349,7 @@ export default function EventsPage() {
       const regionPrefs = areaMap[filterRegion];
       if (!regionPrefs || !regionPrefs.includes(e.prefecture)) return false;
     }
+    if (filterPrefecture !== "all" && e.prefecture !== filterPrefecture) return false;
     if (trimmedQuery) {
       const haystack = [
         e.name ?? "",
@@ -517,7 +519,14 @@ export default function EventsPage() {
             </button>
           )}
         </div>
-        <Select value={filterRegion} onValueChange={setFilterRegion}>
+        <Select
+          value={filterRegion}
+          onValueChange={(v) => {
+            setFilterRegion(v);
+            // 地方が変わったら都道府県の選択をリセット（矛盾防止）
+            setFilterPrefecture("all");
+          }}
+        >
           <SelectTrigger className="w-[140px] h-9">
             <SelectValue placeholder="地方" />
           </SelectTrigger>
@@ -528,11 +537,29 @@ export default function EventsPage() {
             ))}
           </SelectContent>
         </Select>
-        {(searchQuery || filterRegion !== "all") && (
+        <Select value={filterPrefecture} onValueChange={setFilterPrefecture}>
+          <SelectTrigger className="w-[140px] h-9">
+            <SelectValue placeholder="都道府県" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{filterRegion === "all" ? "すべての都道府県" : "地方内すべて"}</SelectItem>
+            {(filterRegion === "all" ? areaNames : [filterRegion]).map((a) => (
+              <Fragment key={a}>
+                {filterRegion === "all" && (
+                  <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground">{a}</div>
+                )}
+                {areaMap[a].map((p) => (
+                  <SelectItem key={p} value={p}>{p}</SelectItem>
+                ))}
+              </Fragment>
+            ))}
+          </SelectContent>
+        </Select>
+        {(searchQuery || filterRegion !== "all" || filterPrefecture !== "all") && (
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => { setSearchQuery(""); setFilterRegion("all"); }}
+            onClick={() => { setSearchQuery(""); setFilterRegion("all"); setFilterPrefecture("all"); }}
             className="text-xs"
           >
             条件クリア
@@ -924,7 +951,7 @@ export default function EventsPage() {
         /* ===== カード表示 ===== */
         filtered.length === 0 ? (
           <p className="text-muted-foreground">
-            {searchQuery || filterRegion !== "all"
+            {searchQuery || filterRegion !== "all" || filterPrefecture !== "all"
               ? "該当する催事が見つかりません。条件を変えてお試しください。"
               : filterStatus === "all"
                 ? "催事がまだありません。「新規作成」から登録してください。"
