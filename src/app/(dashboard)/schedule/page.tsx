@@ -314,7 +314,6 @@ export default function SchedulePage() {
         <span className="text-lg font-semibold min-w-[140px] text-center">{monthLabel}</span>
         <Button variant="outline" size="icon" onClick={nextMonth}><ChevronRight className="h-4 w-4" /></Button>
         <Button variant="ghost" size="sm" onClick={() => { setYear(today.getFullYear()); setMonth(today.getMonth() + 1); }}>今月</Button>
-        <Button variant="outline" size="sm" onClick={scrollToToday} title="今日の日付にスクロール">今日へ</Button>
 
         <Select value={String(monthSpan)} onValueChange={(v) => v && setMonthSpan(parseInt(v))}>
           <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
@@ -501,7 +500,7 @@ export default function SchedulePage() {
                 ref={ganttScrollRef}
                 className="overflow-x-auto print:overflow-visible [touch-action:pan-x_pan-y_pinch-zoom]"
               >
-                <div style={{ minWidth: `${112 + allDays.length * 32}px` }}>
+                <div style={{ minWidth: `${112 + allDays.length * 60}px` }}>
                 {/* 月ヘッダー（複数月時） */}
                 {monthSpan > 1 && (
                   <div className="flex border-b">
