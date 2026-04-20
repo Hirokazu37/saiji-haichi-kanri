@@ -246,12 +246,13 @@ export default function SchedulePage() {
     container.scrollTo({ left: Math.max(0, targetLeft), behavior: "smooth" });
   }, [todayIndex, allDays.length]);
 
-  // 月切替・表示月数変更で今日へ自動スクロール
+  // 月切替・表示月数変更・ロード完了で今日へ自動スクロール
   useEffect(() => {
+    if (loading) return;
     // DOM 更新後にスクロール（レイアウト反映待ち）
-    const t = setTimeout(() => scrollToToday(), 100);
+    const t = setTimeout(() => scrollToToday(), 150);
     return () => clearTimeout(t);
-  }, [year, month, monthSpan, scrollToToday]);
+  }, [year, month, monthSpan, loading, scrollToToday]);
 
   const handlePrint = () => { window.print(); };
 
@@ -495,11 +496,12 @@ export default function SchedulePage() {
         {/* ===== PC: ガントチャート ===== */}
         <TooltipProvider>
           <Card className="hidden md:block">
-            <CardContent
-              ref={ganttScrollRef}
-              className="p-0 overflow-x-auto print:overflow-visible [touch-action:pan-x_pan-y_pinch-zoom]"
-            >
-              <div style={{ minWidth: `${112 + allDays.length * 32}px` }}>
+            <CardContent className="p-0">
+              <div
+                ref={ganttScrollRef}
+                className="overflow-x-auto print:overflow-visible [touch-action:pan-x_pan-y_pinch-zoom]"
+              >
+                <div style={{ minWidth: `${112 + allDays.length * 32}px` }}>
                 {/* 月ヘッダー（複数月時） */}
                 {monthSpan > 1 && (
                   <div className="flex border-b">
@@ -636,6 +638,7 @@ export default function SchedulePage() {
                 {displayPeople.length === 0 && (
                   <div className="p-8 text-center text-muted-foreground">表示する社員・マネキンがありません。</div>
                 )}
+                </div>
               </div>
             </CardContent>
           </Card>
