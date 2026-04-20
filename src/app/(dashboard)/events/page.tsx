@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Plus, MapPin, Calendar, Printer, ImageDown, ChevronLeft, ChevronRight, LayoutGrid, CalendarDays, CalendarRange, X, Package, Users, Clock, UserCheck } from "lucide-react";
 import Link from "next/link";
 import { eventStatuses } from "@/lib/prefectures";
+import { areaMap, areaNames } from "@/lib/areas";
 import { getHolidaysForRange } from "@/lib/holidays";
 import { usePermission } from "@/hooks/usePermission";
 
@@ -193,6 +194,8 @@ export default function EventsPage() {
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterRegion, setFilterRegion] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState<string>("");
   const [showPast, setShowPast] = useState(false);
   const [viewMode, setViewMode] = useState<"gantt" | "calendar" | "card">("gantt");
   const [showArrangementIcons, setShowArrangementIcons] = useState(true);
@@ -337,9 +340,24 @@ export default function EventsPage() {
   useEffect(() => { fetchEvents(); }, [fetchEvents]);
 
   const todayIsoStr = fmtLocalYmd(new Date());
+  const trimmedQuery = searchQuery.trim().toLowerCase();
   const filtered = events.filter((e) => {
     if (!showPast && e.end_date < todayIsoStr) return false;
     if (filterStatus !== "all" && e.status !== filterStatus) return false;
+    if (filterRegion !== "all") {
+      const regionPrefs = areaMap[filterRegion];
+      if (!regionPrefs || !regionPrefs.includes(e.prefecture)) return false;
+    }
+    if (trimmedQuery) {
+      const haystack = [
+        e.name ?? "",
+        e.venue,
+        e.store_name ?? "",
+        e.prefecture,
+        e.person_in_charge ?? "",
+      ].join(" ").toLowerCase();
+      if (!haystack.includes(trimmedQuery)) return false;
+    }
     return true;
   });
 
@@ -476,6 +494,50 @@ export default function EventsPage() {
             </Link>
           )}
         </div>
+      </div>
+
+      {/* 検索・地方フィルタ */}
+      <div className="flex gap-2 flex-wrap print:hidden items-center">
+        <div className="relative">
+          <Input
+            type="search"
+            placeholder="催事名・百貨店・担当者で検索"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-60 h-9 pr-8"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              aria-label="検索をクリア"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+        <Select value={filterRegion} onValueChange={setFilterRegion}>
+          <SelectTrigger className="w-[140px] h-9">
+            <SelectValue placeholder="地方" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">すべての地方</SelectItem>
+            {areaNames.map((a) => (
+              <SelectItem key={a} value={a}>{a}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {(searchQuery || filterRegion !== "all") && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => { setSearchQuery(""); setFilterRegion("all"); }}
+            className="text-xs"
+          >
+            条件クリア
+          </Button>
+        )}
       </div>
 
       {/* ステータスフィルタ */}
@@ -862,7 +924,11 @@ export default function EventsPage() {
         /* ===== カード表示 ===== */
         filtered.length === 0 ? (
           <p className="text-muted-foreground">
-            {filterStatus === "all" ? "催事がまだありません。「新規作成」から登録してください。" : `「${filterStatus}」の催事はありません。`}
+            {searchQuery || filterRegion !== "all"
+              ? "該当する催事が見つかりません。条件を変えてお試しください。"
+              : filterStatus === "all"
+                ? "催事がまだありません。「新規作成」から登録してください。"
+                : `「${filterStatus}」の催事はありません。`}
           </p>
         ) : (
           <div ref={listRef} className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
