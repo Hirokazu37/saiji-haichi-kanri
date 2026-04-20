@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -59,6 +59,9 @@ function NewEventPageInner() {
   const searchParams = useSearchParams();
   const duplicateFromId = searchParams?.get("from") || null;
   const [saving, setSaving] = useState(false);
+  // React の setState は非同期のため、ボタン disabled が効く前に連打されると
+  // 二重 INSERT されうる。useRef で同期的にガードして再発防止する。
+  const savingRef = useRef(false);
   const [duplicatedFrom, setDuplicatedFrom] = useState<string | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [staffEntries, setStaffEntries] = useState<StaffEntry[]>([]);
@@ -482,38 +485,40 @@ function NewEventPageInner() {
 
   // --- 保存 ---
   const handleSave = async () => {
+    // 同期ガード: 既に保存処理が走っていたら何もしない（連打による二重 INSERT 防止）
+    if (savingRef.current) return;
     if (!form.venue || !form.prefecture || !form.start_date || !form.end_date) return;
+    savingRef.current = true;
     setSaving(true);
 
-    const staffNames = [...new Set(staffEntries.map((e) => employees.find((emp) => emp.id === e.employee_id)?.name || ""))].filter(Boolean);
-    const extraText = form.person_in_charge.trim();
-    const allNames = [...staffNames, ...(extraText ? [extraText] : [])];
+    try {
+      const staffNames = [...new Set(staffEntries.map((e) => employees.find((emp) => emp.id === e.employee_id)?.name || ""))].filter(Boolean);
+      const extraText = form.person_in_charge.trim();
+      const allNames = [...staffNames, ...(extraText ? [extraText] : [])];
 
-    const { data, error } = await supabase.from("events").insert({
-      name: form.name.trim() || null,
-      venue: form.venue.trim(),
-      store_name: form.store_name.trim() || null,
-      prefecture: form.prefecture,
-      start_date: form.start_date,
-      end_date: form.end_date,
-      closing_time: form.closing_time || null,
-      person_in_charge: allNames.length > 0 ? allNames.join("、") : null,
-      status: form.status,
-      application_status: form.application_status,
-      dm_status: form.dm_status && form.dm_status !== "none" ? form.dm_status : null,
-      notes: form.notes.trim() || null,
-      equipment_from: form.equipment_from || null,
-      equipment_to: form.equipment_to || null,
-    }).select("id").single();
+      const { data, error } = await supabase.from("events").insert({
+        name: form.name.trim() || null,
+        venue: form.venue.trim(),
+        store_name: form.store_name.trim() || null,
+        prefecture: form.prefecture,
+        start_date: form.start_date,
+        end_date: form.end_date,
+        closing_time: form.closing_time || null,
+        person_in_charge: allNames.length > 0 ? allNames.join("、") : null,
+        status: form.status,
+        application_status: form.application_status,
+        dm_status: form.dm_status && form.dm_status !== "none" ? form.dm_status : null,
+        notes: form.notes.trim() || null,
+        equipment_from: form.equipment_from || null,
+        equipment_to: form.equipment_to || null,
+      }).select("id").single();
 
-    if (error || !data) {
-      console.error("[events insert] error:", error);
-      alert(`催事の保存に失敗しました。\n${error?.message ?? "不明なエラー"}`);
-      setSaving(false);
-      return;
-    }
+      if (error || !data) {
+        console.error("[events insert] error:", error);
+        alert(`催事の保存に失敗しました。\n${error?.message ?? "不明なエラー"}`);
+        return;
+      }
 
-    {
       const eventId = data.id;
 
       // 並列INSERT
@@ -586,8 +591,12 @@ function NewEventPageInner() {
 
       await Promise.all(inserts);
       router.push("/events");
+    } finally {
+      // 成功時は画面遷移するので setSaving(false) は見た目上不要だが
+      // ルーター遷移失敗時や同画面戻りに備えて確実に解放する
+      savingRef.current = false;
+      setSaving(false);
     }
-    setSaving(false);
   };
 
   const buildPersonInCharge = () => {
