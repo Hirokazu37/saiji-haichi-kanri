@@ -77,6 +77,8 @@ export default function SchedulePage() {
   const [assignments, setAssignments] = useState<StaffAssignment[]>([]);
   const [loading, setLoading] = useState(true);
   const tableRef = useRef<HTMLDivElement>(null);
+  // 横スクロール用のコンテナ ref（今日の位置に自動スクロール）
+  const ganttScrollRef = useRef<HTMLDivElement>(null);
 
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
@@ -230,6 +232,27 @@ export default function SchedulePage() {
     }
   });
 
+  // 今日を画面中央に寄せて自動スクロール
+  const scrollToToday = useCallback(() => {
+    const container = ganttScrollRef.current;
+    if (!container || todayIndex < 0 || allDays.length === 0) return;
+    // 日付グリッドは社員名列（w-28=112px）を除いた右側に広がっている
+    const labelColWidth = 112;
+    const gridWidth = container.scrollWidth - labelColWidth;
+    if (gridWidth <= 0) return;
+    const colWidth = gridWidth / allDays.length;
+    const todayLeft = labelColWidth + todayIndex * colWidth + colWidth / 2;
+    const targetLeft = todayLeft - container.clientWidth / 2;
+    container.scrollTo({ left: Math.max(0, targetLeft), behavior: "smooth" });
+  }, [todayIndex, allDays.length]);
+
+  // 月切替・表示月数変更で今日へ自動スクロール
+  useEffect(() => {
+    // DOM 更新後にスクロール（レイアウト反映待ち）
+    const t = setTimeout(() => scrollToToday(), 100);
+    return () => clearTimeout(t);
+  }, [year, month, monthSpan, scrollToToday]);
+
   const handlePrint = () => { window.print(); };
 
   const handleSaveJpg = async () => {
@@ -290,6 +313,7 @@ export default function SchedulePage() {
         <span className="text-lg font-semibold min-w-[140px] text-center">{monthLabel}</span>
         <Button variant="outline" size="icon" onClick={nextMonth}><ChevronRight className="h-4 w-4" /></Button>
         <Button variant="ghost" size="sm" onClick={() => { setYear(today.getFullYear()); setMonth(today.getMonth() + 1); }}>今月</Button>
+        <Button variant="outline" size="sm" onClick={scrollToToday} title="今日の日付にスクロール">今日へ</Button>
 
         <Select value={String(monthSpan)} onValueChange={(v) => v && setMonthSpan(parseInt(v))}>
           <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
@@ -471,8 +495,11 @@ export default function SchedulePage() {
         {/* ===== PC: ガントチャート ===== */}
         <TooltipProvider>
           <Card className="hidden md:block">
-            <CardContent className="p-0 overflow-x-auto print:overflow-visible [touch-action:pan-x_pan-y_pinch-zoom]">
-              <div>
+            <CardContent
+              ref={ganttScrollRef}
+              className="p-0 overflow-x-auto print:overflow-visible [touch-action:pan-x_pan-y_pinch-zoom]"
+            >
+              <div style={{ minWidth: `${112 + allDays.length * 32}px` }}>
                 {/* 月ヘッダー（複数月時） */}
                 {monthSpan > 1 && (
                   <div className="flex border-b">
