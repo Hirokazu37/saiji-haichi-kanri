@@ -77,23 +77,29 @@ export default function SchedulePage() {
   const [assignments, setAssignments] = useState<StaffAssignment[]>([]);
   const [loading, setLoading] = useState(true);
   const tableRef = useRef<HTMLDivElement>(null);
-  // 横スワイプで月切替するためのタッチ開始位置
-  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
+  // ガントチャートの横スクロール用コンテナ
+  const ganttScrollRef = useRef<HTMLDivElement>(null);
 
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth() + 1);
   const [monthSpan, setMonthSpan] = useState(1);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
+  // モバイル専用のビュー切替（カード / カレンダー / ガント）
+  const [mobileView, setMobileView] = useState<"card" | "calendar" | "gantt">("card");
 
   const people: Person[] = useMemo(() => [
     ...employees.map((e) => ({ id: e.id, name: e.name, kind: "employee" as const })),
     ...mannequinPeople.map((m) => ({ id: m.id, name: m.name, kind: "mannequin" as const })),
   ], [employees, mannequinPeople]);
 
+  // monthSpan の値だけ連続した月を返す
+  // ただし最小6ヶ月は常に描画する（右にスクロールして先の月まで見えるように）
+  const RENDER_MIN_MONTHS = 6;
   const getMonthRange = () => {
     const months: { year: number; month: number; days: number }[] = [];
-    for (let i = 0; i < monthSpan; i++) {
+    const span = Math.max(monthSpan, RENDER_MIN_MONTHS);
+    for (let i = 0; i < span; i++) {
       let m = month + i;
       let y = year;
       while (m > 12) { m -= 12; y++; }
@@ -232,25 +238,34 @@ export default function SchedulePage() {
     }
   });
 
-  // 横スワイプで月切り替え（左スワイプ=翌月、右スワイプ=前月）
-  const SWIPE_THRESHOLD = 60; // px。これ以上横に動いたらスワイプ扱い
-  const onGanttTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length !== 1) return;
-    swipeStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-  };
-  const onGanttTouchEnd = (e: React.TouchEvent) => {
-    const start = swipeStartRef.current;
-    swipeStartRef.current = null;
-    if (!start) return;
-    const t = e.changedTouches[0];
-    const dx = t.clientX - start.x;
-    const dy = t.clientY - start.y;
-    // 横方向が十分大きく、縦方向の動きより大きい時だけスワイプ扱い
-    if (Math.abs(dx) < SWIPE_THRESHOLD) return;
-    if (Math.abs(dx) < Math.abs(dy) * 1.3) return;
-    if (dx < 0) nextMonth();
-    else prevMonth();
-  };
+  // 1日あたりのカラム幅（PX）。狭くするほど同時に多くの日が見える
+  const COL_WIDTH_BY_SPAN: Record<number, number> = { 1: 48, 2: 28, 3: 22 };
+  const colWidth = COL_WIDTH_BY_SPAN[monthSpan] ?? 32;
+  const labelColWidth = 112; // 社員名列の幅（w-28）
+  const ganttMinWidth = labelColWidth + allDays.length * colWidth;
+
+  // 表示中の基準月（= year/month）の開始位置に自動スクロール
+  const scrollToBaseMonth = useCallback(() => {
+    const container = ganttScrollRef.current;
+    if (!container || allDays.length === 0) return;
+    // 基準月の1日のインデックスを算出
+    const baseIdx = allDays.findIndex(
+      (d) => d.year === year && d.month === month && d.day === 1,
+    );
+    if (baseIdx < 0) {
+      container.scrollLeft = 0;
+      return;
+    }
+    const targetLeft = labelColWidth + baseIdx * colWidth;
+    container.scrollTo({ left: Math.max(0, targetLeft), behavior: "smooth" });
+  }, [allDays, year, month, colWidth]);
+
+  // ロード完了・月切替・表示月数変更時に基準月へスクロール
+  useEffect(() => {
+    if (loading) return;
+    const t = setTimeout(() => scrollToBaseMonth(), 120);
+    return () => clearTimeout(t);
+  }, [year, month, monthSpan, loading, scrollToBaseMonth]);
 
   const handlePrint = () => { window.print(); };
 
@@ -351,6 +366,25 @@ export default function SchedulePage() {
         </div>
       </div>
 
+      {/* モバイル用ビュー切替（カード / カレンダー / ガント） */}
+      <div className="md:hidden flex gap-1 rounded-md border p-0.5 bg-muted/30 w-fit print:hidden">
+        {([
+          { k: "card" as const, label: "カード" },
+          { k: "calendar" as const, label: "カレンダー" },
+          { k: "gantt" as const, label: "ガント" },
+        ]).map((m) => (
+          <Button
+            key={m.k}
+            variant={mobileView === m.k ? "default" : "ghost"}
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setMobileView(m.k)}
+          >
+            {m.label}
+          </Button>
+        ))}
+      </div>
+
       {/* 凡例 */}
       {eventColorMap.size > 0 && (
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
@@ -375,8 +409,8 @@ export default function SchedulePage() {
           <p className="text-sm text-muted-foreground">{monthLabel}</p>
         </div>
 
-        {/* ===== モバイル: カードビュー ===== */}
-        <div className="md:hidden space-y-3">
+        {/* ===== モバイル: カードビュー（mobileView='card'の時のみ） ===== */}
+        <div className={`${mobileView === "card" ? "block" : "hidden"} md:hidden space-y-3`}>
           {(() => {
             const todayStr = new Date().toISOString().slice(0, 10);
             type Grouped = {
@@ -490,32 +524,114 @@ export default function SchedulePage() {
           })()}
         </div>
 
-        {/* ===== PC: ガントチャート ===== */}
-        <TooltipProvider>
-          <Card className="hidden md:block">
-            <CardContent
-              className="p-0 [touch-action:pan-y_pinch-zoom]"
-              onTouchStart={onGanttTouchStart}
-              onTouchEnd={onGanttTouchEnd}
-            >
-              <div>
-                {/* 月ヘッダー（複数月時） */}
-                {monthSpan > 1 && (
-                  <div className="flex border-b">
-                    <div className="w-28 shrink-0 border-r" />
-                    <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${allDays.length}, minmax(0, 1fr))` }}>
-                      {monthRange.map((m) => (
-                        <div
-                          key={`${m.year}-${m.month}`}
-                          className="text-center text-xs font-bold py-1 border-r bg-muted/50"
-                          style={{ gridColumn: `span ${m.days}` }}
-                        >
-                          {m.year}年{m.month}月
-                        </div>
-                      ))}
-                    </div>
+        {/* ===== モバイル: カレンダービュー（mobileView='calendar'の時のみ） ===== */}
+        {mobileView === "calendar" && (() => {
+          // 基準月（year/month）の日カレンダーを7列で描画
+          const baseMonth = { year, month, days: new Date(year, month, 0).getDate() };
+          const firstDay = new Date(baseMonth.year, baseMonth.month - 1, 1);
+          const startOffset = firstDay.getDay(); // 0=日
+          const totalCells = Math.ceil((startOffset + baseMonth.days) / 7) * 7;
+          const cells: (Date | null)[] = [];
+          for (let i = 0; i < totalCells; i++) {
+            const dayNum = i - startOffset + 1;
+            if (dayNum < 1 || dayNum > baseMonth.days) cells.push(null);
+            else cells.push(new Date(baseMonth.year, baseMonth.month - 1, dayNum));
+          }
+          const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
+
+          const assignmentsOn = (date: Date) => {
+            const ymd = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+            return assignments.filter((a) => a.start_date <= ymd && a.end_date >= ymd).filter((a) => {
+              // 選択中フィルタ
+              if (selectedEmployeeIds.length === 0) return true;
+              const k = personKey(a);
+              return k !== null && selectedEmployeeIds.includes(k);
+            });
+          };
+
+          return (
+            <div className="md:hidden">
+              <Card>
+                <CardContent className="p-2">
+                  <div className="text-center text-sm font-bold mb-2">{baseMonth.year}年 {baseMonth.month}月</div>
+                  <div className="grid grid-cols-7 text-center text-[10px] font-semibold mb-1">
+                    {weekdays.map((w, i) => (
+                      <div key={w} className={i === 0 ? "text-red-600" : i === 6 ? "text-blue-600" : "text-muted-foreground"}>{w}</div>
+                    ))}
                   </div>
-                )}
+                  <div className="grid grid-cols-7 gap-px bg-border">
+                    {cells.map((date, i) => {
+                      if (!date) return <div key={i} className="bg-muted/30 min-h-[56px]" />;
+                      const ymd = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+                      const dayAssigns = assignmentsOn(date);
+                      const isTodayFlag = isToday(date);
+                      const isSun = date.getDay() === 0;
+                      const isSat = date.getDay() === 6;
+                      const isHol = holidays.has(ymd);
+                      // 催事単位でまとめて色表示
+                      const eventIds = Array.from(new Set(dayAssigns.map((a) => a.event_id)));
+                      return (
+                        <div
+                          key={i}
+                          className={`bg-background min-h-[56px] p-0.5 ${isTodayFlag ? "ring-2 ring-primary ring-inset" : ""}`}
+                        >
+                          <div className={`text-[10px] font-semibold ${isSun || isHol ? "text-red-600" : isSat ? "text-blue-600" : "text-foreground"}`}>
+                            {date.getDate()}
+                          </div>
+                          <div className="space-y-0.5">
+                            {eventIds.slice(0, 3).map((eid) => {
+                              const a = dayAssigns.find((x) => x.event_id === eid);
+                              const color = eventColorMap.get(eid);
+                              const label = a?.events ? (a.events.store_name ? `${a.events.venue} ${a.events.store_name}` : a.events.venue) : "";
+                              return (
+                                <Link
+                                  key={eid}
+                                  href={`/events/${eid}`}
+                                  className={`block text-[9px] leading-tight rounded px-0.5 truncate ${color?.bar || "bg-muted"}`}
+                                  title={label}
+                                >
+                                  {label}
+                                </Link>
+                              );
+                            })}
+                            {eventIds.length > 3 && (
+                              <div className="text-[9px] text-muted-foreground">+{eventIds.length - 3}件</div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          );
+        })()}
+
+        {/* ===== ガントチャート（PC は常に、モバイルは gantt 選択時のみ表示） ===== */}
+        <TooltipProvider>
+          <Card className={`${mobileView === "gantt" ? "block" : "hidden"} md:block`}>
+            <CardContent className="p-0">
+              <div
+                ref={ganttScrollRef}
+                className="overflow-x-auto print:overflow-visible [touch-action:pan-x_pan-y_pinch-zoom]"
+              >
+                <div style={{ minWidth: `${ganttMinWidth}px` }}>
+                {/* 月ヘッダー（常時表示：右スクロールで5月/6月/7月...を見られるように） */}
+                <div className="flex border-b">
+                  <div className="w-28 shrink-0 border-r" />
+                  <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${allDays.length}, minmax(0, 1fr))` }}>
+                    {monthRange.map((m) => (
+                      <div
+                        key={`${m.year}-${m.month}`}
+                        className="text-center text-xs font-bold py-1 border-r bg-muted/50"
+                        style={{ gridColumn: `span ${m.days}` }}
+                      >
+                        {m.year}年{m.month}月
+                      </div>
+                    ))}
+                  </div>
+                </div>
 
                 {/* 日付ヘッダー */}
                 <div className="flex border-b sticky top-0 bg-background z-10">
@@ -635,6 +751,7 @@ export default function SchedulePage() {
                 {displayPeople.length === 0 && (
                   <div className="p-8 text-center text-muted-foreground">表示する社員・マネキンがありません。</div>
                 )}
+                </div>
               </div>
             </CardContent>
           </Card>
