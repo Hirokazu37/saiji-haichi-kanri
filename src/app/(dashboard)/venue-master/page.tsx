@@ -734,63 +734,96 @@ export default function VenueMasterPage() {
             </div>
 
             {/* ①b 入金サイクル（経理閲覧権限者向け） */}
-            <div className="rounded-lg border-2 border-emerald-300 dark:border-emerald-700 p-3 space-y-2">
-              <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">入金サイクル（振込予定日の自動計算に使用）</p>
-              <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <Label className="text-[10px] text-muted-foreground">締め日</Label>
-                  <Select value={form.closing_day || "none"} onValueChange={(v) => setForm({ ...form, closing_day: v === "none" ? "" : v })}>
-                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="未設定" /></SelectTrigger>
-                    <SelectContent className="max-h-[300px]">
-                      <SelectItem value="none">未設定</SelectItem>
-                      <SelectItem value="0">月末</SelectItem>
-                      {Array.from({ length: 31 }, (_, i) => (
-                        <SelectItem key={i + 1} value={String(i + 1)}>{i + 1}日</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+            {(() => {
+              // 選択値 → 表示ラベルへ変換
+              const dayLabel = (v: string) => {
+                if (v === "" || v === "none") return "未設定";
+                if (v === "0") return "月末";
+                return `${v}日`;
+              };
+              const monthOffsetLabel = (v: string) => {
+                if (v === "" || v === "none") return "未設定";
+                if (v === "0") return "当月";
+                if (v === "1") return "翌月";
+                if (v === "2") return "翌々月";
+                return `${v}ヶ月後`;
+              };
+              const payerLabel = (v: string) => {
+                if (v === "" || v === "none") return "なし（直取引）";
+                return payers.find((p) => p.id === v)?.name ?? "（選択済み）";
+              };
+              return (
+                <div className="rounded-lg border-2 border-emerald-300 dark:border-emerald-700 p-3 space-y-2">
+                  <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">入金サイクル（振込予定日の自動計算に使用）</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <Label className="text-[10px] text-muted-foreground">締め日</Label>
+                      <Select value={form.closing_day || "none"} onValueChange={(v) => setForm({ ...form, closing_day: v === "none" ? "" : v })}>
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue>{dayLabel(form.closing_day)}</SelectValue>
+                        </SelectTrigger>
+                        <SelectContent className="max-h-[300px]">
+                          <SelectItem value="none">未設定</SelectItem>
+                          <SelectItem value="0">月末</SelectItem>
+                          {Array.from({ length: 31 }, (_, i) => (
+                            <SelectItem key={i + 1} value={String(i + 1)}>{i + 1}日</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-[10px] text-muted-foreground">支払月</Label>
+                      <Select value={form.pay_month_offset || "none"} onValueChange={(v) => setForm({ ...form, pay_month_offset: v === "none" ? "" : v })}>
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue>{monthOffsetLabel(form.pay_month_offset)}</SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">未設定</SelectItem>
+                          <SelectItem value="0">当月</SelectItem>
+                          <SelectItem value="1">翌月</SelectItem>
+                          <SelectItem value="2">翌々月</SelectItem>
+                          <SelectItem value="3">3ヶ月後</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-[10px] text-muted-foreground">支払日</Label>
+                      <Select value={form.pay_day || "none"} onValueChange={(v) => setForm({ ...form, pay_day: v === "none" ? "" : v })}>
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue>{dayLabel(form.pay_day)}</SelectValue>
+                        </SelectTrigger>
+                        <SelectContent className="max-h-[300px]">
+                          <SelectItem value="none">未設定</SelectItem>
+                          <SelectItem value="0">月末</SelectItem>
+                          {Array.from({ length: 31 }, (_, i) => (
+                            <SelectItem key={i + 1} value={String(i + 1)}>{i + 1}日</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  {/* 現在のサイクルを人間可読で表示 */}
+                  <p className="text-[11px] text-emerald-800/70 dark:text-emerald-400/70">
+                    プレビュー: {dayLabel(form.closing_day)}締め {monthOffsetLabel(form.pay_month_offset)}{dayLabel(form.pay_day)}
+                  </p>
+                  <div>
+                    <Label className="text-[10px] text-muted-foreground">デフォルト帳合先（この百貨店の催事で通常経由する問屋）</Label>
+                    <Select value={form.default_payer_id || "none"} onValueChange={(v) => setForm({ ...form, default_payer_id: v === "none" ? "" : v })}>
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue>{payerLabel(form.default_payer_id)}</SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">なし（直取引）</SelectItem>
+                        {payers.filter((p) => p.is_active).map((p) => (
+                          <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[10px] text-muted-foreground mt-1">催事作成時に自動で入金元として選ばれます。催事ごとに変更可。</p>
+                  </div>
                 </div>
-                <div>
-                  <Label className="text-[10px] text-muted-foreground">支払月</Label>
-                  <Select value={form.pay_month_offset || "none"} onValueChange={(v) => setForm({ ...form, pay_month_offset: v === "none" ? "" : v })}>
-                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="未設定" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">未設定</SelectItem>
-                      <SelectItem value="0">当月</SelectItem>
-                      <SelectItem value="1">翌月</SelectItem>
-                      <SelectItem value="2">翌々月</SelectItem>
-                      <SelectItem value="3">3ヶ月後</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label className="text-[10px] text-muted-foreground">支払日</Label>
-                  <Select value={form.pay_day || "none"} onValueChange={(v) => setForm({ ...form, pay_day: v === "none" ? "" : v })}>
-                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="未設定" /></SelectTrigger>
-                    <SelectContent className="max-h-[300px]">
-                      <SelectItem value="none">未設定</SelectItem>
-                      <SelectItem value="0">月末</SelectItem>
-                      {Array.from({ length: 31 }, (_, i) => (
-                        <SelectItem key={i + 1} value={String(i + 1)}>{i + 1}日</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div>
-                <Label className="text-[10px] text-muted-foreground">デフォルト帳合先（この百貨店の催事で通常経由する問屋）</Label>
-                <Select value={form.default_payer_id || "none"} onValueChange={(v) => setForm({ ...form, default_payer_id: v === "none" ? "" : v })}>
-                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="なし（直取引）" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">なし（直取引）</SelectItem>
-                    {payers.filter((p) => p.is_active).map((p) => (
-                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-[10px] text-muted-foreground mt-1">催事作成時に自動で入金元として選ばれます。催事ごとに変更可。</p>
-              </div>
-            </div>
+              );
+            })()}
 
             {/* ② 産直くんコード */}
             <div className="rounded-lg border-2 border-amber-300 dark:border-amber-700 p-3 space-y-2">
