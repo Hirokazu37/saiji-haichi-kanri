@@ -238,7 +238,7 @@ export function StaffAssignmentDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{assignmentId ? "社員配置を編集" : "社員配置を追加"}</DialogTitle>
           </DialogHeader>
