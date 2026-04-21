@@ -669,23 +669,15 @@ export default function EventsPage() {
               .print\\:overflow-visible { overflow: visible !important; }
               .print\\:page-break { page-break-before: always; break-before: page; }
 
-              /* ===== ページ単位レイアウト（N枚を1ページに均等割付け） ===== */
+              /* ===== 1ページにN個のカードを収めるための縦配分 =====
+                 ページ全体の高さを monthsPerPage で割って各カードに min-height を配る。
+                 カード内の A/B/C... 行を flex で均等割付けし、下の余白を行が埋める。 */
               .events-print-page {
-                page-break-after: always;
-                break-after: page;
                 display: flex;
                 flex-direction: column;
-                min-height: calc(100vh - 18mm); /* @page margin 8mm × 2 + 余裕 */
-                gap: 4mm;
+                gap: 2mm;
               }
-              .events-print-page:last-child {
-                page-break-after: auto;
-                break-after: auto;
-              }
-              /* 各カードはページ内で均等に分け合う */
               .events-print-page > [data-slot="card"] {
-                flex: 1 1 0 !important;
-                min-height: 0 !important;
                 display: flex !important;
                 flex-direction: column !important;
                 overflow: hidden;
@@ -703,11 +695,28 @@ export default function EventsPage() {
                 flex-direction: column;
                 min-width: 0 !important;
               }
-              /* トラック行を伸ばす */
+              .events-print-page > [data-slot="card"] > [data-slot="card-content"] > div > div {
+                flex: 1 !important;
+                min-height: 0 !important;
+                display: flex;
+                flex-direction: column;
+              }
+              /* トラック行(A/B/C...)を flex:1 で均等割付け → 大きく表示 */
               .events-track-row {
                 flex: 1 1 0 !important;
                 min-height: 0 !important;
               }
+
+              /* monthsPerPage に応じてカードの最小高を配る（ページ全体を使い切る） */
+              .events-print-page[data-mpp="1"] > [data-slot="card"] { min-height: calc((100vh - 24mm) / 1); }
+              .events-print-page[data-mpp="2"] > [data-slot="card"] { min-height: calc((100vh - 24mm) / 2); }
+              .events-print-page[data-mpp="3"] > [data-slot="card"] { min-height: calc((100vh - 24mm) / 3); }
+              .events-print-page[data-mpp="4"] > [data-slot="card"] { min-height: calc((100vh - 24mm) / 4); }
+              .events-print-page[data-mpp="6"] > [data-slot="card"] { min-height: calc((100vh - 24mm) / 6); }
+
+              /* ページごとに必ず改ページ（最後のページ以外） */
+              .events-print-page { page-break-after: always; break-after: page; }
+              .events-print-page:last-child { page-break-after: auto; break-after: auto; }
             }
           `}</style>
 
@@ -722,7 +731,7 @@ export default function EventsPage() {
               return (
                 <div className="space-y-4 print:space-y-0">
                 {pageGroups.map((pageCards, pageIdx) => (
-                  <div key={`page-${pageIdx}`} className="events-print-page space-y-4 print:space-y-1">
+                  <div key={`page-${pageIdx}`} className="events-print-page space-y-4 print:space-y-1" data-mpp={printOpts.monthsPerPage}>
                     {pageCards.map((group, _localIdx) => {
                       const gIdx = pageIdx * N + _localIdx;
                       const firstBlock = group[0];
