@@ -697,11 +697,13 @@ export default function SchedulePage() {
             top: calc((var(--bar-row, 0) / var(--bar-rowcount, 1)) * 100%) !important;
             height: calc((1 / var(--bar-rowcount, 1)) * 100% - 1px) !important;
           }
+          /* 画面上のフローティング要素（ドラッグヒント・Undoトースト等）は印刷しない */
+          .fixed { display: none !important; }
         }
       `}</style>
 
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h1 className="text-2xl font-bold">社員スケジュール</h1>
+        <h1 className="text-2xl font-bold print:hidden">社員スケジュール</h1>
         <div className="flex gap-2 print:hidden flex-wrap">
           {canEdit && (
             <Button
@@ -787,7 +789,7 @@ export default function SchedulePage() {
 
       {/* 凡例 */}
       {eventColorMap.size > 0 && (
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs print:hidden">
           <span className="text-muted-foreground font-medium">凡例:</span>
           {Array.from(eventColorMap.entries()).map(([eventId, color]) => {
             const a = assignments.find((x) => x.event_id === eventId);
@@ -803,10 +805,10 @@ export default function SchedulePage() {
 
       {/* タイムライン */}
       <div ref={tableRef}>
-        {/* 印刷用タイトル */}
-        <div className="hidden print:block text-center mb-3">
-          <h2 className="text-lg font-bold">社員スケジュール</h2>
-          <p className="text-sm text-muted-foreground">{monthLabel}</p>
+        {/* 印刷用タイトル（1行・省スペース） */}
+        <div className="hidden print:flex items-baseline justify-between gap-2 mb-1 border-b pb-0.5">
+          <h2 className="text-sm font-bold">社員スケジュール　{monthLabel}</h2>
+          <p className="text-[10px] text-muted-foreground">印刷日時 {new Date().toLocaleString("ja-JP")}</p>
         </div>
 
         {/* ===== モバイル: カードビュー（mobileView='card'の時のみ） ===== */}
