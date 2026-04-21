@@ -107,7 +107,7 @@ function NewEventPageInner() {
     prefecture: "",
     start_date: "",
     end_date: "",
-    closing_time: "",
+    last_day_closing_time: "",
     person_in_charge: "",
     status: "準備中",
     application_status: "未提出",
@@ -189,7 +189,7 @@ function NewEventPageInner() {
         prefecture: src.prefecture || "",
         start_date: "",
         end_date: "",
-        closing_time: src.closing_time || "",
+        last_day_closing_time: src.last_day_closing_time || "",
         person_in_charge: "",
         status: "準備中",
         application_status: "未提出",
@@ -625,7 +625,7 @@ function NewEventPageInner() {
         prefecture: form.prefecture,
         start_date: form.start_date,
         end_date: form.end_date,
-        closing_time: form.closing_time || null,
+        last_day_closing_time: form.last_day_closing_time || null,
         person_in_charge: allNames.length > 0 ? allNames.join("、") : null,
         status: form.status,
         application_status: form.application_status,
@@ -899,7 +899,7 @@ function NewEventPageInner() {
             </div>
             <div className="space-y-2">
               <Label>最終日 閉場時間</Label>
-              <Select value={form.closing_time} onValueChange={(v) => setForm({ ...form, closing_time: v ?? "" })}>
+              <Select value={form.last_day_closing_time} onValueChange={(v) => setForm({ ...form, last_day_closing_time: v ?? "" })}>
                 <SelectTrigger><SelectValue placeholder="選択" /></SelectTrigger>
                 <SelectContent>
                   {closingTimes.map((t) => (<SelectItem key={t} value={t}>{t}</SelectItem>))}

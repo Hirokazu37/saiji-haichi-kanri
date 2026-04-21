@@ -44,7 +44,6 @@ type EventData = {
   prefecture: string;
   start_date: string;
   end_date: string;
-  closing_time: string | null;
   last_day_closing_time: string | null;
   person_in_charge: string | null;
   status: string;
@@ -110,7 +109,6 @@ export default function EventDetailPage({
     prefecture: "",
     start_date: "",
     end_date: "",
-    closing_time: "",
     last_day_closing_time: "",
     person_in_charge: "",
     status: "",
@@ -143,7 +141,6 @@ export default function EventDetailPage({
         venue: eventRes.data.venue,
         store_name: eventRes.data.store_name || "",
         prefecture: eventRes.data.prefecture,
-        closing_time: eventRes.data.closing_time || "",
         last_day_closing_time: eventRes.data.last_day_closing_time || "",
         start_date: eventRes.data.start_date,
         end_date: eventRes.data.end_date,
@@ -277,7 +274,6 @@ export default function EventDetailPage({
         prefecture: form.prefecture,
         start_date: form.start_date,
         end_date: form.end_date,
-        closing_time: form.closing_time.trim() || null,
         last_day_closing_time: form.last_day_closing_time.trim() || null,
         person_in_charge: allNames.length > 0 ? allNames.join("、") : null,
         status: form.status,
@@ -477,7 +473,7 @@ export default function EventDetailPage({
                 location: `${event.venue}${event.store_name ? ` ${event.store_name}` : ""} (${event.prefecture})`,
                 description: [
                   event.person_in_charge ? `担当: ${event.person_in_charge}` : "",
-                  event.closing_time ? `閉場: ${event.closing_time}` : "",
+                  event.last_day_closing_time ? `最終日閉場: ${event.last_day_closing_time}` : "",
                   event.notes || "",
                 ].filter(Boolean).join("\n"),
               })
@@ -552,18 +548,12 @@ export default function EventDetailPage({
               />
             </div>
             <div className="space-y-2">
-              <Label>閉場時間</Label>
-              <Input type="time" value={form.closing_time} onChange={(e) => setForm({ ...form, closing_time: e.target.value })} />
-            </div>
-            <div className="space-y-2">
               <Label>最終日の閉場時間</Label>
               <Input
                 type="time"
                 value={form.last_day_closing_time}
                 onChange={(e) => setForm({ ...form, last_day_closing_time: e.target.value })}
-                placeholder="早く閉まる場合のみ"
               />
-              <p className="text-[10px] text-muted-foreground">通常より早く閉まる場合のみ入力</p>
             </div>
           </div>
           <div className="space-y-2">

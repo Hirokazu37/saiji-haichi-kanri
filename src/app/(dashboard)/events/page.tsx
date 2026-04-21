@@ -55,7 +55,7 @@ type Event = {
   prefecture: string;
   start_date: string;
   end_date: string;
-  closing_time: string | null;
+  last_day_closing_time: string | null;
   person_in_charge: string | null;
   status: string;
   application_status: string | null;
@@ -1144,7 +1144,7 @@ export default function EventsPage() {
                   {!dialogEvent.name && <div className="text-muted-foreground">{dialogEvent.prefecture}</div>}
                   <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
                     <span className="inline-flex items-center gap-1"><Calendar className="h-3 w-3" />{dialogEvent.start_date} 〜 {dialogEvent.end_date}</span>
-                    {dialogEvent.closing_time && <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" />閉場 {dialogEvent.closing_time}</span>}
+                    {dialogEvent.last_day_closing_time && <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" />最終日閉場 {dialogEvent.last_day_closing_time}</span>}
                   </div>
                   {dialogEvent.person_in_charge && (
                     <div className="flex items-start gap-1 text-xs">
