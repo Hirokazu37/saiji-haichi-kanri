@@ -757,7 +757,7 @@ function NewEventPageInner() {
       }
 
       // 通知を作成（adminユーザーへのベル通知用）
-      // 失敗してもメイン処理は続行
+      // 失敗してもメイン処理は続行（エラーは console で拾う）
       try {
         const venueLabel = form.store_name.trim()
           ? `${form.venue.trim()} ${form.store_name.trim()}`
@@ -768,16 +768,21 @@ function NewEventPageInner() {
         const eventName = form.name.trim();
         const charge = allNames.length > 0 ? `／担当: ${allNames.join("、")}` : "";
         const { data: { user: authUser } } = await supabase.auth.getUser();
-        await supabase.from("notifications").insert({
+        const { error: notifError, data: notifData } = await supabase.from("notifications").insert({
           type: "event_created",
           title: `新規催事: ${venueLabel}${eventName ? `「${eventName}」` : ""}`,
           body: `${dateLabel}${charge}`,
           link_url: `/events/${eventId}`,
           related_event_id: eventId,
           created_by: authUser?.id ?? null,
-        });
+        }).select("id");
+        if (notifError) {
+          console.error("[notifications create] supabase error:", notifError);
+        } else {
+          console.log("[notifications create] inserted:", notifData);
+        }
       } catch (err) {
-        console.error("[notifications create] error:", err);
+        console.error("[notifications create] thrown:", err);
       }
 
       router.push("/events");
