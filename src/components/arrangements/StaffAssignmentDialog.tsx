@@ -49,6 +49,55 @@ const emptyForm: FormState = {
   notes: "",
 };
 
+// 親（/schedule など）に変更内容を伝えるためのペイロード
+export type StaffChange =
+  | {
+      type: "update";
+      assignmentId: string;
+      prev: {
+        event_id: string;
+        person_type: PersonType;
+        employee_id: string | null;
+        mannequin_person_id: string | null;
+        start_date: string;
+        end_date: string;
+        role: string | null;
+        notes: string | null;
+      };
+      next: {
+        event_id: string;
+        person_type: PersonType;
+        employee_id: string | null;
+        mannequin_person_id: string | null;
+        start_date: string;
+        end_date: string;
+        role: string | null;
+        notes: string | null;
+      };
+      label: string; // トーストに表示する説明
+    }
+  | {
+      type: "create";
+      assignmentId: string; // 作成されたID（undo で削除する対象）
+      label: string;
+    }
+  | {
+      type: "delete";
+      // 再INSERT用の完全データ（idは再採番されるが、元のassignmentIdは表示用）
+      prevAssignmentId: string;
+      row: {
+        event_id: string;
+        person_type: PersonType;
+        employee_id: string | null;
+        mannequin_person_id: string | null;
+        start_date: string;
+        end_date: string;
+        role: string | null;
+        notes: string | null;
+      };
+      label: string;
+    };
+
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -63,6 +112,8 @@ type Props = {
   initialPersonKey?: string | null;
   // 保存・削除後のコールバック
   onSaved?: () => void;
+  // より詳細な変更通知（元に戻す用）
+  onChange?: (change: StaffChange) => void;
   // 催事選択を表示するかどうか（/schedule からの新規作成時など）
   showEventSelect?: boolean;
 };
@@ -76,6 +127,7 @@ export function StaffAssignmentDialog({
   defaultEnd = "",
   initialPersonKey = null,
   onSaved,
+  onChange,
   showEventSelect = false,
 }: Props) {
   const supabase = createClient();
@@ -87,6 +139,8 @@ export function StaffAssignmentDialog({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [originalPerson, setOriginalPerson] = useState<string>(""); // 差替え時のログ用（編集前の人名）
+  // 編集モード時の元のフォーム値（undoで元に戻すため）
+  const [originalForm, setOriginalForm] = useState<FormState | null>(null);
 
   // マスター & ダイアログ開いたら該当データを取得
   const load = useCallback(async () => {
@@ -111,7 +165,7 @@ export function StaffAssignmentDialog({
         .eq("id", assignmentId)
         .single();
       if (data) {
-        setForm({
+        const loaded: FormState = {
           event_id: data.event_id,
           person_type: (data.person_type ?? "employee") as PersonType,
           employee_id: data.employee_id || "",
@@ -120,7 +174,9 @@ export function StaffAssignmentDialog({
           end_date: data.end_date,
           role: data.role || "",
           notes: data.notes || "",
-        });
+        };
+        setForm(loaded);
+        setOriginalForm(loaded);
         // 現在選ばれている人の名前をログ用に控える
         if (data.person_type === "mannequin" && data.mannequin_person_id) {
           const p = (mpRes.data || []).find((x: MannequinPerson) => x.id === data.mannequin_person_id);
@@ -153,6 +209,7 @@ export function StaffAssignmentDialog({
         notes: "",
       });
       setOriginalPerson("");
+      setOriginalForm(null);
     }
   }, [supabase, assignmentId, presetEventId, defaultStart, defaultEnd, initialPersonKey, showEventSelect]);
 
@@ -194,9 +251,38 @@ export function StaffAssignmentDialog({
         await supabase.from("event_staff").update(payload).eq("id", assignmentId);
         const swapNote = originalPerson && originalPerson !== newName ? `【差替え】${originalPerson} → ${newName} / ` : "";
         await addLog(supabase, form.event_id, "社員配置", `${swapNote}${label}の配置を更新（${form.start_date}〜${form.end_date}${form.role ? ` ${form.role}` : ""}）`);
+        if (originalForm) {
+          onChange?.({
+            type: "update",
+            assignmentId,
+            prev: {
+              event_id: originalForm.event_id,
+              person_type: originalForm.person_type,
+              employee_id: originalForm.person_type === "employee" ? originalForm.employee_id || null : null,
+              mannequin_person_id: originalForm.person_type === "mannequin" ? originalForm.mannequin_person_id || null : null,
+              start_date: originalForm.start_date,
+              end_date: originalForm.end_date,
+              role: originalForm.role || null,
+              notes: originalForm.notes || null,
+            },
+            next: payload,
+            label: `${label}の配置を更新`,
+          });
+        }
       } else {
-        await supabase.from("event_staff").insert(payload);
+        const { data: inserted } = await supabase
+          .from("event_staff")
+          .insert(payload)
+          .select("id")
+          .single();
         await addLog(supabase, form.event_id, "社員配置", `${label}を配置（${form.start_date}〜${form.end_date}${form.role ? ` ${form.role}` : ""}）`);
+        if (inserted?.id) {
+          onChange?.({
+            type: "create",
+            assignmentId: inserted.id,
+            label: `${label}を配置`,
+          });
+        }
       }
       onOpenChange(false);
       onSaved?.();
@@ -208,8 +294,24 @@ export function StaffAssignmentDialog({
   const handleDelete = async () => {
     if (!assignmentId) return;
     const name = currentPersonName();
+    const snapshot = {
+      event_id: form.event_id,
+      person_type: form.person_type,
+      employee_id: form.person_type === "employee" ? form.employee_id || null : null,
+      mannequin_person_id: form.person_type === "mannequin" ? form.mannequin_person_id || null : null,
+      start_date: form.start_date,
+      end_date: form.end_date,
+      role: form.role.trim() || null,
+      notes: form.notes.trim() || null,
+    };
     await supabase.from("event_staff").delete().eq("id", assignmentId);
     await addLog(supabase, form.event_id, "社員配置", `${form.person_type === "mannequin" ? "マネキン:" : ""}${name}の配置を削除`);
+    onChange?.({
+      type: "delete",
+      prevAssignmentId: assignmentId,
+      row: snapshot,
+      label: `${form.person_type === "mannequin" ? "マネキン:" : ""}${name} の配置を削除`,
+    });
     setDeleteOpen(false);
     onOpenChange(false);
     onSaved?.();

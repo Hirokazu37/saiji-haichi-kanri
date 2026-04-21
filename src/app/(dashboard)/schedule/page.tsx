@@ -14,7 +14,7 @@ import {
 import { ChevronLeft, ChevronRight, Printer, ImageDown, X, Hotel, Users, Plus } from "lucide-react";
 import Link from "next/link";
 import { getHolidaysForRange } from "@/lib/holidays";
-import { StaffAssignmentDialog } from "@/components/arrangements/StaffAssignmentDialog";
+import { StaffAssignmentDialog, type StaffChange } from "@/components/arrangements/StaffAssignmentDialog";
 import { usePermission } from "@/hooks/usePermission";
 
 type Employee = { id: string; name: string };
@@ -109,18 +109,44 @@ export default function SchedulePage() {
   };
   const [dragState, setDragState] = useState<DragState | null>(null);
 
-  // 直近の変更（元に戻す用）
-  type LastDragChange = {
-    assignmentId: string;
-    prevStart: string;
-    prevEnd: string;
-    newStart: string;
-    newEnd: string;
-    personName: string;
-    venueLabel: string;
-  };
-  const [lastChange, setLastChange] = useState<LastDragChange | null>(null);
+  // 直近の変更（元に戻す用）。ドラッグ・ダイアログ保存・削除 全部をカバー
+  const [lastChange, setLastChange] = useState<StaffChange | null>(null);
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 変更を記録してトースト表示 + 15秒後に自動クリア
+  const recordChange = (change: StaffChange) => {
+    setLastChange(change);
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    undoTimerRef.current = setTimeout(() => setLastChange(null), 15_000);
+  };
+
+  // 元に戻す実行
+  const handleUndo = async () => {
+    const c = lastChange;
+    if (!c) return;
+    if (c.type === "update") {
+      await supabase
+        .from("event_staff")
+        .update({
+          event_id: c.prev.event_id,
+          person_type: c.prev.person_type,
+          employee_id: c.prev.employee_id,
+          mannequin_person_id: c.prev.mannequin_person_id,
+          start_date: c.prev.start_date,
+          end_date: c.prev.end_date,
+          role: c.prev.role,
+          notes: c.prev.notes,
+        })
+        .eq("id", c.assignmentId);
+    } else if (c.type === "create") {
+      await supabase.from("event_staff").delete().eq("id", c.assignmentId);
+    } else if (c.type === "delete") {
+      await supabase.from("event_staff").insert(c.row);
+    }
+    setLastChange(null);
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    fetchData();
+  };
 
   // 空白セルをドラッグして新規配置する
   type NewDragState = {
@@ -444,18 +470,21 @@ export default function SchedulePage() {
         const venueLabel = a?.events
           ? (a.events.store_name ? `${a.events.venue} ${a.events.store_name}` : a.events.venue)
           : "";
-        setLastChange({
+        const base = {
+          event_id: a?.event_id ?? "",
+          person_type: (a?.person_type ?? "employee") as "employee" | "mannequin",
+          employee_id: a?.employee_id ?? null,
+          mannequin_person_id: a?.mannequin_person_id ?? null,
+          role: a?.role ?? null,
+          notes: null,
+        };
+        recordChange({
+          type: "update",
           assignmentId: st.assignmentId,
-          prevStart: st.origStart,
-          prevEnd: st.origEnd,
-          newStart: st.currentStart,
-          newEnd: st.currentEnd,
-          personName,
-          venueLabel,
+          prev: { ...base, start_date: st.origStart, end_date: st.origEnd },
+          next: { ...base, start_date: st.currentStart, end_date: st.currentEnd },
+          label: `${personName ? personName + " の " : ""}${venueLabel ? "「" + venueLabel + "」 " : ""}日程を変更`,
         });
-        // 10秒経過で自動的に元に戻すUIを消す
-        if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
-        undoTimerRef.current = setTimeout(() => setLastChange(null), 10_000);
         fetchData();
       }
     };
@@ -1068,32 +1097,28 @@ export default function SchedulePage() {
         </div>
       )}
 
-      {/* 元に戻すトースト（直近のドラッグ保存に対してのみ） */}
+      {/* 元に戻すトースト（ドラッグ・ダイアログ保存・削除 全部をカバー） */}
       {lastChange && !dragState && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-foreground text-background px-4 py-3 rounded-lg shadow-xl flex items-center gap-3 max-w-[min(520px,calc(100vw-2rem))]">
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-foreground text-background px-4 py-3 rounded-lg shadow-xl flex items-center gap-3 max-w-[min(560px,calc(100vw-2rem))]">
           <div className="text-sm min-w-0">
             <div className="font-medium truncate">
-              {lastChange.personName && <>{lastChange.personName} の</>}
-              {lastChange.venueLabel && <> 「{lastChange.venueLabel}」 </>}
-              日程を変更
+              {lastChange.type === "create" && "✨ "}
+              {lastChange.type === "delete" && "🗑 "}
+              {lastChange.label}
             </div>
             <div className="text-xs opacity-70 truncate">
-              {lastChange.prevStart}〜{lastChange.prevEnd} → {lastChange.newStart}〜{lastChange.newEnd}
+              {lastChange.type === "update" && (
+                <>{lastChange.prev.start_date}〜{lastChange.prev.end_date} → {lastChange.next.start_date}〜{lastChange.next.end_date}</>
+              )}
+              {lastChange.type === "create" && "元に戻すと追加した配置を取り消します"}
+              {lastChange.type === "delete" && "元に戻すと削除した配置を復元します"}
             </div>
           </div>
           <Button
             size="sm"
             variant="secondary"
             className="shrink-0"
-            onClick={async () => {
-              await supabase
-                .from("event_staff")
-                .update({ start_date: lastChange.prevStart, end_date: lastChange.prevEnd })
-                .eq("id", lastChange.assignmentId);
-              setLastChange(null);
-              if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
-              fetchData();
-            }}
+            onClick={handleUndo}
           >
             元に戻す
           </Button>
@@ -1118,6 +1143,7 @@ export default function SchedulePage() {
         onOpenChange={setEditOpen}
         assignmentId={editingAssignmentId}
         onSaved={fetchData}
+        onChange={recordChange}
       />
       {/* 新規配置ダイアログ（「社員を配置」ボタン / 空白ドラッグ後） */}
       <StaffAssignmentDialog
@@ -1132,6 +1158,7 @@ export default function SchedulePage() {
         defaultEnd={newDragInit?.end ?? ""}
         showEventSelect={true}
         onSaved={fetchData}
+        onChange={recordChange}
       />
     </div>
   );
