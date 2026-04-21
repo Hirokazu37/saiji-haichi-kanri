@@ -652,7 +652,7 @@ export default function EventsPage() {
           </Button>
         </div>
 
-        <div ref={listRef}>
+        <div ref={listRef} className="events-print-zone" data-mpp={printOpts.monthsPerPage}>
           {/* 印刷用タイトル */}
           <div className="hidden print:block text-center mb-2">
             <h2 className="text-base font-bold">日程表　{ganttSpanLabel}</h2>
@@ -668,6 +668,18 @@ export default function EventsPage() {
               .md\\:pl-60 { padding-left: 0 !important; }
               .print\\:overflow-visible { overflow: visible !important; }
               .print\\:page-break { page-break-before: always; break-before: page; }
+              /* monthsPerPage に応じて全体を縮小し、強制的にN ヶ月を1ページに詰める */
+              .events-print-zone[data-mpp="1"] { zoom: 1; }
+              .events-print-zone[data-mpp="2"] { zoom: 1; }
+              .events-print-zone[data-mpp="3"] { zoom: 0.66; }
+              .events-print-zone[data-mpp="4"] { zoom: 0.5; }
+              .events-print-zone[data-mpp="6"] { zoom: 0.33; }
+              /* カード内の縦余白を減らしてさらに詰める */
+              .events-print-zone[data-mpp="3"] .space-y-4 > *,
+              .events-print-zone[data-mpp="4"] .space-y-4 > *,
+              .events-print-zone[data-mpp="6"] .space-y-4 > * {
+                margin-top: 4px !important;
+              }
             }
           `}</style>
 
