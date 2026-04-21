@@ -78,6 +78,125 @@ export function computePlannedPaymentDate(
   return fmtYmd(payDate);
 }
 
+// 催事 + 百貨店マスター + 帳合先マスターから、入金元と適用サイクル・率を解決する
+export type PaymentSourceResolution = {
+  kind: "direct" | "payer" | "none";         // direct=百貨店直取引, payer=帳合経由
+  venueMasterId: string | null;
+  payerMasterId: string | null;
+  cycle: PaymentCycle;                         // 適用される振込サイクル
+  appliedRate: number | null;                  // 税抜入金率%（null=未設定）
+  displayLabel: string;                        // UI表示用のラベル
+};
+
+type EventInput = {
+  payer_master_id?: string | null;
+  force_direct?: boolean;
+};
+type VenueInput = {
+  id: string;
+  venue_name?: string;
+  store_name?: string | null;
+  closing_day: number | null;
+  pay_month_offset: number | null;
+  pay_day: number | null;
+  default_payer_id: string | null;
+  direct_receive_rate: number | null;
+  chouai_receive_rate: number | null;
+};
+type PayerInput = {
+  id: string;
+  name: string;
+  closing_day: number | null;
+  pay_month_offset: number | null;
+  pay_day: number | null;
+};
+
+export function resolvePaymentSource(
+  event: EventInput,
+  venue: VenueInput | null,
+  payers: PayerInput[],
+): PaymentSourceResolution {
+  // 1. 催事に payer_master_id が明示されていればそれを使う
+  if (event.payer_master_id) {
+    const p = payers.find((x) => x.id === event.payer_master_id);
+    if (p) {
+      return {
+        kind: "payer",
+        venueMasterId: null,
+        payerMasterId: p.id,
+        cycle: {
+          closing_day: p.closing_day,
+          pay_month_offset: p.pay_month_offset,
+          pay_day: p.pay_day,
+        },
+        // 帳合経由扱いなので百貨店の chouai_receive_rate を使う
+        appliedRate: venue?.chouai_receive_rate ?? null,
+        displayLabel: `帳合経由: ${p.name}`,
+      };
+    }
+  }
+
+  // 2. force_direct が true なら百貨店直取引（帳合先を無視）
+  if (event.force_direct) {
+    return {
+      kind: "direct",
+      venueMasterId: venue?.id ?? null,
+      payerMasterId: null,
+      cycle: {
+        closing_day: venue?.closing_day ?? null,
+        pay_month_offset: venue?.pay_month_offset ?? null,
+        pay_day: venue?.pay_day ?? null,
+      },
+      appliedRate: venue?.direct_receive_rate ?? null,
+      displayLabel: venue ? `直取引: ${venue.venue_name}${venue.store_name ? " " + venue.store_name : ""}` : "直取引",
+    };
+  }
+
+  // 3. 催事に明示が無い場合、百貨店マスターの default_payer_id に従う
+  if (venue?.default_payer_id) {
+    const p = payers.find((x) => x.id === venue.default_payer_id);
+    if (p) {
+      return {
+        kind: "payer",
+        venueMasterId: null,
+        payerMasterId: p.id,
+        cycle: {
+          closing_day: p.closing_day,
+          pay_month_offset: p.pay_month_offset,
+          pay_day: p.pay_day,
+        },
+        appliedRate: venue.chouai_receive_rate ?? null,
+        displayLabel: `帳合経由: ${p.name}（百貨店設定）`,
+      };
+    }
+  }
+
+  // 4. default が無い、または venue なしは百貨店直取引相当
+  if (venue) {
+    return {
+      kind: "direct",
+      venueMasterId: venue.id,
+      payerMasterId: null,
+      cycle: {
+        closing_day: venue.closing_day,
+        pay_month_offset: venue.pay_month_offset,
+        pay_day: venue.pay_day,
+      },
+      appliedRate: venue.direct_receive_rate ?? null,
+      displayLabel: `直取引: ${venue.venue_name}${venue.store_name ? " " + venue.store_name : ""}`,
+    };
+  }
+
+  return {
+    kind: "none",
+    venueMasterId: null,
+    payerMasterId: null,
+    cycle: { closing_day: null, pay_month_offset: null, pay_day: null },
+    appliedRate: null,
+    displayLabel: "未設定",
+  };
+}
+
 // サイクル情報を人間可読な文字列にフォーマット（マスター画面表示用）
 export function formatPaymentCycle(cycle: PaymentCycle): string {
   const { closing_day, pay_month_offset, pay_day } = cycle;

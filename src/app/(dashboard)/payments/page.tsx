@@ -69,6 +69,7 @@ type PaymentRow = {
   method: "transfer" | "cash" | "other" | null;
   status: "予定" | "入金済" | "保留" | "キャンセル";
   notes: string | null;
+  applied_rate: number | null;
   events: EventLite | null;
 };
 
@@ -93,12 +94,13 @@ const emptyForm = {
   payer_master_id: "",
   planned_date: "",
   planned_amount: "",
-  planned_tax_type: "included" as "excluded" | "included",
+  planned_tax_type: "excluded" as "excluded" | "included",
   actual_date: "",
   actual_amount: "",
   method: "transfer" as "transfer" | "cash" | "other",
   status: "予定" as typeof STATUS_OPTIONS[number],
   notes: "",
+  applied_rate: "" as string, // "80" など
 };
 
 export default function PaymentsPage() {
@@ -221,44 +223,46 @@ function PaymentsPageInner() {
       payer_master_id: p.payer_master_id || "",
       planned_date: p.planned_date || "",
       planned_amount: p.planned_amount != null ? String(p.planned_amount) : "",
-      planned_tax_type: (p.planned_tax_type ?? "included") as "excluded" | "included",
+      planned_tax_type: (p.planned_tax_type ?? "excluded") as "excluded" | "included",
       actual_date: p.actual_date || "",
       actual_amount: p.actual_amount != null ? String(p.actual_amount) : "",
       method: (p.method ?? "transfer") as "transfer" | "cash" | "other",
       status: p.status,
       notes: p.notes || "",
+      applied_rate: p.applied_rate != null ? String(p.applied_rate) : "",
     });
     setDialogOpen(true);
   };
 
-  // 売上から予定額をコピー
+  // 売上から予定額をコピー（applied_rate が入っていれば掛け算して入金率を適用）
   const copyFromRevenue = async (taxType: "excluded" | "included") => {
     if (!form.event_id) return;
-    // 日別売上があれば税区分ごとに合計、無ければ events.revenue（税込想定）
     const { data: dailyData } = await supabase
       .from("event_daily_revenue")
       .select("amount, tax_type, tax_rate")
       .eq("event_id", form.event_id);
     const daily = (dailyData || []) as { amount: number; tax_type: "excluded" | "included"; tax_rate: number }[];
+    let salesTotal = 0;
     if (daily.length > 0) {
-      let total = 0;
       for (const d of daily) {
         if (d.tax_type === taxType) {
-          total += d.amount;
+          salesTotal += d.amount;
         } else if (taxType === "included" && d.tax_type === "excluded") {
-          total += Math.round(d.amount * (1 + d.tax_rate));
+          salesTotal += Math.round(d.amount * (1 + d.tax_rate));
         } else if (taxType === "excluded" && d.tax_type === "included") {
-          total += Math.round(d.amount / (1 + d.tax_rate));
+          salesTotal += Math.round(d.amount / (1 + d.tax_rate));
         }
       }
-      setForm((prev) => ({ ...prev, planned_amount: String(total), planned_tax_type: taxType }));
     } else {
       // 日別が無い場合は events.revenue（税込合計として扱う）を使う
       const ev = events.find((e) => e.id === form.event_id);
       const r = ev?.revenue ?? 0;
-      const val = taxType === "included" ? r : Math.round(r / 1.08);
-      setForm((prev) => ({ ...prev, planned_amount: String(val), planned_tax_type: taxType }));
+      salesTotal = taxType === "included" ? r : Math.round(r / 1.08);
     }
+    // 入金率（applied_rate）が設定されていれば乗算
+    const rate = form.applied_rate.trim() ? parseFloat(form.applied_rate) : NaN;
+    const finalAmount = !isNaN(rate) ? Math.round(salesTotal * rate / 100) : salesTotal;
+    setForm((prev) => ({ ...prev, planned_amount: String(finalAmount), planned_tax_type: taxType }));
   };
 
   // 振込サイクルから予定日を自動計算
@@ -294,6 +298,7 @@ function PaymentsPageInner() {
         method: form.method,
         status: form.status,
         notes: form.notes.trim() || null,
+        applied_rate: form.applied_rate.trim() ? parseFloat(form.applied_rate) : null,
       };
       if (editingId) {
         await supabase.from("event_payments").update(payload).eq("id", editingId);
@@ -601,7 +606,7 @@ function PaymentsPageInner() {
                   />
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={() => copyFromRevenue("excluded")} disabled={!form.event_id}>
                   売上から税抜をコピー
                 </Button>
@@ -611,6 +616,21 @@ function PaymentsPageInner() {
                 <span className="text-[10px] text-muted-foreground ml-auto">
                   現在の税区分: {form.planned_tax_type === "excluded" ? "税抜" : "税込"}
                 </span>
+              </div>
+              <div className="flex items-end gap-2">
+                <div className="flex-1">
+                  <Label className="text-[10px] text-muted-foreground">入金率（%）— 売上から予定額をコピーする際にこの率を乗算</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    value={form.applied_rate}
+                    onChange={(e) => setForm({ ...form, applied_rate: e.target.value })}
+                    placeholder="例: 80（催事作成時に自動セット）"
+                    className="h-8 text-sm"
+                  />
+                </div>
               </div>
             </div>
 

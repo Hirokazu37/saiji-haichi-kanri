@@ -32,6 +32,7 @@ import { prefectures, eventStatuses } from "@/lib/prefectures";
 import { ArrangementEditor, type ArrangementEditorHandle } from "@/components/arrangements/ArrangementEditor";
 import { StaffTab } from "@/components/arrangements/StaffTab";
 import { PaymentSummaryCard } from "@/components/arrangements/PaymentSummaryCard";
+import { PayerSourceSection } from "@/components/arrangements/PayerSourceSection";
 import { usePermission } from "@/hooks/usePermission";
 import { downloadIcs, mapsUrl } from "@/lib/ics";
 
@@ -53,6 +54,8 @@ type EventData = {
   notes: string | null;
   revenue: number | null;
   retrospective: string | null;
+  payer_master_id: string | null;
+  force_direct: boolean;
 };
 
 type TaxType = "excluded" | "included";
@@ -113,6 +116,8 @@ export default function EventDetailPage({
     notes: "",
     revenue: "",
     retrospective: "",
+    // 入金設定（"venue" = 百貨店デフォルト, "direct" = 直取引強制, "payer:<uuid>" = 特定帳合先）
+    payer_source: "venue" as string,
   });
 
   // 日別売上: date(YYYY-MM-DD) -> { 金額文字列, 税抜/税込, 税率 }
@@ -144,6 +149,9 @@ export default function EventDetailPage({
         notes: eventRes.data.notes || "",
         revenue: eventRes.data.revenue != null ? String(eventRes.data.revenue) : "",
         retrospective: eventRes.data.retrospective || "",
+        payer_source:
+          eventRes.data.payer_master_id ? `payer:${eventRes.data.payer_master_id}` :
+          eventRes.data.force_direct ? "direct" : "venue",
       });
     }
     // 日別売上をMapに詰める
@@ -228,6 +236,11 @@ export default function EventDetailPage({
       ? includedTotal
       : form.revenue.trim() ? parseInt(form.revenue) : null;
 
+    // 入金元設定を分解
+    const payerSource = form.payer_source;
+    const payerMasterIdToSave = payerSource.startsWith("payer:") ? payerSource.slice(6) : null;
+    const forceDirectToSave = payerSource === "direct";
+
     await supabase
       .from("events")
       .update({
@@ -247,6 +260,8 @@ export default function EventDetailPage({
         notes: form.notes.trim() || null,
         revenue: revenueToSave,
         retrospective: form.retrospective.trim() || null,
+        payer_master_id: payerMasterIdToSave,
+        force_direct: forceDirectToSave,
       })
       .eq("id", id);
 
@@ -531,6 +546,13 @@ export default function EventDetailPage({
               <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} />
             </div>
           </div>
+          {/* 入金設定（経理閲覧権限者のみ） */}
+          <PayerSourceSection
+            venueName={form.venue}
+            storeName={form.store_name}
+            payerSource={form.payer_source}
+            onChange={(v) => setForm({ ...form, payer_source: v })}
+          />
         </CardContent>
       </Card>
 

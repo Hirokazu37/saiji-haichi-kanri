@@ -18,6 +18,7 @@ import { prefectures, eventStatuses } from "@/lib/prefectures";
 import { getAreaForPrefecture } from "@/lib/areas";
 import { X, Plus, Hotel, Train, UserCheck, Package, ArrowLeft, Building2, FileText, Save } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
+import { PayerSourceSection } from "@/components/arrangements/PayerSourceSection";
 import Link from "next/link";
 
 type Employee = { id: string; name: string };
@@ -39,6 +40,8 @@ type VenueMaster = {
   pay_month_offset: number | null;
   pay_day: number | null;
   default_payer_id: string | null;
+  direct_receive_rate: number | null;
+  chouai_receive_rate: number | null;
 };
 type HotelMaster = { id: string; name: string; area_id: string | null };
 type HotelVenueLink = { hotel_id: string; venue_name: string };
@@ -111,6 +114,8 @@ function NewEventPageInner() {
     notes: "",
     equipment_from: "",
     equipment_to: "",
+    // 入金設定（"venue" = 百貨店デフォルト, "direct" = 直取引強制, "payer:<uuid>" = 特定帳合先）
+    payer_source: "venue" as string,
   });
 
   const fetchData = useCallback(async () => {
@@ -121,7 +126,7 @@ function NewEventPageInner() {
     const [empRes, evtRes, vmRes, hmRes, hvlRes, amRes, aalRes, arRes, mpRes, mhRes, vmlRes] = await Promise.all([
       supabase.from("employees").select("id, name").order("sort_order").order("name"),
       supabase.from("events").select("venue, store_name, start_date, end_date").gte("start_date", oneYearAgoStr).order("start_date", { ascending: false }),
-      supabase.from("venue_master").select("id, venue_name, store_name, prefecture, area_id, reading, is_active, closing_day, pay_month_offset, pay_day, default_payer_id").eq("is_active", true),
+      supabase.from("venue_master").select("id, venue_name, store_name, prefecture, area_id, reading, is_active, closing_day, pay_month_offset, pay_day, default_payer_id, direct_receive_rate, chouai_receive_rate").eq("is_active", true),
       supabase.from("hotel_master").select("id, name, area_id").eq("is_active", true).order("name"),
       supabase.from("hotel_venue_links").select("hotel_id, venue_name"),
       supabase.from("mannequin_agencies").select("id, name").order("name"),
@@ -595,6 +600,8 @@ function NewEventPageInner() {
         notes: form.notes.trim() || null,
         equipment_from: form.equipment_from || null,
         equipment_to: form.equipment_to || null,
+        payer_master_id: form.payer_source.startsWith("payer:") ? form.payer_source.slice(6) : null,
+        force_direct: form.payer_source === "direct",
       }).select("id").single();
 
       if (error || !data) {
@@ -675,7 +682,7 @@ function NewEventPageInner() {
 
       await Promise.all(inserts);
 
-      // 入金レコードを自動生成（催事の会場マスターから振込サイクル・デフォルト帳合先を取得）
+      // 入金レコードを自動生成（催事の会場マスター・帳合先・催事単位のオーバーライドを反映）
       // 失敗してもメイン処理は続行
       try {
         const venueLabel = form.venue.trim();
@@ -684,24 +691,29 @@ function NewEventPageInner() {
           v.venue_name === venueLabel && (v.store_name ?? "") === storeLabel,
         );
         if (vm) {
-          const cycle = {
-            closing_day: vm.closing_day ?? null,
-            pay_month_offset: vm.pay_month_offset ?? null,
-            pay_day: vm.pay_day ?? null,
+          const { resolvePaymentSource, computePlannedPaymentDate } = await import("@/lib/payment-cycle");
+          const { data: pyData } = await supabase
+            .from("payer_master")
+            .select("id, name, closing_day, pay_month_offset, pay_day")
+            .eq("is_active", true);
+          const eventLike = {
+            payer_master_id: form.payer_source.startsWith("payer:") ? form.payer_source.slice(6) : null,
+            force_direct: form.payer_source === "direct",
           };
-          const plannedDate = (cycle.closing_day != null && cycle.pay_month_offset != null && cycle.pay_day != null)
-            ? (await import("@/lib/payment-cycle")).computePlannedPaymentDate(form.end_date, cycle)
+          const resolved = resolvePaymentSource(eventLike, vm, (pyData ?? []) as unknown as { id: string; name: string; closing_day: number | null; pay_month_offset: number | null; pay_day: number | null; }[]);
+          const plannedDate = (resolved.cycle.closing_day != null && resolved.cycle.pay_month_offset != null && resolved.cycle.pay_day != null)
+            ? computePlannedPaymentDate(form.end_date, resolved.cycle)
             : null;
-          const useDefaultPayer = !!vm.default_payer_id;
           await supabase.from("event_payments").insert({
             event_id: eventId,
-            venue_master_id: useDefaultPayer ? null : vm.id,
-            payer_master_id: useDefaultPayer ? vm.default_payer_id : null,
+            venue_master_id: resolved.venueMasterId,
+            payer_master_id: resolved.payerMasterId,
             planned_date: plannedDate,
             planned_amount: null,
-            planned_tax_type: "included",
+            planned_tax_type: "excluded",
             status: "予定",
             method: "transfer",
+            applied_rate: resolved.appliedRate,
           });
         }
       } catch (err) {
@@ -888,6 +900,13 @@ function NewEventPageInner() {
               <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} placeholder="特記事項があれば" />
             </div>
           </div>
+          {/* 入金設定（経理閲覧権限者のみ） */}
+          <PayerSourceSection
+            venueName={form.venue}
+            storeName={form.store_name}
+            payerSource={form.payer_source}
+            onChange={(v) => setForm({ ...form, payer_source: v })}
+          />
         </CardContent>
       </Card>
 

@@ -61,6 +61,8 @@ type VenueMaster = {
   pay_month_offset: number | null;
   pay_day: number | null;
   default_payer_id: string | null;
+  direct_receive_rate: number | null;
+  chouai_receive_rate: number | null;
 };
 
 type PayerMasterItem = { id: string; name: string; is_active: boolean };
@@ -83,6 +85,9 @@ const emptyForm = {
   pay_month_offset: "",
   pay_day: "",
   default_payer_id: "",
+  // 入金率（%、空文字 = 未設定）
+  direct_receive_rate: "",
+  chouai_receive_rate: "",
 };
 
 export default function VenueMasterPage() {
@@ -396,6 +401,8 @@ export default function VenueMasterPage() {
       pay_month_offset: v.pay_month_offset != null ? String(v.pay_month_offset) : "",
       pay_day: v.pay_day != null ? String(v.pay_day) : "",
       default_payer_id: v.default_payer_id || "",
+      direct_receive_rate: v.direct_receive_rate != null ? String(v.direct_receive_rate) : "",
+      chouai_receive_rate: v.chouai_receive_rate != null ? String(v.chouai_receive_rate) : "",
     });
     const label = getVenueLabel(v);
     const hids = new Set(hotelLinks.filter((l) => l.venue_name === label).map((l) => l.hotel_id));
@@ -431,6 +438,8 @@ export default function VenueMasterPage() {
       pay_month_offset: form.pay_month_offset === "" ? null : parseInt(form.pay_month_offset),
       pay_day: form.pay_day === "" ? null : parseInt(form.pay_day),
       default_payer_id: form.default_payer_id || null,
+      direct_receive_rate: form.direct_receive_rate === "" ? null : parseFloat(form.direct_receive_rate),
+      chouai_receive_rate: form.chouai_receive_rate === "" ? null : parseFloat(form.chouai_receive_rate),
     };
 
     let venueId = editingId;
@@ -821,6 +830,38 @@ export default function VenueMasterPage() {
                     </Select>
                     <p className="text-[10px] text-muted-foreground mt-1">催事作成時に自動で入金元として選ばれます。催事ごとに変更可。</p>
                   </div>
+                  {/* 入金率（税抜売上に対する入金比率%） */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-[10px] text-muted-foreground">直取引時の入金率（%）</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        value={form.direct_receive_rate}
+                        onChange={(e) => setForm({ ...form, direct_receive_rate: e.target.value })}
+                        placeholder="例: 80"
+                        className="h-8 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-[10px] text-muted-foreground">帳合経由時の入金率（%）</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        value={form.chouai_receive_rate}
+                        onChange={(e) => setForm({ ...form, chouai_receive_rate: e.target.value })}
+                        placeholder="例: 78"
+                        className="h-8 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    入金率 = 税抜売上に対して入金される比率。例: 80% → 税抜売上100万円のとき入金予定額 80万円（税抜）
+                  </p>
                 </div>
               );
             })()}
