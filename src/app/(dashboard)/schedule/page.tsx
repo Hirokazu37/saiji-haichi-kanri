@@ -675,17 +675,49 @@ export default function SchedulePage() {
           /* 対話用ガントはモバイルでも印刷時は必ず表示する */
           .interactive-gantt { display: block !important; }
 
-          /* ガントの横スクロール/min-width を解除して紙幅にフィット */
-          .gantt-scroll { overflow: visible !important; }
+          /* ===== 1ページ厳守のため、main 以下を flex で連鎖させてヘッダー以外の
+             残り領域をガントが埋めるようにする ===== */
+          main > div {
+            height: 100vh !important;
+            max-height: 100vh !important;
+            overflow: hidden !important;
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 0 !important;
+          }
+          [data-print-tableref] {
+            flex: 1 1 0 !important;
+            min-height: 0 !important;
+            display: flex !important;
+            flex-direction: column !important;
+          }
+          [data-print-tableref] > .interactive-gantt {
+            flex: 1 1 0 !important;
+            min-height: 0 !important;
+            padding: 0 !important;
+            gap: 0 !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+          }
+          [data-print-tableref] > .interactive-gantt > [data-slot="card-content"] {
+            flex: 1 1 0 !important;
+            min-height: 0 !important;
+            padding: 0 !important;
+            display: flex !important;
+            flex-direction: column !important;
+          }
+          .gantt-scroll {
+            flex: 1 1 0 !important;
+            min-height: 0 !important;
+            overflow: visible !important;
+          }
           .gantt-inner {
             min-width: 0 !important;
             width: 100% !important;
+            height: 100% !important;
+            max-height: 100% !important;
             display: flex !important;
             flex-direction: column !important;
-            /* 印刷ヘッダー（社員スケジュール〇月）のぶんを差し引いて1ページに収める */
-            height: calc(100vh - 9mm) !important;
-            min-height: 0 !important;
-            max-height: calc(100vh - 9mm) !important;
             overflow: hidden !important;
           }
           .gantt-label-cell { position: static !important; }
@@ -808,7 +840,7 @@ export default function SchedulePage() {
       )}
 
       {/* タイムライン */}
-      <div ref={tableRef}>
+      <div ref={tableRef} data-print-tableref>
         {/* 印刷用タイトル（1行・省スペース） */}
         <div className="hidden print:flex items-baseline justify-between gap-2 mb-1 border-b pb-0.5">
           <h2 className="text-sm font-bold">社員スケジュール　{monthLabel}</h2>
