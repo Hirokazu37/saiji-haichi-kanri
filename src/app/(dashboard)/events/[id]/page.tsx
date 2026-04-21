@@ -54,7 +54,20 @@ type EventData = {
   retrospective: string | null;
 };
 
-type DailyRevenueRow = { id: string; event_id: string; date: string; amount: number | null };
+type TaxType = "excluded" | "included";
+type DailyRevenueRow = {
+  id: string;
+  event_id: string;
+  date: string;
+  amount: number | null;
+  tax_type: TaxType;
+  tax_rate: number;
+};
+type DailyInput = { amount: string; tax_type: TaxType; tax_rate: number };
+
+// 税抜 ↔ 税込 変換（整数四捨五入）
+const toIncluded = (excludedAmount: number, rate: number) => Math.round(excludedAmount * (1 + rate));
+const toExcluded = (includedAmount: number, rate: number) => Math.round(includedAmount / (1 + rate));
 
 const statusColor: Record<string, string> = {
   "準備中": "bg-gray-100 text-gray-800",
@@ -101,8 +114,8 @@ export default function EventDetailPage({
     retrospective: "",
   });
 
-  // 日別売上: date(YYYY-MM-DD) -> 金額文字列
-  const [dailyRevenue, setDailyRevenue] = useState<Map<string, string>>(new Map());
+  // 日別売上: date(YYYY-MM-DD) -> { 金額文字列, 税抜/税込, 税率 }
+  const [dailyRevenue, setDailyRevenue] = useState<Map<string, DailyInput>>(new Map());
 
   const fetchEvent = useCallback(async () => {
     const [eventRes, empRes, staffRes, dailyRes] = await Promise.all([
@@ -133,9 +146,13 @@ export default function EventDetailPage({
       });
     }
     // 日別売上をMapに詰める
-    const dailyMap = new Map<string, string>();
+    const dailyMap = new Map<string, DailyInput>();
     ((dailyRes.data || []) as DailyRevenueRow[]).forEach((r) => {
-      if (r.amount != null) dailyMap.set(r.date, String(r.amount));
+      dailyMap.set(r.date, {
+        amount: r.amount != null ? String(r.amount) : "",
+        tax_type: (r.tax_type ?? "excluded") as TaxType,
+        tax_rate: r.tax_rate ?? 0.08,
+      });
     });
     setDailyRevenue(dailyMap);
     const emps = empRes.data || [];
@@ -196,16 +213,18 @@ export default function EventDetailPage({
       .join("、");
     const allNames = [...selectedNames, ...(freeText ? [freeText] : [])];
 
-    // 日別売上の合計を計算（events.revenue に反映して一覧・履歴との互換維持）
-    let dailyTotal = 0;
+    // 日別売上の税込合計を計算（events.revenue には税込合計を格納）
+    let includedTotal = 0;
     let hasAnyDaily = false;
     for (const v of dailyRevenue.values()) {
-      const n = v.trim() ? parseInt(v) : NaN;
-      if (!isNaN(n)) { dailyTotal += n; hasAnyDaily = true; }
+      const n = v.amount.trim() ? parseInt(v.amount) : NaN;
+      if (isNaN(n)) continue;
+      hasAnyDaily = true;
+      const inc = v.tax_type === "included" ? n : toIncluded(n, v.tax_rate);
+      includedTotal += inc;
     }
-    // 日別入力があればそれを合計として採用、無ければ従来通り単一入力値
     const revenueToSave = hasAnyDaily
-      ? dailyTotal
+      ? includedTotal
       : form.revenue.trim() ? parseInt(form.revenue) : null;
 
     await supabase
@@ -241,11 +260,17 @@ export default function EventDetailPage({
       existingByDate.set(r.date, { id: r.id, amount: r.amount });
     });
 
-    const toUpsert: Array<{ event_id: string; date: string; amount: number }> = [];
+    const toUpsert: Array<{
+      event_id: string;
+      date: string;
+      amount: number;
+      tax_type: TaxType;
+      tax_rate: number;
+    }> = [];
     const toDelete: string[] = [];
 
-    for (const [date, amtStr] of dailyRevenue.entries()) {
-      const trimmed = amtStr.trim();
+    for (const [date, input] of dailyRevenue.entries()) {
+      const trimmed = input.amount.trim();
       if (!trimmed) {
         // 空入力: 既存行があれば削除
         const ex = existingByDate.get(date);
@@ -254,7 +279,13 @@ export default function EventDetailPage({
       }
       const n = parseInt(trimmed);
       if (isNaN(n)) continue;
-      toUpsert.push({ event_id: id, date, amount: n });
+      toUpsert.push({
+        event_id: id,
+        date,
+        amount: n,
+        tax_type: input.tax_type,
+        tax_rate: input.tax_rate,
+      });
     }
     // dailyRevenue に含まれない日付で既存行があれば削除（会期変更などで日付が外れたケース）
     for (const [date, row] of existingByDate.entries()) {
@@ -538,45 +569,108 @@ export default function EventDetailPage({
               const d = new Date(ymd + "T00:00:00");
               return `${d.getMonth() + 1}/${d.getDate()}（${wdayLabel(ymd)}）`;
             };
-            const total = days.reduce((sum, d) => {
-              const v = dailyRevenue.get(d) ?? "";
-              const n = v.trim() ? parseInt(v) : NaN;
-              return isNaN(n) ? sum : sum + n;
-            }, 0);
+            // 税込・税抜の各合計を計算
+            let totalExcluded = 0;
+            let totalIncluded = 0;
+            for (const d of days) {
+              const v = dailyRevenue.get(d);
+              if (!v) continue;
+              const n = v.amount.trim() ? parseInt(v.amount) : NaN;
+              if (isNaN(n)) continue;
+              if (v.tax_type === "excluded") {
+                totalExcluded += n;
+                totalIncluded += toIncluded(n, v.tax_rate);
+              } else {
+                totalIncluded += n;
+                totalExcluded += toExcluded(n, v.tax_rate);
+              }
+            }
+
+            const getInput = (ymd: string): DailyInput => {
+              return dailyRevenue.get(ymd) ?? { amount: "", tax_type: "excluded", tax_rate: 0.08 };
+            };
+            const updateInput = (ymd: string, patch: Partial<DailyInput>) => {
+              const next = new Map(dailyRevenue);
+              const cur = getInput(ymd);
+              next.set(ymd, { ...cur, ...patch });
+              setDailyRevenue(next);
+            };
 
             return (
               <div className="space-y-2">
-                <Label className="text-xs">売上金額（円） — 日別</Label>
+                <Label className="text-xs">売上金額（円） — 日別（税抜/税込を選んでください）</Label>
                 {days.length === 0 ? (
                   <p className="text-xs text-muted-foreground">開催期間を入力すると日別の入力欄が表示されます</p>
                 ) : (
                   <div className="space-y-1.5">
-                    {days.map((ymd, idx) => (
-                      <div key={ymd} className="flex items-center gap-2">
-                        <div className="w-24 text-xs text-muted-foreground shrink-0">
-                          {fmt(ymd)}
-                          {idx === days.length - 1 && days.length > 1 && (
-                            <span className="ml-1 text-[10px] text-amber-700">（最終日）</span>
-                          )}
+                    {days.map((ymd, idx) => {
+                      const input = getInput(ymd);
+                      const n = input.amount.trim() ? parseInt(input.amount) : NaN;
+                      const otherLabel = input.tax_type === "excluded"
+                        ? (isNaN(n) ? "—" : `税込 ¥${toIncluded(n, input.tax_rate).toLocaleString()}`)
+                        : (isNaN(n) ? "—" : `税抜 ¥${toExcluded(n, input.tax_rate).toLocaleString()}`);
+                      return (
+                        <div key={ymd} className="flex items-center gap-2 flex-wrap">
+                          <div className="w-24 text-xs text-muted-foreground shrink-0">
+                            {fmt(ymd)}
+                            {idx === days.length - 1 && days.length > 1 && (
+                              <span className="ml-1 text-[10px] text-amber-700">（最終日）</span>
+                            )}
+                          </div>
+                          <Input
+                            type="number"
+                            min={0}
+                            step={1000}
+                            value={input.amount}
+                            onChange={(e) => updateInput(ymd, { amount: e.target.value })}
+                            placeholder="例: 250000"
+                            className="h-9 max-w-[160px]"
+                          />
+                          {/* 税抜/税込 トグル */}
+                          <div className="inline-flex rounded-md border overflow-hidden text-xs">
+                            <button
+                              type="button"
+                              onClick={() => updateInput(ymd, { tax_type: "excluded" })}
+                              className={`px-2 py-1 ${input.tax_type === "excluded" ? "bg-emerald-600 text-white font-bold" : "bg-white text-muted-foreground hover:bg-muted"}`}
+                            >
+                              税抜
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updateInput(ymd, { tax_type: "included" })}
+                              className={`px-2 py-1 border-l ${input.tax_type === "included" ? "bg-emerald-600 text-white font-bold" : "bg-white text-muted-foreground hover:bg-muted"}`}
+                            >
+                              税込
+                            </button>
+                          </div>
+                          {/* 税率（8% / 10% 切替） */}
+                          <Select
+                            value={String(input.tax_rate)}
+                            onValueChange={(v) => v && updateInput(ymd, { tax_rate: parseFloat(v) })}
+                          >
+                            <SelectTrigger className="h-9 w-[80px] text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="0.08">8%</SelectItem>
+                              <SelectItem value="0.1">10%</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          {/* 自動計算のもう片方 */}
+                          <span className="text-xs text-muted-foreground">→ {otherLabel}</span>
                         </div>
-                        <Input
-                          type="number"
-                          min={0}
-                          step={1000}
-                          value={dailyRevenue.get(ymd) ?? ""}
-                          onChange={(e) => {
-                            const next = new Map(dailyRevenue);
-                            next.set(ymd, e.target.value);
-                            setDailyRevenue(next);
-                          }}
-                          placeholder="例: 250000"
-                          className="h-9 max-w-[200px]"
-                        />
-                      </div>
-                    ))}
-                    <div className="flex items-center gap-2 pt-2 border-t">
+                      );
+                    })}
+                    <div className="flex items-center gap-4 pt-2 border-t flex-wrap">
                       <span className="w-24 text-xs font-semibold shrink-0">合計</span>
-                      <span className="font-bold text-emerald-800">¥{total.toLocaleString()}</span>
+                      <span className="text-sm">
+                        <span className="text-muted-foreground">税抜 </span>
+                        <span className="font-bold text-emerald-800">¥{totalExcluded.toLocaleString()}</span>
+                      </span>
+                      <span className="text-sm">
+                        <span className="text-muted-foreground">税込 </span>
+                        <span className="font-bold text-emerald-800">¥{totalIncluded.toLocaleString()}</span>
+                      </span>
                     </div>
                   </div>
                 )}
