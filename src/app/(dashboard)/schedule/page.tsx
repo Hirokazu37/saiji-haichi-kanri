@@ -324,28 +324,20 @@ export default function SchedulePage() {
   const labelColWidth = 112; // 社員名列の幅（w-28）
   const ganttMinWidth = labelColWidth + allDays.length * colWidth;
 
-  // 表示中の基準月（= year/month）の開始位置に自動スクロール
-  const scrollToBaseMonth = useCallback(() => {
-    const container = ganttScrollRef.current;
-    if (!container || allDays.length === 0) return;
-    // 基準月の1日のインデックスを算出
-    const baseIdx = allDays.findIndex(
-      (d) => d.year === year && d.month === month && d.day === 1,
-    );
-    if (baseIdx < 0) {
-      container.scrollLeft = 0;
-      return;
-    }
-    const targetLeft = labelColWidth + baseIdx * colWidth;
-    container.scrollTo({ left: Math.max(0, targetLeft), behavior: "smooth" });
-  }, [allDays, year, month, colWidth]);
-
-  // ロード完了・月切替・表示月数変更時に基準月へスクロール
+  // ロード完了・月切替・表示月数変更時に基準月（表示範囲の先頭）へスクロール
+  // NOTE: 依存は「year/month/monthSpan/loading」だけに絞る。
+  //       allDays/scrollToBaseMonthを入れると、バーをクリックした瞬間の
+  //       dragState更新で useEffect が再発火してスクロール位置が戻ってしまう。
   useEffect(() => {
     if (loading) return;
-    const t = setTimeout(() => scrollToBaseMonth(), 120);
+    const t = setTimeout(() => {
+      const container = ganttScrollRef.current;
+      if (!container) return;
+      // 表示範囲の先頭（year/month の1日）がコンテナのスクロール位置 0 に対応する
+      container.scrollTo({ left: 0, behavior: "smooth" });
+    }, 120);
     return () => clearTimeout(t);
-  }, [year, month, monthSpan, loading, scrollToBaseMonth]);
+  }, [year, month, monthSpan, loading]);
 
   // --- バーのドラッグで日程調整（PC向け） ---
   const DRAG_THRESHOLD_PX = 5;
