@@ -11,9 +11,11 @@ import {
 import {
   Tooltip, TooltipTrigger, TooltipContent, TooltipProvider,
 } from "@/components/ui/tooltip";
-import { ChevronLeft, ChevronRight, Printer, ImageDown, X, Hotel, Users } from "lucide-react";
+import { ChevronLeft, ChevronRight, Printer, ImageDown, X, Hotel, Users, Plus } from "lucide-react";
 import Link from "next/link";
 import { getHolidaysForRange } from "@/lib/holidays";
+import { StaffAssignmentDialog } from "@/components/arrangements/StaffAssignmentDialog";
+import { usePermission } from "@/hooks/usePermission";
 
 type Employee = { id: string; name: string };
 type PersonKind = "employee" | "mannequin";
@@ -87,6 +89,12 @@ export default function SchedulePage() {
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   // モバイル専用のビュー切替（カード / カレンダー / ガント）
   const [mobileView, setMobileView] = useState<"card" | "calendar" | "gantt">("card");
+  // 配置編集ダイアログの状態
+  const { canEdit } = usePermission();
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createInitialPersonKey, setCreateInitialPersonKey] = useState<string | null>(null);
 
   const people: Person[] = useMemo(() => [
     ...employees.map((e) => ({ id: e.id, name: e.name, kind: "employee" as const })),
@@ -311,7 +319,16 @@ export default function SchedulePage() {
 
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-2xl font-bold">社員スケジュール</h1>
-        <div className="flex gap-2 print:hidden">
+        <div className="flex gap-2 print:hidden flex-wrap">
+          {canEdit && (
+            <Button
+              size="sm"
+              onClick={() => { setCreateInitialPersonKey(null); setCreateOpen(true); }}
+              className="bg-cyan-700 hover:bg-cyan-800"
+            >
+              <Plus className="h-4 w-4 mr-1" />社員を配置
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={handlePrint}>
             <Printer className="h-4 w-4 mr-1" />印刷
           </Button>
@@ -496,7 +513,16 @@ export default function SchedulePage() {
                       </div>
                       <div className="pt-2 border-t space-y-1.5">
                         {staff.map((s) => (
-                          <div key={s.id} className="flex items-center gap-2 text-sm flex-wrap">
+                          <div
+                            key={s.id}
+                            className={`flex items-center gap-2 text-sm flex-wrap ${canEdit ? "cursor-pointer hover:bg-muted/40 rounded px-1 -mx-1" : ""}`}
+                            onClick={canEdit ? (e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setEditingAssignmentId(s.id);
+                              setEditOpen(true);
+                            } : undefined}
+                          >
                             <Users className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                             <span className="font-medium">{s.name}</span>
                             {s.kind === "mannequin" && (
@@ -712,21 +738,41 @@ export default function SchedulePage() {
                             <Tooltip key={a.id}>
                               <TooltipTrigger
                                 render={
-                                  <Link
-                                    href={`/events/${a.event_id}`}
-                                    className={`absolute rounded text-xs leading-snug px-1.5 flex items-center overflow-hidden whitespace-nowrap hover:opacity-80 transition-opacity z-[1] ${color.bar}`}
-                                    style={{
-                                      left: style.left,
-                                      width: style.width,
-                                      top: `${top}px`,
-                                      height: `${BAR_HEIGHT}px`,
-                                    }}
-                                  >
-                                    <div className="truncate font-bold">{a.events?.venue}{a.events?.store_name ? ` ${a.events.store_name}` : ""}</div>
-                                    {a.hotel_name && (
-                                      <div className="truncate text-[11px] opacity-70">🏨 {a.hotel_name}</div>
-                                    )}
-                                  </Link>
+                                  canEdit ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => { setEditingAssignmentId(a.id); setEditOpen(true); }}
+                                      className={`absolute rounded text-xs leading-snug px-1.5 flex items-center overflow-hidden whitespace-nowrap hover:opacity-80 hover:ring-2 hover:ring-primary/40 transition-all z-[1] text-left cursor-pointer ${color.bar}`}
+                                      style={{
+                                        left: style.left,
+                                        width: style.width,
+                                        top: `${top}px`,
+                                        height: `${BAR_HEIGHT}px`,
+                                      }}
+                                      aria-label={`${a.events?.venue} の配置を編集`}
+                                    >
+                                      <div className="truncate font-bold">{a.events?.venue}{a.events?.store_name ? ` ${a.events.store_name}` : ""}</div>
+                                      {a.hotel_name && (
+                                        <div className="truncate text-[11px] opacity-70">🏨 {a.hotel_name}</div>
+                                      )}
+                                    </button>
+                                  ) : (
+                                    <Link
+                                      href={`/events/${a.event_id}`}
+                                      className={`absolute rounded text-xs leading-snug px-1.5 flex items-center overflow-hidden whitespace-nowrap hover:opacity-80 transition-opacity z-[1] ${color.bar}`}
+                                      style={{
+                                        left: style.left,
+                                        width: style.width,
+                                        top: `${top}px`,
+                                        height: `${BAR_HEIGHT}px`,
+                                      }}
+                                    >
+                                      <div className="truncate font-bold">{a.events?.venue}{a.events?.store_name ? ` ${a.events.store_name}` : ""}</div>
+                                      {a.hotel_name && (
+                                        <div className="truncate text-[11px] opacity-70">🏨 {a.hotel_name}</div>
+                                      )}
+                                    </Link>
+                                  )
                                 }
                               />
                               <TooltipContent side="bottom" className="max-w-xs">
@@ -757,6 +803,23 @@ export default function SchedulePage() {
           </Card>
         </TooltipProvider>
       </div>
+
+      {/* 配置編集ダイアログ（バークリック時） */}
+      <StaffAssignmentDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        assignmentId={editingAssignmentId}
+        onSaved={fetchData}
+      />
+      {/* 新規配置ダイアログ（「社員を配置」ボタン） */}
+      <StaffAssignmentDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        assignmentId={null}
+        initialPersonKey={createInitialPersonKey}
+        showEventSelect={true}
+        onSaved={fetchData}
+      />
     </div>
   );
 }
