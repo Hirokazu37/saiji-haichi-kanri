@@ -662,8 +662,18 @@ export default function SchedulePage() {
       {/* 印刷用スタイル（A4 1枚・ガントのみ・社員行を flex で均等配分） */}
       <style>{`
         @media print {
-          @page { size: A4 ${printOpts.orientation}; margin: 8mm; }
+          @page { size: A4 ${printOpts.orientation} !important; margin: 8mm; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 10px; }
+          /* globals.css の「* { overflow: visible !important }」と
+             「[data-slot=card] { break-inside: avoid }」を上書き */
+          .gantt-bar { overflow: hidden !important; }
+          .gantt-emp-row { overflow: hidden !important; }
+          .gantt-inner { overflow: hidden !important; }
+          .interactive-gantt,
+          .interactive-gantt[data-slot="card"] {
+            break-inside: auto !important;
+            page-break-inside: auto !important;
+          }
           /* AppShellのサイドバー/ヘッダー/フッタ/FAB/ボトムナビを非表示 */
           aside, header, footer, nav { display: none !important; }
           /* サイドバー左余白と main の全paddingを明示的に解除して紙面をフル活用 */
