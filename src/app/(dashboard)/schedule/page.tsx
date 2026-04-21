@@ -675,47 +675,23 @@ export default function SchedulePage() {
           /* 対話用ガントはモバイルでも印刷時は必ず表示する */
           .interactive-gantt { display: block !important; }
 
-          /* ===== 1ページ厳守のため、main 以下を flex で連鎖させてヘッダー以外の
-             残り領域をガントが埋めるようにする ===== */
-          main > div {
-            height: 100vh !important;
-            max-height: 100vh !important;
-            overflow: hidden !important;
-            display: flex !important;
-            flex-direction: column !important;
-            gap: 0 !important;
-          }
-          [data-print-tableref] {
-            flex: 1 1 0 !important;
-            min-height: 0 !important;
-            display: flex !important;
-            flex-direction: column !important;
-          }
-          [data-print-tableref] > .interactive-gantt {
-            flex: 1 1 0 !important;
-            min-height: 0 !important;
+          /* ===== 1ページ厳守: Cardの余白を消して gantt-inner を絶対高さに固定 ===== */
+          .interactive-gantt {
             padding: 0 !important;
             gap: 0 !important;
             border-radius: 0 !important;
             box-shadow: none !important;
+            ring-width: 0 !important;
           }
-          [data-print-tableref] > .interactive-gantt > [data-slot="card-content"] {
-            flex: 1 1 0 !important;
-            min-height: 0 !important;
-            padding: 0 !important;
-            display: flex !important;
-            flex-direction: column !important;
-          }
-          .gantt-scroll {
-            flex: 1 1 0 !important;
-            min-height: 0 !important;
-            overflow: visible !important;
-          }
+          [data-slot="card-content"] { padding: 0 !important; }
+          .gantt-scroll { overflow: visible !important; }
           .gantt-inner {
             min-width: 0 !important;
             width: 100% !important;
-            height: 100% !important;
-            max-height: 100% !important;
+            /* 印刷ヘッダー(〜5mm) + 印刷マージン(16mm) + Card border(〜2mm) を差し引く */
+            height: calc(100vh - 10mm) !important;
+            max-height: calc(100vh - 10mm) !important;
+            min-height: 0 !important;
             display: flex !important;
             flex-direction: column !important;
             overflow: hidden !important;
