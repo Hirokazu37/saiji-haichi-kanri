@@ -528,7 +528,7 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
                   const sel = equipmentFrom === v.label;
                   return (
                     <Badge key={v.label} variant="outline"
-                      className={`cursor-pointer text-xs transition-colors ${sel ? "bg-amber-500 border-amber-500 text-white font-bold" : "border-amber-300 text-amber-400 bg-white hover:bg-amber-50 hover:text-amber-700 hover:border-amber-500"}`}
+                      className={`cursor-pointer text-xs transition-colors ${sel ? "bg-amber-500 border-amber-500 text-white font-bold" : "border-amber-400 text-foreground bg-white hover:bg-amber-50 hover:border-amber-500"}`}
                       onClick={() => { setEquipmentFrom(sel ? null : v.label); markDirty(); }}
                       title={`${v.label} は ${v.date} 終了（${v.days}日前）`}
                     >
@@ -572,7 +572,7 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
                   const sel = equipmentTo === v.label;
                   return (
                     <Badge key={v.label} variant="outline"
-                      className={`cursor-pointer text-xs transition-colors ${sel ? "bg-amber-500 border-amber-500 text-white font-bold" : "border-amber-300 text-amber-400 bg-white hover:bg-amber-50 hover:text-amber-700 hover:border-amber-500"}`}
+                      className={`cursor-pointer text-xs transition-colors ${sel ? "bg-amber-500 border-amber-500 text-white font-bold" : "border-amber-400 text-foreground bg-white hover:bg-amber-50 hover:border-amber-500"}`}
                       onClick={() => { setEquipmentTo(sel ? null : v.label); markDirty(); }}
                       title={`${v.label} は ${v.date} 開始（${v.days}日後）`}
                     >
