@@ -709,11 +709,16 @@ export default function SchedulePage() {
 
   return (
     <div className="space-y-4">
-      {/* 印刷用スタイル（@page と page-break のみ） */}
+      {/* 印刷用スタイル（@page と page-break、レイアウト解除） */}
       <style>{`
         @media print {
           @page { size: A4 ${printOpts.orientation}; margin: 8mm; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          /* AppShellのサイドバー/ヘッダー/フッタ/FAB/ボトムナビを非表示 */
+          aside, header, footer, nav { display: none !important; }
+          /* サイドバー左余白とmain padding を解除して紙幅をフル活用 */
+          .md\\:pl-60 { padding-left: 0 !important; }
+          main { padding: 0 !important; }
           .print-page { page-break-after: always; }
           .print-page:last-child { page-break-after: auto; }
         }
