@@ -521,6 +521,9 @@ export default function EventDetailPage({
           </div>
           <div className="space-y-2">
             <Label>担当者</Label>
+            <p className="text-[11px] text-muted-foreground -mt-1">
+              ここで選んだ社員は「社員配置」にも会期全日で自動登録されます（日別のシフトは下の「社員配置」で調整）。一覧・カードに「担当: ○○」と表示する短い見出しとしても使われます。
+            </p>
             <div className="flex flex-wrap gap-2">
               {employees.map((emp) => {
                 const selected = selectedEmployeeIds.includes(emp.id);

@@ -846,6 +846,9 @@ function NewEventPageInner() {
           {/* 担当者 */}
           <div className="space-y-2">
             <Label>担当者</Label>
+            <p className="text-[11px] text-muted-foreground -mt-1">
+              ここで選んだ社員は「社員配置」にも会期全日で自動登録されます（日別のシフトは下の「社員配置」で調整）。一覧・カードに「担当: ○○」と表示する短い見出しとしても使われます。
+            </p>
             <Input value={buildPersonInCharge()} readOnly placeholder="下の社員名をタップして追加" className="bg-white" />
             <div className="flex flex-wrap gap-2">
               {employees.map((emp) => {
