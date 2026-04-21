@@ -11,6 +11,10 @@ import {
 import {
   Tooltip, TooltipTrigger, TooltipContent, TooltipProvider,
 } from "@/components/ui/tooltip";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { ChevronLeft, ChevronRight, Printer, ImageDown, X, Hotel, Users, Plus } from "lucide-react";
 import Link from "next/link";
 import { getHolidaysForRange } from "@/lib/holidays";
@@ -86,6 +90,14 @@ export default function SchedulePage() {
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth() + 1);
   const [monthSpan, setMonthSpan] = useState(1);
+
+  // 印刷設定
+  const [printDialogOpen, setPrintDialogOpen] = useState(false);
+  const [printOpts, setPrintOpts] = useState({
+    orientation: "landscape" as "landscape" | "portrait",
+    totalMonths: 3,
+    monthsPerPage: 2,
+  });
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   // モバイル専用のビュー切替（カード / カレンダー / ガント）
   const [mobileView, setMobileView] = useState<"card" | "calendar" | "gantt">("card");
@@ -606,8 +618,14 @@ export default function SchedulePage() {
     };
   }, []);
 
-  const handlePrint = () => {
-    // 先にprintModeに切替→レイアウト再計算してからプリントダイアログ
+  // 印刷設定ダイアログを開く（旧handlePrintは置き換え）
+  const handleOpenPrintDialog = () => {
+    setPrintOpts((prev) => ({ ...prev, totalMonths: Math.max(prev.totalMonths, monthSpan) }));
+    setPrintDialogOpen(true);
+  };
+
+  const handleDoPrint = () => {
+    setPrintDialogOpen(false);
     setPrintMode(true);
     // Reactの再レンダリングを待ってから印刷
     requestAnimationFrame(() => {
@@ -616,6 +634,41 @@ export default function SchedulePage() {
       });
     });
   };
+
+  // 印刷用: 印刷期間に応じた月リストを生成
+  const printAllMonths = useMemo(() => {
+    const list: { year: number; month: number; days: number }[] = [];
+    let y = year, m = month;
+    for (let i = 0; i < printOpts.totalMonths; i++) {
+      list.push({ year: y, month: m, days: new Date(y, m, 0).getDate() });
+      m++;
+      if (m > 12) { y++; m = 1; }
+    }
+    return list;
+  }, [year, month, printOpts.totalMonths]);
+
+  // 印刷用: monthsPerPage ごとにページ分割
+  const printPages = useMemo(() => {
+    const pages: typeof printAllMonths[] = [];
+    const per = Math.max(1, printOpts.monthsPerPage);
+    for (let i = 0; i < printAllMonths.length; i += per) {
+      pages.push(printAllMonths.slice(i, i + per));
+    }
+    return pages;
+  }, [printAllMonths, printOpts.monthsPerPage]);
+
+  // 月リスト → 日リスト 変換（PrintGanttSlice用）
+  const daysForMonths = useCallback((months: { year: number; month: number; days: number }[]) => {
+    const list: { year: number; month: number; day: number; date: Date; dateStr: string }[] = [];
+    months.forEach((m) => {
+      for (let d = 1; d <= m.days; d++) {
+        const date = new Date(m.year, m.month - 1, d);
+        const dateStr = `${m.year}-${String(m.month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+        list.push({ year: m.year, month: m.month, day: d, date, dateStr });
+      }
+    });
+    return list;
+  }, []);
 
   const handleSaveJpg = async () => {
     if (!tableRef.current) return;
@@ -649,25 +702,21 @@ export default function SchedulePage() {
 
   return (
     <div className="space-y-4">
-      {/* 印刷用スタイル */}
+      {/* 印刷用スタイル（@page だけはStateに応じて動的に出し分け） */}
       <style>{`
         @media print {
-          @page { size: A4 landscape; margin: 10mm; }
+          @page { size: A4 ${printOpts.orientation}; margin: 8mm; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          /* 印刷時はガントの横スクロール・sticky を全解除して用紙に収める */
-          .gantt-scroll {
-            overflow: visible !important;
-          }
-          .gantt-inner {
-            min-width: 0 !important;
-            width: 100% !important;
-          }
-          .gantt-label-cell {
-            position: static !important;
-          }
+          /* 印刷時は対話ガントを非表示・印刷専用ガントだけ表示 */
+          .interactive-gantt { display: none !important; }
+          .print-only-gantt { display: block !important; }
+          .print-page { page-break-after: always; }
+          .print-page:last-child { page-break-after: auto; }
           /* モバイル用のカード・カレンダービュー・モード切替タブは印刷しない */
           .mobile-only-view { display: none !important; }
         }
+        /* 通常時は印刷専用ガントを非表示 */
+        .print-only-gantt { display: none; }
       `}</style>
 
       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -682,7 +731,7 @@ export default function SchedulePage() {
               <Plus className="h-4 w-4 mr-1" />社員を配置
             </Button>
           )}
-          <Button variant="outline" size="sm" onClick={handlePrint}>
+          <Button variant="outline" size="sm" onClick={handleOpenPrintDialog}>
             <Printer className="h-4 w-4 mr-1" />印刷
           </Button>
           <Button variant="outline" size="sm" onClick={handleSaveJpg}>
@@ -989,7 +1038,7 @@ export default function SchedulePage() {
 
         {/* ===== ガントチャート（PC は常に、モバイルは gantt 選択時のみ表示） ===== */}
         <TooltipProvider>
-          <Card className={`${mobileView === "gantt" ? "block" : "hidden"} md:block`}>
+          <Card className={`interactive-gantt ${mobileView === "gantt" ? "block" : "hidden"} md:block`}>
             <CardContent className="p-0">
               <div
                 ref={ganttScrollRef}
@@ -1201,6 +1250,144 @@ export default function SchedulePage() {
             </CardContent>
           </Card>
         </TooltipProvider>
+
+        {/* ===== 印刷専用ガント（@media print 時のみ表示・複数ページ分割） ===== */}
+        <div className="print-only-gantt">
+          {printPages.map((slice, pageIdx) => {
+            const sliceDays = daysForMonths(slice);
+            const sliceTotal = sliceDays.length;
+            return (
+              <div key={pageIdx} className="print-page mb-3">
+                {/* ページヘッダー */}
+                <div className="text-center mb-2">
+                  <h2 className="text-base font-bold">社員スケジュール</h2>
+                  <p className="text-xs text-muted-foreground">
+                    {slice[0].year}年{slice[0].month}月
+                    {slice.length > 1 ? ` 〜 ${slice[slice.length - 1].year}年${slice[slice.length - 1].month}月` : ""}
+                    （{pageIdx + 1} / {printPages.length}）
+                  </p>
+                </div>
+                <div className="border rounded">
+                  {/* 月ヘッダー */}
+                  <div className="flex border-b">
+                    <div className="w-24 shrink-0 border-r" />
+                    <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${sliceTotal}, minmax(0, 1fr))` }}>
+                      {slice.map((m) => (
+                        <div
+                          key={`${m.year}-${m.month}`}
+                          className="text-center text-[11px] font-bold py-0.5 border-r bg-muted/50"
+                          style={{ gridColumn: `span ${m.days}` }}
+                        >
+                          {m.year}年{m.month}月
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {/* 日付ヘッダー */}
+                  <div className="flex border-b">
+                    <div className="w-24 shrink-0 p-1 border-r font-medium text-[10px]">社員名</div>
+                    <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${sliceTotal}, minmax(0, 1fr))` }}>
+                      {sliceDays.map((d, i) => {
+                        const red = isRedDay(d.date, d.dateStr);
+                        const sat = isSaturday(d.date);
+                        return (
+                          <div
+                            key={i}
+                            className={`text-center text-[8px] py-0.5 border-r ${red ? "bg-red-50/60" : sat ? "bg-blue-50/60" : ""}`}
+                          >
+                            <div>{d.day}</div>
+                            <div className={red ? "text-red-500" : sat ? "text-blue-500" : "text-muted-foreground"}>
+                              {getDayOfWeek(d.date)}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {/* 各社員行 */}
+                  {displayPeople.map((p, idx) => {
+                    const empAssignments = getAssignmentsForPerson(p);
+                    const rowCount = getRowCount(empAssignments);
+                    const rowMap = computeRows(empAssignments);
+                    const rowHeight = ROW_PADDING * 2 + rowCount * BAR_HEIGHT + (rowCount - 1) * BAR_GAP;
+                    const minH = Math.max(28, rowHeight);
+                    const sliceStart = sliceDays[0].date;
+                    const sliceEnd = sliceDays[sliceDays.length - 1].date;
+                    return (
+                      <div
+                        key={makePersonKey(p)}
+                        className={`flex border-b ${idx % 2 === 1 ? "bg-muted/20" : ""}`}
+                        style={{ minHeight: minH }}
+                      >
+                        <div className="w-24 shrink-0 p-1 border-r text-[10px] font-medium flex items-center gap-1">
+                          <span className="truncate">{p.name}</span>
+                          {p.kind === "mannequin" && (
+                            <span className="text-[8px] px-0.5 rounded bg-pink-100 text-pink-800 font-medium shrink-0">ﾏ</span>
+                          )}
+                        </div>
+                        <div className="flex-1 relative">
+                          {/* 背景グリッド */}
+                          <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${sliceTotal}, minmax(0, 1fr))` }}>
+                            {sliceDays.map((d, i) => {
+                              const red = isRedDay(d.date, d.dateStr);
+                              const sat = isSaturday(d.date);
+                              return (
+                                <div key={i} className={`border-r ${red ? "bg-red-50/30" : sat ? "bg-blue-50/30" : ""}`} />
+                              );
+                            })}
+                          </div>
+                          {/* バー（このスライスにかかるものだけ） */}
+                          {empAssignments.map((a) => {
+                            const start = new Date(a.start_date);
+                            const end = new Date(a.end_date);
+                            if (end < sliceStart || start > sliceEnd) return null;
+                            const effStart = start < sliceStart ? sliceStart : start;
+                            const effEnd = end > sliceEnd ? sliceEnd : end;
+                            const startIdx = sliceDays.findIndex((d) =>
+                              d.date.getFullYear() === effStart.getFullYear() &&
+                              d.date.getMonth() === effStart.getMonth() &&
+                              d.date.getDate() === effStart.getDate()
+                            );
+                            const endIdx = sliceDays.findIndex((d) =>
+                              d.date.getFullYear() === effEnd.getFullYear() &&
+                              d.date.getMonth() === effEnd.getMonth() &&
+                              d.date.getDate() === effEnd.getDate()
+                            );
+                            if (startIdx === -1 || endIdx === -1) return null;
+                            const left = (startIdx / sliceTotal) * 100;
+                            const width = ((endIdx - startIdx + 1) / sliceTotal) * 100;
+                            const color = eventColorMap.get(a.event_id) || colors[0];
+                            const row = rowMap.get(a.id) || 0;
+                            const top = ROW_PADDING + row * (BAR_HEIGHT + BAR_GAP);
+                            return (
+                              <div
+                                key={a.id}
+                                className={`absolute rounded text-[8px] leading-tight px-0.5 flex items-center overflow-hidden whitespace-nowrap ${color.bar}`}
+                                style={{
+                                  left: `${left}%`,
+                                  width: `${width}%`,
+                                  top: `${top}px`,
+                                  height: `${BAR_HEIGHT}px`,
+                                }}
+                              >
+                                <span className="truncate font-bold">
+                                  {a.events?.venue}{a.events?.store_name ? ` ${a.events.store_name}` : ""}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {displayPeople.length === 0 && (
+                    <div className="p-4 text-center text-xs text-muted-foreground">表示する社員・マネキンがありません。</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* 空白ドラッグ中の範囲プレビュー */}
@@ -1307,6 +1494,73 @@ export default function SchedulePage() {
         onSaved={fetchData}
         onChange={recordChange}
       />
+
+      {/* 印刷設定ダイアログ */}
+      <Dialog open={printDialogOpen} onOpenChange={setPrintDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>印刷設定</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label className="text-xs">用紙の向き</Label>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={printOpts.orientation === "landscape" ? "default" : "outline"}
+                  onClick={() => setPrintOpts((p) => ({ ...p, orientation: "landscape" }))}
+                >
+                  横（landscape）
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={printOpts.orientation === "portrait" ? "default" : "outline"}
+                  onClick={() => setPrintOpts((p) => ({ ...p, orientation: "portrait" }))}
+                >
+                  縦（portrait）
+                </Button>
+              </div>
+              <p className="text-[10px] text-muted-foreground">横は1日の幅が広く、縦は社員行が多い時に見やすい</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs">印刷する期間（{year}年{month}月から）</Label>
+              <Select value={String(printOpts.totalMonths)} onValueChange={(v) => v && setPrintOpts((p) => ({ ...p, totalMonths: parseInt(v) }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {[1, 2, 3, 4, 6, 12].map((n) => (
+                    <SelectItem key={n} value={String(n)}>{n}ヶ月</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs">1ページに表示する月数</Label>
+              <Select value={String(printOpts.monthsPerPage)} onValueChange={(v) => v && setPrintOpts((p) => ({ ...p, monthsPerPage: parseInt(v) }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">1ヶ月（最も読みやすい）</SelectItem>
+                  <SelectItem value="2">2ヶ月（バランス）</SelectItem>
+                  <SelectItem value="3">3ヶ月（やや詰めて節約）</SelectItem>
+                  <SelectItem value="4">4ヶ月（限界まで詰める）</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground">
+                出力枚数: 約 {Math.ceil(printOpts.totalMonths / Math.max(1, printOpts.monthsPerPage))} 枚
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline">キャンセル</Button>} />
+            <Button onClick={handleDoPrint}>
+              <Printer className="h-4 w-4 mr-1" />印刷を実行
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
