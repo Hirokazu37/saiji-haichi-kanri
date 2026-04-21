@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, Fragment } from "react";
+import { useEffect, useState, useCallback, useRef, Fragment } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +17,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel,
 } from "@/components/ui/select";
-import { Plus, Pencil, Trash2, Search, X, Store, PlusCircle, ChevronRight, ChevronDown, GripVertical } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, X, Store, PlusCircle, ChevronRight, ChevronDown, GripVertical, Download, Upload } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import {
   DndContext,
@@ -91,7 +91,9 @@ const emptyForm = {
 };
 
 export default function VenueMasterPage() {
-  const { canEdit } = usePermission();
+  const { canEdit, canViewPayments } = usePermission();
+  const importFileRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
   const supabase = createClient();
   const [venues, setVenues] = useState<VenueMaster[]>([]);
   const [areas, setAreas] = useState<AreaItem[]>([]);
@@ -578,13 +580,209 @@ export default function VenueMasterPage() {
     );
   };
 
+  // CSVエクスポート：百貨店マスター＋入金サイクル
+  const exportCsv = () => {
+    const headers = [
+      "venue_name", "store_name", "reading", "prefecture",
+      "closing_day", "pay_month_offset", "pay_day",
+      "default_payer_name", "direct_receive_rate", "chouai_receive_rate",
+    ];
+    const dayToLabel = (d: number | null | undefined) => d == null ? "" : d === 0 ? "月末" : `${d}`;
+    const offToLabel = (o: number | null | undefined) => o == null ? "" : o === 0 ? "当月" : o === 1 ? "翌月" : o === 2 ? "翌々月" : String(o);
+    const rows = venues.map((v) => {
+      const defaultPayerName = v.default_payer_id
+        ? payers.find((p) => p.id === v.default_payer_id)?.name ?? ""
+        : "";
+      return [
+        v.venue_name,
+        v.store_name ?? "",
+        v.reading ?? "",
+        v.prefecture ?? "",
+        dayToLabel(v.closing_day),
+        offToLabel(v.pay_month_offset),
+        dayToLabel(v.pay_day),
+        defaultPayerName,
+        v.direct_receive_rate != null ? String(v.direct_receive_rate) : "",
+        v.chouai_receive_rate != null ? String(v.chouai_receive_rate) : "",
+      ];
+    });
+    const esc = (s: string) => `"${s.replace(/"/g, '""')}"`;
+    const csv = [headers, ...rows].map((r) => r.map(esc).join(",")).join("\r\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `百貨店マスター_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // CSVパース（簡易）: ダブルクオート・エスケープ対応
+  const parseCsv = (text: string): string[][] => {
+    const rows: string[][] = [];
+    let row: string[] = [];
+    let cell = "";
+    let inQuote = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (inQuote) {
+        if (c === '"') {
+          if (text[i + 1] === '"') { cell += '"'; i++; }
+          else { inQuote = false; }
+        } else {
+          cell += c;
+        }
+      } else {
+        if (c === '"') inQuote = true;
+        else if (c === ",") { row.push(cell); cell = ""; }
+        else if (c === "\n" || c === "\r") {
+          if (cell !== "" || row.length > 0) { row.push(cell); rows.push(row); row = []; cell = ""; }
+          if (c === "\r" && text[i + 1] === "\n") i++;
+        } else {
+          cell += c;
+        }
+      }
+    }
+    if (cell !== "" || row.length > 0) { row.push(cell); rows.push(row); }
+    return rows;
+  };
+
+  const parseDayField = (v: string): number | null => {
+    const s = v.trim();
+    if (!s) return null;
+    if (s === "月末" || s.toLowerCase() === "end") return 0;
+    const n = parseInt(s.replace(/日$/, ""));
+    return isNaN(n) ? null : Math.max(0, Math.min(31, n));
+  };
+  const parseOffsetField = (v: string): number | null => {
+    const s = v.trim();
+    if (!s) return null;
+    if (s === "当月") return 0;
+    if (s === "翌月") return 1;
+    if (s === "翌々月") return 2;
+    const n = parseInt(s.replace(/ヶ月後$/, ""));
+    return isNaN(n) ? null : Math.max(0, Math.min(6, n));
+  };
+  const parseRateField = (v: string): number | null => {
+    const s = v.trim();
+    if (!s) return null;
+    const n = parseFloat(s.replace(/%$/, ""));
+    return isNaN(n) ? null : Math.max(0, Math.min(100, n));
+  };
+
+  const handleImport = async (file: File) => {
+    setImporting(true);
+    try {
+      const text = await file.text();
+      // BOM除去
+      const clean = text.replace(/^\uFEFF/, "");
+      const parsed = parseCsv(clean);
+      if (parsed.length < 2) {
+        alert("ヘッダー行と1行以上のデータ行が必要です。");
+        return;
+      }
+      const header = parsed[0].map((h) => h.trim());
+      const idx = (name: string) => header.findIndex((h) => h === name);
+      const iVenue = idx("venue_name");
+      const iStore = idx("store_name");
+      const iClosing = idx("closing_day");
+      const iOffset = idx("pay_month_offset");
+      const iPay = idx("pay_day");
+      const iPayer = idx("default_payer_name");
+      const iDirectRate = idx("direct_receive_rate");
+      const iChouaiRate = idx("chouai_receive_rate");
+      if (iVenue < 0) {
+        alert("ヘッダーに venue_name 列が必要です。");
+        return;
+      }
+
+      let updated = 0;
+      let skipped = 0;
+      const errors: string[] = [];
+
+      for (let r = 1; r < parsed.length; r++) {
+        const row = parsed[r];
+        if (row.every((c) => !c.trim())) continue; // 空行
+        const venueName = row[iVenue]?.trim() ?? "";
+        const storeName = iStore >= 0 ? (row[iStore]?.trim() ?? "") : "";
+        if (!venueName) { skipped++; continue; }
+        const target = venues.find((v) =>
+          v.venue_name === venueName && (v.store_name ?? "") === storeName,
+        );
+        if (!target) {
+          errors.push(`行${r + 1}: ${venueName}${storeName ? " " + storeName : ""} は百貨店マスターに未登録`);
+          skipped++;
+          continue;
+        }
+        const updates: Record<string, unknown> = {};
+        if (iClosing >= 0) updates.closing_day = parseDayField(row[iClosing] ?? "");
+        if (iOffset >= 0) updates.pay_month_offset = parseOffsetField(row[iOffset] ?? "");
+        if (iPay >= 0) updates.pay_day = parseDayField(row[iPay] ?? "");
+        if (iDirectRate >= 0) updates.direct_receive_rate = parseRateField(row[iDirectRate] ?? "");
+        if (iChouaiRate >= 0) updates.chouai_receive_rate = parseRateField(row[iChouaiRate] ?? "");
+        if (iPayer >= 0) {
+          const pname = row[iPayer]?.trim() ?? "";
+          if (!pname) {
+            updates.default_payer_id = null;
+          } else {
+            const p = payers.find((x) => x.name === pname);
+            if (!p) {
+              errors.push(`行${r + 1}: 帳合先「${pname}」は帳合先マスターに未登録（この行はスキップ）`);
+              skipped++;
+              continue;
+            }
+            updates.default_payer_id = p.id;
+          }
+        }
+        await supabase.from("venue_master").update(updates).eq("id", target.id);
+        updated++;
+      }
+
+      const summary = `${updated}件を更新しました${skipped > 0 ? `（${skipped}件はスキップ）` : ""}`;
+      alert(errors.length > 0 ? `${summary}\n\n${errors.slice(0, 10).join("\n")}` : summary);
+      fetchData();
+    } catch (err) {
+      console.error("[import csv] error:", err);
+      alert("CSV取込に失敗しました。ファイル形式を確認してください。");
+    } finally {
+      setImporting(false);
+      if (importFileRef.current) importFileRef.current.value = "";
+    }
+  };
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Store className="h-6 w-6" />百貨店マスター
         </h1>
-        {canEdit && <Button onClick={openCreate}><Plus className="h-4 w-4 mr-1" />新規登録</Button>}
+        <div className="flex gap-2 flex-wrap">
+          {canViewPayments && (
+            <>
+              <Button variant="outline" size="sm" onClick={exportCsv}>
+                <Download className="h-4 w-4 mr-1" />CSV出力
+              </Button>
+              {canEdit && (
+                <>
+                  <Button variant="outline" size="sm" onClick={() => importFileRef.current?.click()} disabled={importing}>
+                    <Upload className="h-4 w-4 mr-1" />{importing ? "取込中..." : "CSV取込"}
+                  </Button>
+                  <input
+                    ref={importFileRef}
+                    type="file"
+                    accept=".csv,text/csv"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleImport(f);
+                    }}
+                  />
+                </>
+              )}
+            </>
+          )}
+          {canEdit && <Button onClick={openCreate}><Plus className="h-4 w-4 mr-1" />新規登録</Button>}
+        </div>
       </div>
 
       {/* 検索 */}
