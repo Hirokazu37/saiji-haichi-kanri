@@ -88,8 +88,30 @@ export async function DELETE(
 
   const admin = createAdminClient();
 
+  // 明示的に依存関係を先に解消（auth.users の CASCADE/SET NULL に頼らない）
+  // 1. invite_tokens の used_by を NULL に
+  await admin.from("invite_tokens").update({ used_by: null }).eq("used_by", id);
+  // 2. user_profiles を削除
+  await admin.from("user_profiles").delete().eq("id", id);
+
+  // 3. auth.users を削除
   const { error } = await admin.auth.admin.deleteUser(id);
   if (error) {
+    console.error("[delete user] error:", error);
+    // Supabase の generic な "Database error deleting user" の場合は
+    // ソフト削除（論理削除）にフォールバックして運用継続できるようにする
+    const isGenericDbError = /database error/i.test(error.message);
+    if (isGenericDbError) {
+      const { error: softError } = await admin.auth.admin.deleteUser(id, true);
+      if (!softError) {
+        return NextResponse.json({ success: true, softDeleted: true });
+      }
+      console.error("[delete user] soft delete also failed:", softError);
+      return NextResponse.json(
+        { error: `${error.message}（ソフト削除も失敗: ${softError.message}）` },
+        { status: 500 }
+      );
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
