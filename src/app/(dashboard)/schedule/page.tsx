@@ -657,7 +657,7 @@ export default function SchedulePage() {
 
   return (
     <div className="space-y-4">
-      {/* 印刷用スタイル（A4 1枚・社員行を flex で均等配分） */}
+      {/* 印刷用スタイル（A4 1枚・ガントのみ・社員行を flex で均等配分） */}
       <style>{`
         @media print {
           @page { size: A4 ${printOpts.orientation}; margin: 8mm; }
@@ -667,6 +667,11 @@ export default function SchedulePage() {
           /* サイドバー左余白とmain padding を解除して紙幅をフル活用 */
           .md\\:pl-60 { padding-left: 0 !important; }
           main { padding: 0 !important; max-width: 100% !important; }
+
+          /* モバイル用のカード/カレンダービュー・ビュー切替タブは印刷しない */
+          .mobile-only-view { display: none !important; }
+          /* 対話用ガントはモバイルでも印刷時は必ず表示する */
+          .interactive-gantt { display: block !important; }
 
           /* ガントの横スクロール/min-width を解除して紙幅にフィット */
           .gantt-scroll { overflow: visible !important; }
