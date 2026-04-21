@@ -98,7 +98,7 @@ export default function SchedulePage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [createInitialPersonKey, setCreateInitialPersonKey] = useState<string | null>(null);
 
-  // ドラッグ中のバー（日程調整用）。nullなら通常表示、値があればドラッグ中のゴースト表示
+  // ドラッグ中のバー（日程調整＋担当者差替え）。nullなら通常表示、値があればドラッグ中のゴースト表示
   type DragState = {
     assignmentId: string;
     handle: "left" | "right" | "move";
@@ -108,6 +108,9 @@ export default function SchedulePage() {
     currentStart: string;
     currentEnd: string;
     moved: boolean; // 5px以上動いたらtrue（クリックと区別）
+    // 移動(move)時: 元の担当者・差替え先候補（別社員行に落としたときの行先）
+    origPersonKey: string; // 例: "e:xxx" or "m:yyy"
+    targetPersonKey: string; // 現在ホバー中の行のキー。origPersonKeyと同じなら差替えなし
   };
   const [dragState, setDragState] = useState<DragState | null>(null);
 
@@ -371,6 +374,7 @@ export default function SchedulePage() {
     handle: "left" | "right" | "move",
     origStart: string,
     origEnd: string,
+    origPersonKey: string,
   ) => {
     if (!canEdit) return;
     // タッチデバイスはドラッグ無効（スクロールとの競合回避。タップ=編集ダイアログに任せる）
@@ -386,6 +390,8 @@ export default function SchedulePage() {
       currentStart: origStart,
       currentEnd: origEnd,
       moved: false,
+      origPersonKey,
+      targetPersonKey: origPersonKey,
     });
   };
 
@@ -483,41 +489,95 @@ export default function SchedulePage() {
           if (ne > evEnd) ne = evEnd;
         }
       }
-      setDragState((prev) => (prev ? { ...prev, currentStart: ns, currentEnd: ne, moved } : prev));
+      // 担当者差替え検出: move の時のみ、ポインタ下の社員行を特定
+      let target = dragState.targetPersonKey;
+      if (dragState.handle === "move") {
+        const els = document.elementsFromPoint(e.clientX, e.clientY);
+        const rowEl = els.find((el) => (el as HTMLElement).dataset && (el as HTMLElement).dataset.personRowKey) as HTMLElement | undefined;
+        if (rowEl) {
+          target = rowEl.dataset.personRowKey || dragState.origPersonKey;
+        }
+      }
+      setDragState((prev) => (prev ? { ...prev, currentStart: ns, currentEnd: ne, moved, targetPersonKey: target } : prev));
     };
     const onUp = async () => {
       const st = dragState;
       setDragState(null);
       if (!st) return;
       if (!st.moved) return; // 実質クリック扱い（button onClick が編集ダイアログを開く）
-      if (st.currentStart !== st.origStart || st.currentEnd !== st.origEnd) {
-        await supabase
-          .from("event_staff")
-          .update({ start_date: st.currentStart, end_date: st.currentEnd })
-          .eq("id", st.assignmentId);
-        // 元に戻す用に直近の変更を記録
+      const personChanged = st.handle === "move" && st.targetPersonKey !== st.origPersonKey;
+      const datesChanged = st.currentStart !== st.origStart || st.currentEnd !== st.origEnd;
+      if (datesChanged || personChanged) {
         const a = assignments.find((x) => x.id === st.assignmentId);
-        const personName =
+        const origPersonName =
           a?.person_type === "mannequin"
             ? mannequinPeople.find((p) => p.id === a?.mannequin_person_id)?.name || ""
             : employees.find((e) => e.id === a?.employee_id)?.name || "";
         const venueLabel = a?.events
           ? (a.events.store_name ? `${a.events.venue} ${a.events.store_name}` : a.events.venue)
           : "";
-        const base = {
+
+        // 担当者差替え: targetPersonKey から新しい person_type/employee_id/mannequin_person_id を決定
+        let newPersonType: "employee" | "mannequin" = (a?.person_type ?? "employee") as "employee" | "mannequin";
+        let newEmployeeId: string | null = a?.employee_id ?? null;
+        let newMannequinId: string | null = a?.mannequin_person_id ?? null;
+        let newPersonName = origPersonName;
+        if (personChanged) {
+          if (st.targetPersonKey.startsWith("m:")) {
+            newPersonType = "mannequin";
+            newEmployeeId = null;
+            newMannequinId = st.targetPersonKey.slice(2);
+            newPersonName = mannequinPeople.find((p) => p.id === newMannequinId!)?.name || "";
+          } else if (st.targetPersonKey.startsWith("e:")) {
+            newPersonType = "employee";
+            newEmployeeId = st.targetPersonKey.slice(2);
+            newMannequinId = null;
+            newPersonName = employees.find((p) => p.id === newEmployeeId!)?.name || "";
+          }
+        }
+
+        const updatePayload: Record<string, unknown> = {};
+        if (datesChanged) {
+          updatePayload.start_date = st.currentStart;
+          updatePayload.end_date = st.currentEnd;
+        }
+        if (personChanged) {
+          updatePayload.person_type = newPersonType;
+          updatePayload.employee_id = newEmployeeId;
+          updatePayload.mannequin_person_id = newMannequinId;
+        }
+        await supabase.from("event_staff").update(updatePayload).eq("id", st.assignmentId);
+
+        // 元に戻す用の記録
+        const prev = {
           event_id: a?.event_id ?? "",
           person_type: (a?.person_type ?? "employee") as "employee" | "mannequin",
           employee_id: a?.employee_id ?? null,
           mannequin_person_id: a?.mannequin_person_id ?? null,
+          start_date: st.origStart,
+          end_date: st.origEnd,
           role: a?.role ?? null,
           notes: null,
         };
+        const next = {
+          event_id: a?.event_id ?? "",
+          person_type: newPersonType,
+          employee_id: newEmployeeId,
+          mannequin_person_id: newMannequinId,
+          start_date: st.currentStart,
+          end_date: st.currentEnd,
+          role: a?.role ?? null,
+          notes: null,
+        };
+        const action = personChanged
+          ? `${origPersonName} → ${newPersonName} に差替え${datesChanged ? "・日程変更" : ""}`
+          : `${origPersonName ? origPersonName + " の " : ""}${venueLabel ? "「" + venueLabel + "」 " : ""}日程を変更`;
         recordChange({
           type: "update",
           assignmentId: st.assignmentId,
-          prev: { ...base, start_date: st.origStart, end_date: st.origEnd },
-          next: { ...base, start_date: st.currentStart, end_date: st.currentEnd },
-          label: `${personName ? personName + " の " : ""}${venueLabel ? "「" + venueLabel + "」 " : ""}日程を変更`,
+          prev,
+          next,
+          label: action,
         });
         fetchData();
       }
@@ -985,10 +1045,16 @@ export default function SchedulePage() {
                   const rowHeight = ROW_PADDING * 2 + rowCount * BAR_HEIGHT + (rowCount - 1) * BAR_GAP;
                   const minHeight = Math.max(40, rowHeight);
 
+                  const isDropTarget =
+                    dragState?.handle === "move" &&
+                    dragState.moved &&
+                    dragState.targetPersonKey === makePersonKey(p) &&
+                    dragState.targetPersonKey !== dragState.origPersonKey;
                   return (
                     <div
                       key={makePersonKey(p)}
-                      className={`flex border-b last:border-b-0 ${empIdx % 2 === 1 ? "bg-muted/20" : ""}`}
+                      data-person-row-key={makePersonKey(p)}
+                      className={`flex border-b last:border-b-0 ${empIdx % 2 === 1 ? "bg-muted/20" : ""} ${isDropTarget ? "ring-2 ring-primary ring-inset bg-primary/10" : ""}`}
                       style={{ minHeight }}
                     >
                       <div className={`gantt-label-cell w-28 shrink-0 p-2 border-r text-sm font-medium flex items-center gap-1 sticky left-0 z-[8] ${empIdx % 2 === 1 ? "bg-muted/80" : "bg-background"}`}>
@@ -1059,7 +1125,7 @@ export default function SchedulePage() {
                                         setEditingAssignmentId(a.id);
                                         setEditOpen(true);
                                       }}
-                                      onPointerDown={(e) => beginDrag(e, a.id, "move", a.start_date, a.end_date)}
+                                      onPointerDown={(e) => beginDrag(e, a.id, "move", a.start_date, a.end_date, makePersonKey(p))}
                                       className={`group absolute rounded text-xs leading-snug flex items-center overflow-hidden whitespace-nowrap hover:opacity-80 hover:ring-2 hover:ring-primary/40 transition-shadow z-[1] text-left ${isDragging ? "cursor-grabbing opacity-80 ring-2 ring-primary" : "cursor-grab"} ${color.bar}`}
                                       style={{
                                         left: style.left,
@@ -1071,7 +1137,7 @@ export default function SchedulePage() {
                                     >
                                       {/* 左端リサイズハンドル */}
                                       <span
-                                        onPointerDown={(e) => beginDrag(e, a.id, "left", a.start_date, a.end_date)}
+                                        onPointerDown={(e) => beginDrag(e, a.id, "left", a.start_date, a.end_date, makePersonKey(p))}
                                         className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-black/10"
                                         aria-hidden
                                       />
@@ -1083,7 +1149,7 @@ export default function SchedulePage() {
                                       </div>
                                       {/* 右端リサイズハンドル */}
                                       <span
-                                        onPointerDown={(e) => beginDrag(e, a.id, "right", a.start_date, a.end_date)}
+                                        onPointerDown={(e) => beginDrag(e, a.id, "right", a.start_date, a.end_date, makePersonKey(p))}
                                         className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-black/10"
                                         aria-hidden
                                       />
@@ -1151,19 +1217,31 @@ export default function SchedulePage() {
       })()}
 
       {/* ドラッグ中の日付ヒント（画面右下にフロート表示） */}
-      {dragState && dragState.moved && (
-        <div className="fixed bottom-4 right-4 z-50 bg-primary text-primary-foreground px-3 py-2 rounded-md shadow-lg text-sm font-medium pointer-events-none">
-          {dragState.handle === "left" && (
-            <>開始日: <span className="font-bold">{dragState.currentStart}</span></>
-          )}
-          {dragState.handle === "right" && (
-            <>終了日: <span className="font-bold">{dragState.currentEnd}</span></>
-          )}
-          {dragState.handle === "move" && (
-            <>期間: <span className="font-bold">{dragState.currentStart} 〜 {dragState.currentEnd}</span></>
-          )}
-        </div>
-      )}
+      {dragState && dragState.moved && (() => {
+        const isSwap = dragState.handle === "move" && dragState.targetPersonKey !== dragState.origPersonKey;
+        const targetName = (() => {
+          const k = dragState.targetPersonKey;
+          if (k.startsWith("m:")) return mannequinPeople.find((p) => p.id === k.slice(2))?.name || "";
+          if (k.startsWith("e:")) return employees.find((p) => p.id === k.slice(2))?.name || "";
+          return "";
+        })();
+        return (
+          <div className={`fixed bottom-4 right-4 z-50 px-3 py-2 rounded-md shadow-lg text-sm font-medium pointer-events-none ${isSwap ? "bg-amber-500 text-white" : "bg-primary text-primary-foreground"}`}>
+            {dragState.handle === "left" && (
+              <>開始日: <span className="font-bold">{dragState.currentStart}</span></>
+            )}
+            {dragState.handle === "right" && (
+              <>終了日: <span className="font-bold">{dragState.currentEnd}</span></>
+            )}
+            {dragState.handle === "move" && !isSwap && (
+              <>期間: <span className="font-bold">{dragState.currentStart} 〜 {dragState.currentEnd}</span></>
+            )}
+            {dragState.handle === "move" && isSwap && (
+              <>🔁 <span className="font-bold">{targetName}</span> に差替え（{dragState.currentStart}〜{dragState.currentEnd}）</>
+            )}
+          </div>
+        );
+      })()}
 
       {/* 元に戻すトースト（ドラッグ・ダイアログ保存・削除 全部をカバー） */}
       {lastChange && !dragState && (
