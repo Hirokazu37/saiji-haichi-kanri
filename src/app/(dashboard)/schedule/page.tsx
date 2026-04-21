@@ -690,6 +690,12 @@ export default function SchedulePage() {
           .gantt-emp-row {
             flex: var(--emp-ratio, 1) 1 0 !important;
             min-height: 0 !important;
+            overflow: hidden;
+          }
+          /* バー(.gantt-bar) の高さ/位置を行サイズに比例させる（ピクセル固定をやめる） */
+          .gantt-bar {
+            top: calc((var(--bar-row, 0) / var(--bar-rowcount, 1)) * 100%) !important;
+            height: calc((1 / var(--bar-rowcount, 1)) * 100% - 1px) !important;
           }
         }
       `}</style>
@@ -1151,12 +1157,14 @@ export default function SchedulePage() {
                                         setEditOpen(true);
                                       }}
                                       onPointerDown={(e) => beginDrag(e, a.id, "move", a.start_date, a.end_date, makePersonKey(p))}
-                                      className={`group absolute rounded text-xs leading-snug flex items-center overflow-hidden whitespace-nowrap hover:opacity-80 hover:ring-2 hover:ring-primary/40 transition-shadow z-[1] text-left ${isDragging ? "cursor-grabbing opacity-80 ring-2 ring-primary" : "cursor-grab"} ${color.bar}`}
+                                      className={`gantt-bar group absolute rounded text-xs leading-snug flex items-center overflow-hidden whitespace-nowrap hover:opacity-80 hover:ring-2 hover:ring-primary/40 transition-shadow z-[1] text-left ${isDragging ? "cursor-grabbing opacity-80 ring-2 ring-primary" : "cursor-grab"} ${color.bar}`}
                                       style={{
                                         left: style.left,
                                         width: style.width,
                                         top: `${top}px`,
                                         height: `${BAR_HEIGHT}px`,
+                                        ["--bar-row" as string]: String(row),
+                                        ["--bar-rowcount" as string]: String(rowCount),
                                       }}
                                       aria-label={`${a.events?.venue} の配置を編集`}
                                     >
@@ -1182,12 +1190,14 @@ export default function SchedulePage() {
                                   ) : (
                                     <Link
                                       href={`/events/${a.event_id}`}
-                                      className={`absolute rounded text-xs leading-snug px-1.5 flex items-center overflow-hidden whitespace-nowrap hover:opacity-80 transition-opacity z-[1] ${color.bar}`}
+                                      className={`gantt-bar absolute rounded text-xs leading-snug px-1.5 flex items-center overflow-hidden whitespace-nowrap hover:opacity-80 transition-opacity z-[1] ${color.bar}`}
                                       style={{
                                         left: style.left,
                                         width: style.width,
                                         top: `${top}px`,
                                         height: `${BAR_HEIGHT}px`,
+                                        ["--bar-row" as string]: String(row),
+                                        ["--bar-rowcount" as string]: String(rowCount),
                                       }}
                                     >
                                       <div className="truncate font-bold">{a.events?.venue}{a.events?.store_name ? ` ${a.events.store_name}` : ""}</div>
