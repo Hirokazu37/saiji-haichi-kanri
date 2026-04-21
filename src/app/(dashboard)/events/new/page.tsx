@@ -438,8 +438,10 @@ function NewEventPageInner() {
   }, [agencyMasters, agencyAreaLinks, currentVenueAreaId, venueLinkedAgencyIds]);
 
   // --- マネキンスタッフCombobox項目 ---
+  // 派遣会社名が選ばれている場合はその会社の所属スタッフのみに絞り込む。
+  // 未選択または自由入力（マスタに無い会社名）のときは全員を出す。
   // カテゴリ: この百貨店の実績あり > 催事エリア対応の派遣会社所属 > その他
-  const staffItems: ComboboxItem[] = useMemo(() => {
+  const getStaffItems = useCallback((agencyFilter: string): ComboboxItem[] => {
     // この百貨店(venueラベル)に過去入ったことのあるスタッフ名集合
     const pastStaffSet = new Set<string>();
     mannequinHistory.forEach((h) => {
@@ -453,7 +455,16 @@ function NewEventPageInner() {
       areaId ? agencyAreaLinks.filter((l) => l.area_id === areaId).map((l) => l.agency_id) : []
     );
 
-    return mannequinPeople.map((p) => {
+    // 派遣会社名に一致するマスタ会社のID（マッチしなければ null = フィルタしない）
+    const filterAgencyId = agencyFilter
+      ? agencyMasters.find((a) => a.name === agencyFilter)?.id ?? null
+      : null;
+
+    const filtered = filterAgencyId
+      ? mannequinPeople.filter((p) => p.agency_id === filterAgencyId)
+      : mannequinPeople;
+
+    return filtered.map((p) => {
       const agency = agencyMasters.find((a) => a.id === p.agency_id);
       const ratingStr = p.rating ? "★".repeat(p.rating) : "";
       const rateStr = p.daily_rate ? `${p.daily_rate.toLocaleString()}円` : "";
@@ -1118,10 +1129,10 @@ function NewEventPageInner() {
                 <div className="space-y-1">
                   <Label className="text-xs">スタッフ名</Label>
                   <Combobox
-                    items={staffItems}
+                    items={getStaffItems(m.agency_name)}
                     value={m.staff_name}
                     onChange={(v) => handleStaffChange(i, v)}
-                    placeholder="スタッフを選択"
+                    placeholder={m.agency_name ? `${m.agency_name} の所属者から選択` : "スタッフを選択"}
                     searchPlaceholder="スタッフ名で検索..."
                     allowCustom
                     inputClassName="h-8 text-xs"
