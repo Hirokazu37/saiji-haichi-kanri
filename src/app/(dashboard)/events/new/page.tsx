@@ -756,6 +756,30 @@ function NewEventPageInner() {
         console.error("[event_payments auto-create] error:", err);
       }
 
+      // 通知を作成（adminユーザーへのベル通知用）
+      // 失敗してもメイン処理は続行
+      try {
+        const venueLabel = form.store_name.trim()
+          ? `${form.venue.trim()} ${form.store_name.trim()}`
+          : form.venue.trim();
+        const dateLabel = form.start_date === form.end_date
+          ? form.start_date
+          : `${form.start_date}〜${form.end_date}`;
+        const eventName = form.name.trim();
+        const charge = allNames.length > 0 ? `／担当: ${allNames.join("、")}` : "";
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        await supabase.from("notifications").insert({
+          type: "event_created",
+          title: `新規催事: ${venueLabel}${eventName ? `「${eventName}」` : ""}`,
+          body: `${dateLabel}${charge}`,
+          link_url: `/events/${eventId}`,
+          related_event_id: eventId,
+          created_by: authUser?.id ?? null,
+        });
+      } catch (err) {
+        console.error("[notifications create] error:", err);
+      }
+
       router.push("/events");
     } finally {
       // 成功時は画面遷移するので setSaving(false) は見た目上不要だが

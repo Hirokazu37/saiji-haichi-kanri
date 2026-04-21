@@ -21,6 +21,7 @@ import {
 import { cn } from "@/lib/utils";
 import { usePermission, type UserRole } from "@/hooks/usePermission";
 import { usePaymentAlerts } from "@/hooks/usePaymentAlerts";
+import { NotificationBell } from "@/components/layout/NotificationBell";
 
 type NavItem = {
   label: string;
@@ -64,14 +65,15 @@ export function Sidebar() {
 
   return (
     <aside className="hidden md:flex md:w-60 md:flex-col md:fixed md:inset-y-0 border-r bg-sidebar">
-      <div className="flex items-center gap-3 border-b border-sidebar-border px-4 py-3">
-        <Link href="/" className="flex items-center gap-3 min-w-0">
+      <div className="flex items-center gap-2 border-b border-sidebar-border px-4 py-3">
+        <Link href="/" className="flex items-center gap-3 min-w-0 flex-1">
           <img src="/brand/logo-square.png" alt="安岡蒲鉾" className="h-10 w-10 shrink-0 object-contain" />
           <div className="flex flex-col leading-tight min-w-0">
             <span className="text-[11px] tracking-wider text-muted-foreground">安岡蒲鉾</span>
             <span className="font-bold text-base text-sidebar-foreground truncate">催事手配管理</span>
           </div>
         </Link>
+        <NotificationBell />
       </div>
       <nav className="flex-1 p-3 space-y-1">
         {items.map((item) => {
