@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePermission, type UserRole } from "@/hooks/usePermission";
+import { usePaymentAlerts } from "@/hooks/usePaymentAlerts";
 
 type NavItem = {
   label: string;
@@ -51,6 +52,7 @@ const navItems: NavItem[] = [
 export function Sidebar() {
   const pathname = usePathname();
   const { role, canViewPayments, loading } = usePermission();
+  const alerts = usePaymentAlerts();
 
   const items = loading
     ? []
@@ -77,6 +79,8 @@ export function Sidebar() {
             item.href === "/"
               ? pathname === "/"
               : pathname.startsWith(item.href);
+          // 入金管理のみ、alerts.total の件数バッジを右端に表示
+          const badge = item.href === "/payments" && canViewPayments && alerts.total > 0 ? alerts.total : 0;
           return (
             <Link
               key={item.href}
@@ -89,7 +93,12 @@ export function Sidebar() {
               )}
             >
               <item.icon className="h-4 w-4" />
-              {item.label}
+              <span className="flex-1">{item.label}</span>
+              {badge > 0 && (
+                <span className="ml-auto rounded-full bg-rose-500 text-white text-[10px] font-bold px-2 py-0.5 min-w-[1.5rem] text-center">
+                  {badge}
+                </span>
+              )}
             </Link>
           );
         })}

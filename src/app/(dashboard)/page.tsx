@@ -15,6 +15,7 @@ import {
 import Link from "next/link";
 import { getHolidaysForRange } from "@/lib/holidays";
 import { usePermission } from "@/hooks/usePermission";
+import { PaymentAlertsCard } from "@/components/layout/PaymentAlertsCard";
 
 type Event = {
   id: string;
@@ -322,6 +323,9 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* 入金アラート（経理権限者のみ、該当件数があれば表示） */}
+      <PaymentAlertsCard />
 
       {/* サマリー */}
       <div className="grid gap-3 grid-cols-2 md:grid-cols-3">

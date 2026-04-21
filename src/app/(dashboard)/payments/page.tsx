@@ -26,6 +26,7 @@ import {
 import { Wallet, Download, Plus, Pencil, Trash2, ArrowUpRight, Calculator } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
 import { computePlannedPaymentDate } from "@/lib/payment-cycle";
+import { PaymentAlertsCard } from "@/components/layout/PaymentAlertsCard";
 
 type EventLite = {
   id: string;
@@ -388,6 +389,9 @@ function PaymentsPageInner() {
           )}
         </div>
       </div>
+
+      {/* アラート */}
+      <PaymentAlertsCard />
 
       {/* サマリ */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
