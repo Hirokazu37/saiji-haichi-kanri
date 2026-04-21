@@ -682,7 +682,11 @@ export default function SchedulePage() {
             width: 100% !important;
             display: flex !important;
             flex-direction: column !important;
-            min-height: calc(100vh - 14mm);
+            /* 印刷ヘッダー（社員スケジュール〇月）のぶんを差し引いて1ページに収める */
+            height: calc(100vh - 9mm) !important;
+            min-height: 0 !important;
+            max-height: calc(100vh - 9mm) !important;
+            overflow: hidden !important;
           }
           .gantt-label-cell { position: static !important; }
           /* 月/日付ヘッダーは自然高さ、社員行は flex:1 で均等割付け */
@@ -1137,6 +1141,9 @@ export default function SchedulePage() {
                         )}
                         {/* 担当バー */}
                         {empAssignments.map((a) => {
+                          // 印刷時は表示範囲より前に始まったイベント（前月からの継続）は表示しない
+                          // （画面上は従来通り先月の名残りが見える・印刷時のみ当月分の催事だけに絞る）
+                          if (printMode && a.start_date < allDays[0].dateStr) return null;
                           const color = eventColorMap.get(a.event_id) || colors[0];
                           const row = rowMap.get(a.id) || 0;
                           const top = ROW_PADDING + row * (BAR_HEIGHT + BAR_GAP);
