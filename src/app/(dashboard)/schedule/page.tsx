@@ -624,16 +624,23 @@ export default function SchedulePage() {
     setPrintDialogOpen(true);
   };
 
+  // 「印刷を実行」ボタンが押されたら、まずprintModeをONに切替→
+  // useEffect (printMode変化を監視) がDOM反映後に window.print() を呼ぶ
+  const [pendingPrint, setPendingPrint] = useState(false);
   const handleDoPrint = () => {
     setPrintDialogOpen(false);
     setPrintMode(true);
-    // Reactの再レンダリングを待ってから印刷
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        window.print();
-      });
-    });
+    setPendingPrint(true);
   };
+
+  useEffect(() => {
+    if (printMode && pendingPrint) {
+      setPendingPrint(false);
+      // DOM commit を待ってから print
+      const t = setTimeout(() => window.print(), 50);
+      return () => clearTimeout(t);
+    }
+  }, [printMode, pendingPrint]);
 
   // 印刷用: 印刷期間に応じた月リストを生成
   const printAllMonths = useMemo(() => {
@@ -702,21 +709,14 @@ export default function SchedulePage() {
 
   return (
     <div className="space-y-4">
-      {/* 印刷用スタイル（@page だけはStateに応じて動的に出し分け） */}
+      {/* 印刷用スタイル（@page と page-break のみ） */}
       <style>{`
         @media print {
           @page { size: A4 ${printOpts.orientation}; margin: 8mm; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          /* 印刷時は対話ガントを非表示・印刷専用ガントだけ表示 */
-          .interactive-gantt { display: none !important; }
-          .print-only-gantt { display: block !important; }
           .print-page { page-break-after: always; }
           .print-page:last-child { page-break-after: auto; }
-          /* モバイル用のカード・カレンダービュー・モード切替タブは印刷しない */
-          .mobile-only-view { display: none !important; }
         }
-        /* 通常時は印刷専用ガントを非表示 */
-        .print-only-gantt { display: none; }
       `}</style>
 
       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -1037,6 +1037,7 @@ export default function SchedulePage() {
         })()}
 
         {/* ===== ガントチャート（PC は常に、モバイルは gantt 選択時のみ表示） ===== */}
+        {!printMode && (
         <TooltipProvider>
           <Card className={`interactive-gantt ${mobileView === "gantt" ? "block" : "hidden"} md:block`}>
             <CardContent className="p-0">
@@ -1250,8 +1251,10 @@ export default function SchedulePage() {
             </CardContent>
           </Card>
         </TooltipProvider>
+        )}
 
-        {/* ===== 印刷専用ガント（@media print 時のみ表示・複数ページ分割） ===== */}
+        {/* ===== 印刷専用ガント（printMode時のみ表示・複数ページ分割） ===== */}
+        {printMode && (
         <div className="print-only-gantt">
           {printPages.map((slice, pageIdx) => {
             const sliceDays = daysForMonths(slice);
@@ -1388,6 +1391,7 @@ export default function SchedulePage() {
             );
           })}
         </div>
+        )}
       </div>
 
       {/* 空白ドラッグ中の範囲プレビュー */}
