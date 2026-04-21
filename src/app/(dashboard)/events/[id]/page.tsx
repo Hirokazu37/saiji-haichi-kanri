@@ -101,6 +101,8 @@ export default function EventDetailPage({
   const [selectedMannequinIds, setSelectedMannequinIds] = useState<string[]>([]);
   const [mannequinOptions, setMannequinOptions] = useState<{ id: string; name: string }[]>([]);
   const [originalStaffRecords, setOriginalStaffRecords] = useState<{ id: string; person_type: "employee" | "mannequin"; employee_id: string | null; mannequin_person_id: string | null }[]>([]);
+  // この催事の マネキン手配(mannequins) に登録されているスタッフ名一覧（二重登録警告用）
+  const [mannequinHandledNames, setMannequinHandledNames] = useState<Set<string>>(new Set());
   const [form, setForm] = useState({
     name: "",
     venue: "",
@@ -126,12 +128,13 @@ export default function EventDetailPage({
   const [dailyRevenue, setDailyRevenue] = useState<Map<string, DailyInput>>(new Map());
 
   const fetchEvent = useCallback(async () => {
-    const [eventRes, empRes, staffRes, dailyRes, mpRes] = await Promise.all([
+    const [eventRes, empRes, staffRes, dailyRes, mpRes, mannRes] = await Promise.all([
       supabase.from("events").select("*").eq("id", id).single(),
       supabase.from("employees").select("id, name").order("sort_order").order("name"),
       supabase.from("event_staff").select("id, person_type, employee_id, mannequin_person_id").eq("event_id", id).eq("role", "担当者"),
       supabase.from("event_daily_revenue").select("*").eq("event_id", id).order("date"),
       supabase.from("mannequin_people").select("id, name").eq("treat_as_employee", true).order("name"),
+      supabase.from("mannequins").select("staff_name").eq("event_id", id),
     ]);
     if (eventRes.data) {
       setEvent(eventRes.data);
@@ -177,6 +180,13 @@ export default function EventDetailPage({
     const staffMpIds = staffRecords.filter((s) => s.person_type === "mannequin" && s.mannequin_person_id).map((s) => s.mannequin_person_id as string);
     setSelectedEmployeeIds(staffEmpIds);
     setSelectedMannequinIds(staffMpIds);
+    // マネキン手配で登録されている氏名一覧
+    const mannNames = new Set<string>(
+      ((mannRes.data || []) as { staff_name: string | null }[])
+        .map((r) => (r.staff_name || "").trim())
+        .filter(Boolean)
+    );
+    setMannequinHandledNames(mannNames);
     // person_in_chargeからバッジ選択済みの名前を除外し、自由入力分だけformに残す
     if (eventRes.data) {
       const selectedNames = new Set([
@@ -585,6 +595,20 @@ export default function EventDetailPage({
                 );
               })}
             </div>
+            {/* 二重登録警告: 担当者として選択中の人がマネキン手配にも入っている */}
+            {(() => {
+              const selectedNames = [
+                ...employees.filter((e) => selectedEmployeeIds.includes(e.id)).map((e) => e.name),
+                ...mannequinOptions.filter((p) => selectedMannequinIds.includes(p.id)).map((p) => p.name),
+              ];
+              const conflicts = selectedNames.filter((n) => mannequinHandledNames.has(n));
+              if (conflicts.length === 0) return null;
+              return (
+                <p className="text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                  ⚠️ {conflicts.join("、")} さんはマネキン手配にも登録されています。社員扱いとマネキン扱いのどちらかに統一してください。
+                </p>
+              );
+            })()}
             <Input value={form.person_in_charge} onChange={(e) => setForm({ ...form, person_in_charge: e.target.value })} placeholder="その他（社員マスターにない人がいれば入力）" />
           </div>
           <div className="grid grid-cols-2 gap-4">

@@ -48,6 +48,7 @@ type MannequinPerson = {
 };
 
 type Agency = { id: string; name: string };
+type StaffNameRow = { person_type: string | null; employee_id: string | null; mannequin_person_id: string | null; employees: { name: string } | null; mannequin_people: { name: string } | null };
 
 const statusColors: Record<string, string> = {
   "未手配": "bg-red-100 text-red-800",
@@ -70,6 +71,9 @@ export function MannequinTab({ eventId, startDate, endDate }: { eventId: string;
   const [records, setRecords] = useState<MannequinRecord[]>([]);
   const [people, setPeople] = useState<MannequinPerson[]>([]);
   const [agencies, setAgencies] = useState<Agency[]>([]);
+  // この催事で「担当者」(event_staff role=担当者) として登録されている人の名前一覧。
+  // ここに含まれる名前をマネキン手配に追加すると二重登録になる → 警告表示。
+  const [staffNames, setStaffNames] = useState<Set<string>>(new Set());
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -77,14 +81,25 @@ export function MannequinTab({ eventId, startDate, endDate }: { eventId: string;
   const [form, setForm] = useState(emptyForm);
 
   const fetch = useCallback(async () => {
-    const [recRes, pplRes, agRes] = await Promise.all([
+    const [recRes, pplRes, agRes, stRes] = await Promise.all([
       supabase.from("mannequins").select("*").eq("event_id", eventId).order("work_start_date"),
       supabase.from("mannequin_people").select("id, name, agency_id, phone, mobile_phone, daily_rate, skills, treat_as_employee").order("name"),
       supabase.from("mannequin_agencies").select("id, name").order("name"),
+      // 同じ催事で担当者として登録されている社員/マネキンの名前を取得
+      supabase
+        .from("event_staff")
+        .select("person_type, employee_id, mannequin_person_id, employees:employee_id(name), mannequin_people:mannequin_person_id(name)")
+        .eq("event_id", eventId),
     ]);
     setRecords(recRes.data || []);
     setPeople(pplRes.data || []);
     setAgencies(agRes.data || []);
+    const names = new Set<string>();
+    ((stRes.data as unknown) as StaffNameRow[] || []).forEach((r) => {
+      if (r.person_type === "employee" && r.employees?.name) names.add(r.employees.name);
+      else if (r.person_type === "mannequin" && r.mannequin_people?.name) names.add(r.mannequin_people.name);
+    });
+    setStaffNames(names);
   }, [supabase, eventId]);
 
   useEffect(() => { fetch(); }, [fetch]);
@@ -193,9 +208,14 @@ export function MannequinTab({ eventId, startDate, endDate }: { eventId: string;
               </TableRow>
             </TableHeader>
             <TableBody>
-              {records.map((r) => (
-                <TableRow key={r.id}>
-                  <TableCell className="font-medium">{r.staff_name || "—"}</TableCell>
+              {records.map((r) => {
+                const conflict = r.staff_name && staffNames.has(r.staff_name);
+                return (
+                <TableRow key={r.id} className={conflict ? "bg-amber-50" : ""}>
+                  <TableCell className="font-medium">
+                    {r.staff_name || "—"}
+                    {conflict && <span className="ml-1 text-[10px] text-amber-700" title="担当者と二重登録">⚠️</span>}
+                  </TableCell>
                   <TableCell className="hidden md:table-cell text-sm">{r.agency_name || "—"}</TableCell>
                   <TableCell className="text-sm">{r.work_start_date || "?"} 〜 {r.work_end_date || "?"}</TableCell>
                   <TableCell className="hidden md:table-cell text-sm">{calcTotal(r) > 0 ? `¥${calcTotal(r).toLocaleString()}` : "—"}</TableCell>
@@ -209,7 +229,8 @@ export function MannequinTab({ eventId, startDate, endDate }: { eventId: string;
                     </div>
                   </TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
             </TableBody>
           </Table>
         )}
@@ -257,6 +278,13 @@ export function MannequinTab({ eventId, startDate, endDate }: { eventId: string;
                 <div className="space-y-2"><Label>氏名</Label><Input value={form.staff_name} onChange={(e) => setForm({ ...form, staff_name: e.target.value })} /></div>
                 <div className="space-y-2"><Label>マネキン会社</Label><Input value={form.agency_name} onChange={(e) => setForm({ ...form, agency_name: e.target.value })} /></div>
               </div>
+            )}
+
+            {/* 二重登録の警告: 同じ催事で担当者(社員配置)に既にいる人をマネキン手配にも入れようとしている */}
+            {form.staff_name.trim() && staffNames.has(form.staff_name.trim()) && (
+              <p className="text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                ⚠️ {form.staff_name} さんはこの催事で既に「担当者（社員配置）」に登録されています。社員扱いとマネキン扱いのどちらかに統一してください。
+              </p>
             )}
 
             <div className="grid grid-cols-2 gap-4">

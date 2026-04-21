@@ -269,6 +269,18 @@ function NewEventPageInner() {
     return mannequinPeople.find((p) => p.id === e.person_id)?.name || "";
   };
 
+  // 担当者×マネキン手配の重複チェック（同じ人を二重登録すると現場が混乱するので警告）
+  const conflictNames = useMemo(() => {
+    const staffNames = new Set(staffEntries.map(getStaffName).filter(Boolean));
+    const conflicts = new Set<string>();
+    mannequinEntries.forEach((m) => {
+      const name = m.staff_name.trim();
+      if (name && staffNames.has(name)) conflicts.add(name);
+    });
+    return conflicts;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [staffEntries, mannequinEntries, employees, mannequinPeople]);
+
   // --- ホテル ---
   const addHotel = () => setHotelEntries((prev) => [...prev, {
     hotel_name: "", check_in_date: prevDay(form.start_date), check_out_date: nextDay(form.end_date),
@@ -906,21 +918,29 @@ function NewEventPageInner() {
                 {staffEntries.map((entry, i) => {
                   const name = getStaffName(entry);
                   const isMannequin = entry.person_type === "mannequin";
+                  const isConflict = name && conflictNames.has(name);
                   return (
-                    <div key={i} className="flex items-center gap-2 flex-wrap">
-                      <Badge variant="default" className={`shrink-0 ${isMannequin ? "bg-pink-600" : ""}`}>
-                        {isMannequin ? `🧑‍💼 ${name}` : name}
-                      </Badge>
-                      <Input type="date" value={entry.start_date} onChange={(e) => updateStaffEntry(i, "start_date", e.target.value)} className="w-36 h-8 text-xs" />
-                      <span className="text-xs">〜</span>
-                      <Input type="date" value={entry.end_date} onChange={(e) => updateStaffEntry(i, "end_date", e.target.value)} className="w-36 h-8 text-xs" />
-                      <Input value={entry.role} onChange={(e) => updateStaffEntry(i, "role", e.target.value)} placeholder="メモ" className="w-20 h-8 text-xs" />
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => duplicateStaffEntry(entry.person_type, entry.person_id)} title="期間を追加">
-                        <Plus className="h-3 w-3" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeStaffEntry(i)}>
-                        <X className="h-3 w-3 text-destructive" />
-                      </Button>
+                    <div key={i} className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="default" className={`shrink-0 ${isMannequin ? "bg-pink-600" : ""}`}>
+                          {isMannequin ? `🧑‍💼 ${name}` : name}
+                        </Badge>
+                        <Input type="date" value={entry.start_date} onChange={(e) => updateStaffEntry(i, "start_date", e.target.value)} className="w-36 h-8 text-xs" />
+                        <span className="text-xs">〜</span>
+                        <Input type="date" value={entry.end_date} onChange={(e) => updateStaffEntry(i, "end_date", e.target.value)} className="w-36 h-8 text-xs" />
+                        <Input value={entry.role} onChange={(e) => updateStaffEntry(i, "role", e.target.value)} placeholder="メモ" className="w-20 h-8 text-xs" />
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => duplicateStaffEntry(entry.person_type, entry.person_id)} title="期間を追加">
+                          <Plus className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeStaffEntry(i)}>
+                          <X className="h-3 w-3 text-destructive" />
+                        </Button>
+                      </div>
+                      {isConflict && (
+                        <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                          ⚠️ {name} さんは下のマネキン手配にも登録されています。社員扱いとマネキン扱いのどちらかに統一してください。
+                        </p>
+                      )}
                     </div>
                   );
                 })}
@@ -1109,11 +1129,18 @@ function NewEventPageInner() {
         </CardHeader>
         <CardContent className="space-y-3">
           {mannequinEntries.length === 0 && <p className="text-sm text-muted-foreground">未登録（後から催事詳細ページで追加も可能です）</p>}
-          {mannequinEntries.map((m, i) => (
-            <div key={i} className="space-y-2 rounded-md border bg-white p-3 relative">
+          {mannequinEntries.map((m, i) => {
+            const isConflict = m.staff_name.trim() && conflictNames.has(m.staff_name.trim());
+            return (
+            <div key={i} className={`space-y-2 rounded-md border bg-white p-3 relative ${isConflict ? "border-amber-400 ring-1 ring-amber-200" : ""}`}>
               <Button variant="ghost" size="icon" className="h-6 w-6 absolute top-2 right-2" onClick={() => removeMannequin(i)}>
                 <X className="h-3 w-3 text-destructive" />
               </Button>
+              {isConflict && (
+                <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                  ⚠️ {m.staff_name} さんは上の担当者にも登録されています。社員扱いとマネキン扱いのどちらかに統一してください。
+                </p>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label className="text-xs">派遣会社名</Label>
@@ -1165,7 +1192,8 @@ function NewEventPageInner() {
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </CardContent>
       </Card>
 
