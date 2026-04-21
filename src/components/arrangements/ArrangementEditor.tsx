@@ -45,7 +45,7 @@ type MannequinRow = {
   arrangement_status: string | null;
 };
 
-type VenueOption = string;
+type EventRow = { venue: string; store_name: string | null; start_date: string; end_date: string };
 
 export const ArrangementEditor = forwardRef<ArrangementEditorHandle, { eventId: string; venue: string; storeName: string | null; startDate: string; endDate: string }>(
 function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, ref) {
@@ -53,7 +53,7 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
   const [staff, setStaff] = useState<StaffRow[]>([]);
   const [shipments, setShipments] = useState<ShipmentRow[]>([]);
   const [mannequins, setMannequins] = useState<MannequinRow[]>([]);
-  const [pastVenues, setPastVenues] = useState<VenueOption[]>([]);
+  const [allEvents, setAllEvents] = useState<EventRow[]>([]);
   const [selectedDests, setSelectedDests] = useState<Map<string, "send" | "return">>(new Map());
   const [equipmentFrom, setEquipmentFrom] = useState<string | null>(null);
   const [equipmentTo, setEquipmentTo] = useState<string | null>(null);
@@ -72,7 +72,7 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
       supabase.from("event_staff").select("id, person_type, employee_id, mannequin_person_id, start_date, end_date, role, hotel_name, hotel_status, transport_outbound_status, transport_return_status, employees(name), mannequin_people(name)").eq("event_id", eventId).order("start_date"),
       supabase.from("shipments").select("id, item_name, recipient_name").eq("event_id", eventId),
       supabase.from("events").select("application_status, application_submitted_date, application_method, dm_status, dm_count, equipment_from, equipment_to").eq("id", eventId).single(),
-      supabase.from("events").select("venue, store_name, start_date").order("start_date").limit(100),
+      supabase.from("events").select("venue, store_name, start_date, end_date").order("start_date").limit(200),
       supabase.from("hotel_master").select("id, name, area_id").eq("is_active", true).order("name"),
       supabase.from("hotel_venue_links").select("hotel_id, venue_name"),
       supabase.from("mannequins").select("id, agency_name, staff_name, work_start_date, work_end_date, daily_rate, arrangement_status").eq("event_id", eventId).order("work_start_date"),
@@ -95,13 +95,7 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
     });
     setSelectedDests(existing);
 
-    const seen = new Set<string>();
-    const venues: string[] = [];
-    (venueRes.data || []).forEach((e: { venue: string; store_name: string | null; start_date: string }) => {
-      const label = e.store_name ? `${e.venue} ${e.store_name}` : e.venue;
-      if (!seen.has(label)) { seen.add(label); venues.push(label); }
-    });
-    setPastVenues(venues);
+    setAllEvents((venueRes.data || []) as EventRow[]);
     setHotelMasters((hmRes.data || []) as { id: string; name: string; area_id: string | null }[]);
     setHotelVenueLinks((hvlRes.data || []) as { hotel_id: string; venue_name: string }[]);
     // 当該百貨店(venue + store_name)のエリアを確定
@@ -121,6 +115,70 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
   }, [dirty]);
 
   const markDirty = () => { setDirty(true); };
+
+  // --- 備品の流れ: 3週間以内の催事のみを候補にする ---
+  const SHIPMENT_WINDOW_DAYS = 21;
+  const parseYmd = (s: string): Date | null => {
+    if (!s) return null;
+    const [y, m, d] = s.split("-").map(Number);
+    if (!y || !m || !d) return null;
+    return new Date(y, m - 1, d);
+  };
+  const daysBetween = (a: Date, b: Date) => Math.round((b.getTime() - a.getTime()) / 86400000);
+  const fmtMd = (s: string) => {
+    const d = parseYmd(s);
+    return d ? `${d.getMonth() + 1}/${d.getDate()}` : s;
+  };
+  const currentLabel = storeName ? `${venue} ${storeName}` : venue;
+
+  // 過去会場のフラットな重複排除リスト（備品発送先選択用に残す）
+  const pastVenues = useMemo(() => {
+    const seen = new Set<string>();
+    const arr: string[] = [];
+    for (const e of allEvents) {
+      const label = e.store_name ? `${e.venue} ${e.store_name}` : e.venue;
+      if (!seen.has(label)) { seen.add(label); arr.push(label); }
+    }
+    return arr;
+  }, [allEvents]);
+
+  // 搬入元候補: この催事の開始日より前、3週間以内に終わる催事
+  const equipmentFromCandidates = useMemo(() => {
+    const base = parseYmd(startDate);
+    if (!base) return [];
+    const list: Array<{ label: string; date: string; days: number }> = [];
+    for (const e of allEvents) {
+      const endD = parseYmd(e.end_date);
+      if (!endD) continue;
+      const diff = daysBetween(endD, base);
+      if (diff < 0 || diff > SHIPMENT_WINDOW_DAYS) continue;
+      const label = e.store_name ? `${e.venue} ${e.store_name}` : e.venue;
+      if (label === currentLabel) continue;
+      const existing = list.find((x) => x.label === label);
+      if (!existing) list.push({ label, date: e.end_date, days: diff });
+      else if (diff < existing.days) { existing.date = e.end_date; existing.days = diff; }
+    }
+    return list.sort((a, b) => a.days - b.days);
+  }, [allEvents, startDate, currentLabel]);
+
+  // 搬出先候補: この催事の終了日より後、3週間以内に始まる催事
+  const equipmentToCandidates = useMemo(() => {
+    const base = parseYmd(endDate);
+    if (!base) return [];
+    const list: Array<{ label: string; date: string; days: number }> = [];
+    for (const e of allEvents) {
+      const startD = parseYmd(e.start_date);
+      if (!startD) continue;
+      const diff = daysBetween(base, startD);
+      if (diff < 0 || diff > SHIPMENT_WINDOW_DAYS) continue;
+      const label = e.store_name ? `${e.venue} ${e.store_name}` : e.venue;
+      if (label === currentLabel) continue;
+      const existing = list.find((x) => x.label === label);
+      if (!existing) list.push({ label, date: e.start_date, days: diff });
+      else if (diff < existing.days) { existing.date = e.start_date; existing.days = diff; }
+    }
+    return list.sort((a, b) => a.days - b.days);
+  }, [allEvents, endDate, currentLabel]);
 
   const hotelCandidates = useMemo(() => {
     const venueLabel = storeName ? `${venue} ${storeName}` : venue;
@@ -448,6 +506,7 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
           <div className="flex items-center gap-2">
             <Package className="h-4 w-4 text-amber-600" />
             <span className="text-sm font-bold text-amber-800">備品の流れ</span>
+            <span className="text-[10px] text-amber-700/70">（3週間以内の催事のみ）</span>
           </div>
 
           {/* 搬入元 */}
@@ -462,15 +521,35 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
                 className={`cursor-pointer text-xs transition-colors ${equipmentFrom === "本社（安岡蒲鉾）" ? "bg-black border-black text-white font-bold" : "border-gray-300 text-gray-500 bg-white hover:bg-gray-100 hover:text-black hover:border-gray-500"}`}
                 onClick={() => { setEquipmentFrom(equipmentFrom === "本社（安岡蒲鉾）" ? null : "本社（安岡蒲鉾）"); markDirty(); }}
               >本社（安岡蒲鉾）</Badge>
-              {pastVenues.filter((v) => v !== venueLabel).map((v) => {
-                const sel = equipmentFrom === v;
-                return (
-                  <Badge key={v} variant="outline"
-                    className={`cursor-pointer text-xs transition-colors ${sel ? "bg-amber-500 border-amber-500 text-white font-bold" : "border-amber-300 text-amber-400 bg-white hover:bg-amber-50 hover:text-amber-700 hover:border-amber-500"}`}
-                    onClick={() => { setEquipmentFrom(sel ? null : v); markDirty(); }}
-                  >{v}</Badge>
-                );
-              })}
+              {equipmentFromCandidates.length === 0 ? (
+                <span className="text-[11px] text-muted-foreground self-center">3週間以内に終わる催事はありません</span>
+              ) : (
+                equipmentFromCandidates.map((v) => {
+                  const sel = equipmentFrom === v.label;
+                  return (
+                    <Badge key={v.label} variant="outline"
+                      className={`cursor-pointer text-xs transition-colors ${sel ? "bg-amber-500 border-amber-500 text-white font-bold" : "border-amber-300 text-amber-400 bg-white hover:bg-amber-50 hover:text-amber-700 hover:border-amber-500"}`}
+                      onClick={() => { setEquipmentFrom(sel ? null : v.label); markDirty(); }}
+                      title={`${v.label} は ${v.date} 終了（${v.days}日前）`}
+                    >
+                      {v.label}
+                      <span className="ml-1 text-[10px] opacity-70">{fmtMd(v.date)}終了{v.days === 0 ? "（当日）" : `（${v.days}日前）`}</span>
+                    </Badge>
+                  );
+                })
+              )}
+              {/* 3週間窓の外の既存値を「その他」として表示（上書き誤操作防止） */}
+              {equipmentFrom &&
+                equipmentFrom !== "本社（安岡蒲鉾）" &&
+                !equipmentFromCandidates.some((c) => c.label === equipmentFrom) && (
+                <Badge variant="outline"
+                  className="cursor-pointer text-xs bg-amber-500 border-amber-500 text-white font-bold"
+                  onClick={() => { setEquipmentFrom(null); markDirty(); }}
+                  title="解除するにはクリック"
+                >
+                  {equipmentFrom}<span className="ml-1 text-[10px] opacity-70">（その他）</span>
+                </Badge>
+              )}
             </div>
           </div>
 
@@ -486,15 +565,34 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
                 className={`cursor-pointer text-xs transition-colors ${equipmentTo === "本社（安岡蒲鉾）" ? "bg-black border-black text-white font-bold" : "border-gray-300 text-gray-500 bg-white hover:bg-gray-100 hover:text-black hover:border-gray-500"}`}
                 onClick={() => { setEquipmentTo(equipmentTo === "本社（安岡蒲鉾）" ? null : "本社（安岡蒲鉾）"); markDirty(); }}
               >本社（安岡蒲鉾）</Badge>
-              {pastVenues.filter((v) => v !== venueLabel).map((v) => {
-                const sel = equipmentTo === v;
-                return (
-                  <Badge key={v} variant="outline"
-                    className={`cursor-pointer text-xs transition-colors ${sel ? "bg-amber-500 border-amber-500 text-white font-bold" : "border-amber-300 text-amber-400 bg-white hover:bg-amber-50 hover:text-amber-700 hover:border-amber-500"}`}
-                    onClick={() => { setEquipmentTo(sel ? null : v); markDirty(); }}
-                  >{v}</Badge>
-                );
-              })}
+              {equipmentToCandidates.length === 0 ? (
+                <span className="text-[11px] text-muted-foreground self-center">3週間以内に始まる催事はありません</span>
+              ) : (
+                equipmentToCandidates.map((v) => {
+                  const sel = equipmentTo === v.label;
+                  return (
+                    <Badge key={v.label} variant="outline"
+                      className={`cursor-pointer text-xs transition-colors ${sel ? "bg-amber-500 border-amber-500 text-white font-bold" : "border-amber-300 text-amber-400 bg-white hover:bg-amber-50 hover:text-amber-700 hover:border-amber-500"}`}
+                      onClick={() => { setEquipmentTo(sel ? null : v.label); markDirty(); }}
+                      title={`${v.label} は ${v.date} 開始（${v.days}日後）`}
+                    >
+                      {v.label}
+                      <span className="ml-1 text-[10px] opacity-70">{fmtMd(v.date)}開始{v.days === 0 ? "（当日）" : `（${v.days}日後）`}</span>
+                    </Badge>
+                  );
+                })
+              )}
+              {equipmentTo &&
+                equipmentTo !== "本社（安岡蒲鉾）" &&
+                !equipmentToCandidates.some((c) => c.label === equipmentTo) && (
+                <Badge variant="outline"
+                  className="cursor-pointer text-xs bg-amber-500 border-amber-500 text-white font-bold"
+                  onClick={() => { setEquipmentTo(null); markDirty(); }}
+                  title="解除するにはクリック"
+                >
+                  {equipmentTo}<span className="ml-1 text-[10px] opacity-70">（その他）</span>
+                </Badge>
+              )}
             </div>
           </div>
         </CardContent>
