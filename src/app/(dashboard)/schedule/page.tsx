@@ -109,6 +109,19 @@ export default function SchedulePage() {
   };
   const [dragState, setDragState] = useState<DragState | null>(null);
 
+  // 直近の変更（元に戻す用）
+  type LastDragChange = {
+    assignmentId: string;
+    prevStart: string;
+    prevEnd: string;
+    newStart: string;
+    newEnd: string;
+    personName: string;
+    venueLabel: string;
+  };
+  const [lastChange, setLastChange] = useState<LastDragChange | null>(null);
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const people: Person[] = useMemo(() => [
     ...employees.map((e) => ({ id: e.id, name: e.name, kind: "employee" as const })),
     ...mannequinPeople.map((m) => ({ id: m.id, name: m.name, kind: "mannequin" as const })),
@@ -356,6 +369,27 @@ export default function SchedulePage() {
           .from("event_staff")
           .update({ start_date: st.currentStart, end_date: st.currentEnd })
           .eq("id", st.assignmentId);
+        // 元に戻す用に直近の変更を記録
+        const a = assignments.find((x) => x.id === st.assignmentId);
+        const personName =
+          a?.person_type === "mannequin"
+            ? mannequinPeople.find((p) => p.id === a?.mannequin_person_id)?.name || ""
+            : employees.find((e) => e.id === a?.employee_id)?.name || "";
+        const venueLabel = a?.events
+          ? (a.events.store_name ? `${a.events.venue} ${a.events.store_name}` : a.events.venue)
+          : "";
+        setLastChange({
+          assignmentId: st.assignmentId,
+          prevStart: st.origStart,
+          prevEnd: st.origEnd,
+          newStart: st.currentStart,
+          newEnd: st.currentEnd,
+          personName,
+          venueLabel,
+        });
+        // 10秒経過で自動的に元に戻すUIを消す
+        if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+        undoTimerRef.current = setTimeout(() => setLastChange(null), 10_000);
         fetchData();
       }
     };
@@ -935,6 +969,50 @@ export default function SchedulePage() {
           {dragState.handle === "move" && (
             <>期間: <span className="font-bold">{dragState.currentStart} 〜 {dragState.currentEnd}</span></>
           )}
+        </div>
+      )}
+
+      {/* 元に戻すトースト（直近のドラッグ保存に対してのみ） */}
+      {lastChange && !dragState && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-foreground text-background px-4 py-3 rounded-lg shadow-xl flex items-center gap-3 max-w-[min(520px,calc(100vw-2rem))]">
+          <div className="text-sm min-w-0">
+            <div className="font-medium truncate">
+              {lastChange.personName && <>{lastChange.personName} の</>}
+              {lastChange.venueLabel && <> 「{lastChange.venueLabel}」 </>}
+              日程を変更
+            </div>
+            <div className="text-xs opacity-70 truncate">
+              {lastChange.prevStart}〜{lastChange.prevEnd} → {lastChange.newStart}〜{lastChange.newEnd}
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="shrink-0"
+            onClick={async () => {
+              await supabase
+                .from("event_staff")
+                .update({ start_date: lastChange.prevStart, end_date: lastChange.prevEnd })
+                .eq("id", lastChange.assignmentId);
+              setLastChange(null);
+              if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+              fetchData();
+            }}
+          >
+            元に戻す
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="shrink-0 h-7 w-7 text-background hover:bg-background/20"
+            onClick={() => {
+              setLastChange(null);
+              if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+            }}
+            aria-label="閉じる"
+          >
+            <X className="h-4 w-4" />
+          </Button>
         </div>
       )}
 
