@@ -43,6 +43,7 @@ type EventData = {
   start_date: string;
   end_date: string;
   closing_time: string | null;
+  last_day_closing_time: string | null;
   person_in_charge: string | null;
   status: string;
   application_status: string | null;
@@ -52,6 +53,8 @@ type EventData = {
   revenue: number | null;
   retrospective: string | null;
 };
+
+type DailyRevenueRow = { id: string; event_id: string; date: string; amount: number | null };
 
 const statusColor: Record<string, string> = {
   "準備中": "bg-gray-100 text-gray-800",
@@ -87,6 +90,7 @@ export default function EventDetailPage({
     start_date: "",
     end_date: "",
     closing_time: "",
+    last_day_closing_time: "",
     person_in_charge: "",
     status: "",
     application_status: "未提出",
@@ -97,11 +101,15 @@ export default function EventDetailPage({
     retrospective: "",
   });
 
+  // 日別売上: date(YYYY-MM-DD) -> 金額文字列
+  const [dailyRevenue, setDailyRevenue] = useState<Map<string, string>>(new Map());
+
   const fetchEvent = useCallback(async () => {
-    const [eventRes, empRes, staffRes] = await Promise.all([
+    const [eventRes, empRes, staffRes, dailyRes] = await Promise.all([
       supabase.from("events").select("*").eq("id", id).single(),
       supabase.from("employees").select("id, name").order("sort_order").order("name"),
       supabase.from("event_staff").select("id, employee_id").eq("event_id", id).eq("role", "担当者"),
+      supabase.from("event_daily_revenue").select("*").eq("event_id", id).order("date"),
     ]);
     if (eventRes.data) {
       setEvent(eventRes.data);
@@ -111,6 +119,7 @@ export default function EventDetailPage({
         store_name: eventRes.data.store_name || "",
         prefecture: eventRes.data.prefecture,
         closing_time: eventRes.data.closing_time || "",
+        last_day_closing_time: eventRes.data.last_day_closing_time || "",
         start_date: eventRes.data.start_date,
         end_date: eventRes.data.end_date,
         person_in_charge: eventRes.data.person_in_charge || "",
@@ -123,6 +132,12 @@ export default function EventDetailPage({
         retrospective: eventRes.data.retrospective || "",
       });
     }
+    // 日別売上をMapに詰める
+    const dailyMap = new Map<string, string>();
+    ((dailyRes.data || []) as DailyRevenueRow[]).forEach((r) => {
+      if (r.amount != null) dailyMap.set(r.date, String(r.amount));
+    });
+    setDailyRevenue(dailyMap);
     const emps = empRes.data || [];
     setEmployees(emps);
     const staffRecords = (staffRes.data || []) as { id: string; employee_id: string }[];
@@ -181,6 +196,18 @@ export default function EventDetailPage({
       .join("、");
     const allNames = [...selectedNames, ...(freeText ? [freeText] : [])];
 
+    // 日別売上の合計を計算（events.revenue に反映して一覧・履歴との互換維持）
+    let dailyTotal = 0;
+    let hasAnyDaily = false;
+    for (const v of dailyRevenue.values()) {
+      const n = v.trim() ? parseInt(v) : NaN;
+      if (!isNaN(n)) { dailyTotal += n; hasAnyDaily = true; }
+    }
+    // 日別入力があればそれを合計として採用、無ければ従来通り単一入力値
+    const revenueToSave = hasAnyDaily
+      ? dailyTotal
+      : form.revenue.trim() ? parseInt(form.revenue) : null;
+
     await supabase
       .from("events")
       .update({
@@ -191,16 +218,55 @@ export default function EventDetailPage({
         start_date: form.start_date,
         end_date: form.end_date,
         closing_time: form.closing_time.trim() || null,
+        last_day_closing_time: form.last_day_closing_time.trim() || null,
         person_in_charge: allNames.length > 0 ? allNames.join("、") : null,
         status: form.status,
         application_status: form.application_status,
         application_submitted_date: form.application_submitted_date || null,
         application_method: form.application_method || null,
         notes: form.notes.trim() || null,
-        revenue: form.revenue.trim() ? parseInt(form.revenue) : null,
+        revenue: revenueToSave,
         retrospective: form.retrospective.trim() || null,
       })
       .eq("id", id);
+
+    // 日別売上テーブルを差分更新
+    // 現在DBにある行を取得 → 新しいMapと突き合わせて upsert / delete
+    const { data: existingDaily } = await supabase
+      .from("event_daily_revenue")
+      .select("id, date, amount")
+      .eq("event_id", id);
+    const existingByDate = new Map<string, { id: string; amount: number | null }>();
+    (existingDaily || []).forEach((r: { id: string; date: string; amount: number | null }) => {
+      existingByDate.set(r.date, { id: r.id, amount: r.amount });
+    });
+
+    const toUpsert: Array<{ event_id: string; date: string; amount: number }> = [];
+    const toDelete: string[] = [];
+
+    for (const [date, amtStr] of dailyRevenue.entries()) {
+      const trimmed = amtStr.trim();
+      if (!trimmed) {
+        // 空入力: 既存行があれば削除
+        const ex = existingByDate.get(date);
+        if (ex) toDelete.push(ex.id);
+        continue;
+      }
+      const n = parseInt(trimmed);
+      if (isNaN(n)) continue;
+      toUpsert.push({ event_id: id, date, amount: n });
+    }
+    // dailyRevenue に含まれない日付で既存行があれば削除（会期変更などで日付が外れたケース）
+    for (const [date, row] of existingByDate.entries()) {
+      if (!dailyRevenue.has(date)) toDelete.push(row.id);
+    }
+
+    if (toDelete.length > 0) {
+      await supabase.from("event_daily_revenue").delete().in("id", toDelete);
+    }
+    if (toUpsert.length > 0) {
+      await supabase.from("event_daily_revenue").upsert(toUpsert, { onConflict: "event_id,date" });
+    }
 
     // event_staff の担当者を差分更新（他ロールのレコードを壊さない）
     const originalEmpIds = originalStaffRecords.map((r) => r.employee_id);
@@ -382,7 +448,7 @@ export default function EventDetailPage({
               </Select>
             </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-[2fr_1fr] gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-[2fr_1fr_1fr] gap-4">
             <div className="space-y-2">
               <Label>開催期間 *</Label>
               <DateRangePicker
@@ -394,6 +460,16 @@ export default function EventDetailPage({
             <div className="space-y-2">
               <Label>閉場時間</Label>
               <Input type="time" value={form.closing_time} onChange={(e) => setForm({ ...form, closing_time: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>最終日の閉場時間</Label>
+              <Input
+                type="time"
+                value={form.last_day_closing_time}
+                onChange={(e) => setForm({ ...form, last_day_closing_time: e.target.value })}
+                placeholder="早く閉まる場合のみ"
+              />
+              <p className="text-[10px] text-muted-foreground">通常より早く閉まる場合のみ入力</p>
             </div>
           </div>
           <div className="space-y-2">
@@ -439,27 +515,87 @@ export default function EventDetailPage({
             <TrendingUp className="h-4 w-4 text-emerald-700" />
             <span className="text-sm font-bold text-emerald-800">実績（終了後に記録）</span>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-3">
-            <div className="space-y-1">
-              <Label className="text-xs">売上金額（円）</Label>
-              <Input
-                type="number"
-                min={0}
-                step={1000}
-                value={form.revenue}
-                onChange={(e) => setForm({ ...form, revenue: e.target.value })}
-                placeholder="例: 850000"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">振り返りメモ</Label>
-              <Textarea
-                value={form.retrospective}
-                onChange={(e) => setForm({ ...form, retrospective: e.target.value })}
-                rows={2}
-                placeholder="反省点・来年に活かせる点など"
-              />
-            </div>
+
+          {/* 日別売上 */}
+          {(() => {
+            // 会期の日付配列を作る
+            const days: string[] = [];
+            if (form.start_date && form.end_date) {
+              const s = new Date(form.start_date + "T00:00:00");
+              const e = new Date(form.end_date + "T00:00:00");
+              const cur = new Date(s);
+              while (cur <= e) {
+                const ymd = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`;
+                days.push(ymd);
+                cur.setDate(cur.getDate() + 1);
+              }
+            }
+            const wdayLabel = (ymd: string) => {
+              const d = new Date(ymd + "T00:00:00");
+              return ["日", "月", "火", "水", "木", "金", "土"][d.getDay()];
+            };
+            const fmt = (ymd: string) => {
+              const d = new Date(ymd + "T00:00:00");
+              return `${d.getMonth() + 1}/${d.getDate()}（${wdayLabel(ymd)}）`;
+            };
+            const total = days.reduce((sum, d) => {
+              const v = dailyRevenue.get(d) ?? "";
+              const n = v.trim() ? parseInt(v) : NaN;
+              return isNaN(n) ? sum : sum + n;
+            }, 0);
+
+            return (
+              <div className="space-y-2">
+                <Label className="text-xs">売上金額（円） — 日別</Label>
+                {days.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">開催期間を入力すると日別の入力欄が表示されます</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {days.map((ymd, idx) => (
+                      <div key={ymd} className="flex items-center gap-2">
+                        <div className="w-24 text-xs text-muted-foreground shrink-0">
+                          {fmt(ymd)}
+                          {idx === days.length - 1 && days.length > 1 && (
+                            <span className="ml-1 text-[10px] text-amber-700">（最終日）</span>
+                          )}
+                        </div>
+                        <Input
+                          type="number"
+                          min={0}
+                          step={1000}
+                          value={dailyRevenue.get(ymd) ?? ""}
+                          onChange={(e) => {
+                            const next = new Map(dailyRevenue);
+                            next.set(ymd, e.target.value);
+                            setDailyRevenue(next);
+                          }}
+                          placeholder="例: 250000"
+                          className="h-9 max-w-[200px]"
+                        />
+                      </div>
+                    ))}
+                    <div className="flex items-center gap-2 pt-2 border-t">
+                      <span className="w-24 text-xs font-semibold shrink-0">合計</span>
+                      <span className="font-bold text-emerald-800">¥{total.toLocaleString()}</span>
+                    </div>
+                  </div>
+                )}
+                {/* 旧・一括入力値は後方互換で隠し保持（日別が空の時のみ採用される） */}
+                {form.revenue && days.length === 0 && (
+                  <p className="text-[10px] text-muted-foreground">※ 旧データ: ¥{parseInt(form.revenue).toLocaleString()}（日別入力を保存すると上書きされます）</p>
+                )}
+              </div>
+            );
+          })()}
+
+          <div className="space-y-1 pt-2">
+            <Label className="text-xs">振り返りメモ</Label>
+            <Textarea
+              value={form.retrospective}
+              onChange={(e) => setForm({ ...form, retrospective: e.target.value })}
+              rows={2}
+              placeholder="反省点・来年に活かせる点など"
+            />
           </div>
         </CardContent>
       </Card>
