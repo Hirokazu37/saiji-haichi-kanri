@@ -668,28 +668,67 @@ export default function EventsPage() {
               .md\\:pl-60 { padding-left: 0 !important; }
               .print\\:overflow-visible { overflow: visible !important; }
               .print\\:page-break { page-break-before: always; break-before: page; }
-              /* monthsPerPage に応じて全体を縮小し、強制的にN ヶ月を1ページに詰める */
-              .events-print-zone[data-mpp="1"] { zoom: 1; }
-              .events-print-zone[data-mpp="2"] { zoom: 1; }
-              .events-print-zone[data-mpp="3"] { zoom: 0.66; }
-              .events-print-zone[data-mpp="4"] { zoom: 0.5; }
-              .events-print-zone[data-mpp="6"] { zoom: 0.33; }
-              /* カード内の縦余白を減らしてさらに詰める */
-              .events-print-zone[data-mpp="3"] .space-y-4 > *,
-              .events-print-zone[data-mpp="4"] .space-y-4 > *,
-              .events-print-zone[data-mpp="6"] .space-y-4 > * {
-                margin-top: 4px !important;
+
+              /* ===== ページ単位レイアウト（N枚を1ページに均等割付け） ===== */
+              .events-print-page {
+                page-break-after: always;
+                break-after: page;
+                display: flex;
+                flex-direction: column;
+                min-height: calc(100vh - 18mm); /* @page margin 8mm × 2 + 余裕 */
+                gap: 4mm;
+              }
+              .events-print-page:last-child {
+                page-break-after: auto;
+                break-after: auto;
+              }
+              /* 各カードはページ内で均等に分け合う */
+              .events-print-page > [data-slot="card"] {
+                flex: 1 1 0 !important;
+                min-height: 0 !important;
+                display: flex !important;
+                flex-direction: column !important;
+                overflow: hidden;
+              }
+              .events-print-page > [data-slot="card"] > [data-slot="card-content"] {
+                flex: 1 !important;
+                min-height: 0 !important;
+                display: flex;
+                flex-direction: column;
+              }
+              .events-print-page > [data-slot="card"] > [data-slot="card-content"] > div {
+                flex: 1 !important;
+                min-height: 0 !important;
+                display: flex;
+                flex-direction: column;
+                min-width: 0 !important;
+              }
+              /* トラック行を伸ばす */
+              .events-track-row {
+                flex: 1 1 0 !important;
+                min-height: 0 !important;
               }
             }
           `}</style>
 
           <TooltipProvider>
-            <div className="space-y-4">
-              {ganttCardGroups.map((group, gIdx) => {
-                const firstBlock = group[0];
-                const cardKey = `${firstBlock.year}-${firstBlock.month}`;
-                return (
-                  <Card key={cardKey} className={`overflow-hidden ${gIdx > 0 && gIdx % printOpts.monthsPerPage === 0 ? "print:page-break" : ""}`}>
+            {(() => {
+              // 印刷時は monthsPerPage ごとにグループ化してページ単位レイアウトを構築
+              const N = Math.max(1, printOpts.monthsPerPage);
+              const pageGroups: typeof ganttCardGroups[] = [];
+              for (let i = 0; i < ganttCardGroups.length; i += N) {
+                pageGroups.push(ganttCardGroups.slice(i, i + N));
+              }
+              return (
+                <div className="space-y-4 print:space-y-0">
+                {pageGroups.map((pageCards, pageIdx) => (
+                  <div key={`page-${pageIdx}`} className="events-print-page space-y-4 print:space-y-1">
+                    {pageCards.map((group, _localIdx) => {
+                      const gIdx = pageIdx * N + _localIdx;
+                      const firstBlock = group[0];
+                      const cardKey = `${firstBlock.year}-${firstBlock.month}`;
+                      return (
+                  <Card key={cardKey} className={`overflow-hidden`}>
                     <CardContent className="p-0 overflow-x-auto print:overflow-visible [touch-action:pan-x_pan-y_pinch-zoom]">
                       <div className="min-w-[600px]">
                         {group.map((cm, subIdx) => {
@@ -749,7 +788,7 @@ export default function EventsPage() {
                           const trackEvents = monthEvents.filter((e) => trackMap.get(e.id) === trackIdx);
                           const rowMinHeight = showArrangementIcons ? 76 : 44;
                           return (
-                            <div key={trackIdx} className={`flex border-b last:border-b-0 ${trackIdx % 2 === 1 ? "bg-slate-50/50" : "bg-white"}`} style={{ minHeight: rowMinHeight }}>
+                            <div key={trackIdx} className={`events-track-row flex border-b last:border-b-0 ${trackIdx % 2 === 1 ? "bg-slate-50/50" : "bg-white"}`} style={{ minHeight: rowMinHeight }}>
                               <div className="w-14 shrink-0 border-r flex items-center justify-center text-[10px] font-bold text-muted-foreground">
                                 {TRACK_LABELS[trackIdx] || String(trackIdx + 1)}
                               </div>
@@ -866,8 +905,12 @@ export default function EventsPage() {
                     </CardContent>
                   </Card>
                 );
-              })}
-            </div>
+                    })}
+                  </div>
+                ))}
+                </div>
+              );
+            })()}
           </TooltipProvider>
         </div>
         </>
