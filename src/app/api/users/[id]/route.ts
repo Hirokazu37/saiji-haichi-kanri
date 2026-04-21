@@ -98,6 +98,12 @@ export async function DELETE(
   const { error } = await admin.auth.admin.deleteUser(id);
   if (error) {
     console.error("[delete user] error:", error);
+    // "User not found": auth.users に既に存在しない（以前の操作で削除済み）。
+    // user_profiles は step 2 で消しているので UI 上も消えるべき → 成功扱い
+    const isNotFound = /user not found/i.test(error.message);
+    if (isNotFound) {
+      return NextResponse.json({ success: true, alreadyGone: true });
+    }
     // Supabase の generic な "Database error deleting user" の場合は
     // ソフト削除（論理削除）にフォールバックして運用継続できるようにする
     const isGenericDbError = /database error/i.test(error.message);
@@ -105,6 +111,10 @@ export async function DELETE(
       const { error: softError } = await admin.auth.admin.deleteUser(id, true);
       if (!softError) {
         return NextResponse.json({ success: true, softDeleted: true });
+      }
+      // ソフト削除も「User not found」なら、同様に既に消えていると見なす
+      if (/user not found/i.test(softError.message)) {
+        return NextResponse.json({ success: true, alreadyGone: true });
       }
       console.error("[delete user] soft delete also failed:", softError);
       return NextResponse.json(
