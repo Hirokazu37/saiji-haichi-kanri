@@ -666,9 +666,18 @@ export default function SchedulePage() {
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 10px; }
           /* AppShellのサイドバー/ヘッダー/フッタ/FAB/ボトムナビを非表示 */
           aside, header, footer, nav { display: none !important; }
-          /* サイドバー左余白とmain padding を解除して紙幅をフル活用 */
+          /* サイドバー左余白と main の全paddingを明示的に解除して紙面をフル活用 */
           .md\\:pl-60 { padding-left: 0 !important; }
-          main { padding: 0 !important; max-width: 100% !important; }
+          main {
+            padding: 0 !important;
+            padding-top: 0 !important;
+            padding-bottom: 0 !important;
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+            max-width: 100% !important;
+          }
+          /* 外側の min-h-screen (100vh) が絶対高さを保証してしまうのを解除 */
+          .min-h-screen { min-height: 0 !important; }
 
           /* モバイル用のカード/カレンダービュー・ビュー切替タブは印刷しない */
           .mobile-only-view { display: none !important; }
