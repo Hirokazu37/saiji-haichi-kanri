@@ -667,7 +667,8 @@ export default function EventsPage() {
               main, [data-slot="main"] { margin: 0 !important; padding: 0 !important; max-width: 100% !important; }
               .md\\:pl-60 { padding-left: 0 !important; }
               .print\\:overflow-visible { overflow: visible !important; }
-              .print\\:page-break { page-break-before: always; break-before: page; }
+              /* ページ区切り（Tailwindユーティリティではなくプレーンクラスで確実に効かせる） */
+              .events-page-break { page-break-before: always !important; break-before: page !important; }
             }
           `}</style>
 
@@ -677,7 +678,7 @@ export default function EventsPage() {
                 const firstBlock = group[0];
                 const cardKey = `${firstBlock.year}-${firstBlock.month}`;
                 return (
-                  <Card key={cardKey} className={`overflow-hidden ${gIdx > 0 && gIdx % printOpts.monthsPerPage === 0 ? "print:page-break" : ""}`}>
+                  <Card key={cardKey} className={`overflow-hidden ${gIdx > 0 && gIdx % printOpts.monthsPerPage === 0 ? "events-page-break" : ""}`}>
                     <CardContent className="p-0 overflow-x-auto print:overflow-visible [touch-action:pan-x_pan-y_pinch-zoom]">
                       <div className="min-w-[600px]">
                         {group.map((cm, subIdx) => {
