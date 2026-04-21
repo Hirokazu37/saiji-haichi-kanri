@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
+import { requireAdmin } from "@/lib/auth-server";
 
 const VALID_ROLES = ["admin", "viewer", "limited"] as const;
 type Role = (typeof VALID_ROLES)[number];
@@ -14,6 +14,9 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireAdmin();
+  if ("error" in auth) return auth.error;
+
   const { id } = await params;
   const body = await request.json();
   const { display_name, password, role, can_view_payments } = body;
@@ -75,14 +78,12 @@ export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireAdmin();
+  if ("error" in auth) return auth.error;
+
   const { id } = await params;
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (user?.id === id) {
+  if (auth.userId === id) {
     return NextResponse.json(
       { error: "自分自身のアカウントは削除できません" },
       { status: 403 }

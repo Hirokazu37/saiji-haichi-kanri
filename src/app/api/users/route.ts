@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { requireAdmin } from "@/lib/auth-server";
 
 const VALID_ROLES = ["admin", "viewer", "limited"] as const;
 type Role = (typeof VALID_ROLES)[number];
@@ -9,9 +10,16 @@ function isRole(v: unknown): v is Role {
   return typeof v === "string" && (VALID_ROLES as readonly string[]).includes(v);
 }
 
-// GET /api/users — ユーザー一覧
+// GET /api/users — ユーザー一覧（認証済みユーザーのみ。RLSに依存）
 export async function GET() {
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
+  }
+
   const { data, error } = await supabase
     .from("user_profiles")
     .select("*")
@@ -25,6 +33,9 @@ export async function GET() {
 
 // POST /api/users — ユーザー作成
 export async function POST(request: Request) {
+  const auth = await requireAdmin();
+  if ("error" in auth) return auth.error;
+
   const body = await request.json();
   const { username, display_name, password, role } = body;
 
