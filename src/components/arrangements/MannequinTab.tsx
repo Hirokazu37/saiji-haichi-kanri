@@ -44,6 +44,7 @@ type MannequinPerson = {
   mobile_phone: string | null;
   daily_rate: number | null;
   skills: string | null;
+  treat_as_employee: boolean;
 };
 
 type Agency = { id: string; name: string };
@@ -78,7 +79,7 @@ export function MannequinTab({ eventId, startDate, endDate }: { eventId: string;
   const fetch = useCallback(async () => {
     const [recRes, pplRes, agRes] = await Promise.all([
       supabase.from("mannequins").select("*").eq("event_id", eventId).order("work_start_date"),
-      supabase.from("mannequin_people").select("id, name, agency_id, phone, mobile_phone, daily_rate, skills").order("name"),
+      supabase.from("mannequin_people").select("id, name, agency_id, phone, mobile_phone, daily_rate, skills, treat_as_employee").order("name"),
       supabase.from("mannequin_agencies").select("id, name").order("name"),
     ]);
     setRecords(recRes.data || []);
@@ -234,13 +235,27 @@ export function MannequinTab({ eventId, startDate, endDate }: { eventId: string;
                 <Select value={form.mannequin_person_id} onValueChange={(v) => v && onSelectPerson(v)}>
                   <SelectTrigger><SelectValue placeholder="マネキンさんを選択" /></SelectTrigger>
                   <SelectContent>
-                    {people.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.name}{p.agency_id ? ` (${getAgencyName(p.agency_id)})` : ""}
-                      </SelectItem>
-                    ))}
+                    {(() => {
+                      // 「社員扱い」マネキンは社員配置UI側で管理するので、ここでは除外する。
+                      // ただし編集中に既に選ばれている人は社員扱いでも表示する。
+                      const currentId = form.mannequin_person_id;
+                      const visible = people.filter((p) => !p.treat_as_employee || p.id === currentId);
+                      if (visible.length === 0) {
+                        return (
+                          <div className="px-2 py-3 text-xs text-muted-foreground">
+                            候補なし。マネキンマスターで登録してください（社員扱いのマネキンは社員配置から登録します）。
+                          </div>
+                        );
+                      }
+                      return visible.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name}{p.agency_id ? ` (${getAgencyName(p.agency_id)})` : ""}
+                        </SelectItem>
+                      ));
+                    })()}
                   </SelectContent>
                 </Select>
+                <p className="text-[10px] text-muted-foreground">社員扱いのマネキンは「社員配置」から登録してください</p>
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-4">

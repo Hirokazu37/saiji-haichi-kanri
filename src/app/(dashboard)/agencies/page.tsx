@@ -33,7 +33,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Combobox, type ComboboxItem } from "@/components/ui/combobox";
 import {
-  Plus, Pencil, Trash2, Search, X, History, ChevronDown, ChevronRight, Star,
+  Plus, Pencil, Trash2, Search, X, History, ChevronDown, ChevronRight, Star, Briefcase, Plane,
 } from "lucide-react";
 import Link from "next/link";
 import { areaMap, areaNames, allPrefectures, matchesArea, getAreaForPrefecture, getRegionColor, regionColors } from "@/lib/areas";
@@ -61,6 +61,8 @@ type MannequinPerson = {
   evaluation: string | null;
   rating: number | null;
   daily_rate: number | null;
+  treat_as_employee: boolean;
+  travel_available: boolean;
 };
 
 type MannequinHistory = {
@@ -87,6 +89,8 @@ const emptyPersonForm = {
   area: "", evaluation: "", rating: 0, daily_rate: "",
   agency_value: "" as string,
   new_agency_phone: "", new_agency_contact: "",
+  treat_as_employee: false,
+  travel_available: false,
 };
 
 function AreaPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
@@ -177,6 +181,8 @@ export default function AgenciesPage() {
   const [searchName, setSearchName] = useState("");
   const [searchAgency, setSearchAgency] = useState("");
   const [searchArea, setSearchArea] = useState("");
+  const [searchTreatAsEmployee, setSearchTreatAsEmployee] = useState(false);
+  const [searchTravelAvailable, setSearchTravelAvailable] = useState(false);
 
   // 地方アコーディオン
   const [collapsedRegions, setCollapsedRegions] = useState<Set<string>>(new Set());
@@ -335,6 +341,8 @@ export default function AgenciesPage() {
       daily_rate: p.daily_rate ? String(p.daily_rate) : "",
       agency_value: p.agency_id || "",
       new_agency_phone: "", new_agency_contact: "",
+      treat_as_employee: p.treat_as_employee ?? false,
+      travel_available: p.travel_available ?? false,
     });
     const linkedAreaIds = new Set(areaLinks.filter((l) => l.mannequin_id === p.id).map((l) => l.area_id));
     setSelectedAreaIds(linkedAreaIds);
@@ -372,6 +380,8 @@ export default function AgenciesPage() {
       area: personForm.area.trim() || null,
       rating: personForm.rating > 0 ? personForm.rating : null,
       daily_rate: personForm.daily_rate ? parseInt(personForm.daily_rate) : null,
+      treat_as_employee: personForm.treat_as_employee,
+      travel_available: personForm.travel_available,
     };
 
     let personId = editingPersonId;
@@ -437,10 +447,12 @@ export default function AgenciesPage() {
       const isPrefMatch = personPrefs.some((pref) => pref.includes(searchArea));
       if (!isAreaMatch && !isPrefMatch) return false;
     }
+    if (searchTreatAsEmployee && !p.treat_as_employee) return false;
+    if (searchTravelAvailable && !p.travel_available) return false;
     return true;
   });
 
-  const hasSearch = searchName || searchAgency || searchArea;
+  const hasSearch = searchName || searchAgency || searchArea || searchTreatAsEmployee || searchTravelAvailable;
 
   // マネキンさんの地方・色（最初に紐づくエリアを代表とする）
   const getPersonPrimaryArea = (personId: string): AreaItem | null => {
@@ -626,8 +638,24 @@ export default function AgenciesPage() {
               />
             </div>
           </div>
+          <div className="flex flex-wrap gap-2 mt-3">
+            <Badge
+              variant={searchTreatAsEmployee ? "default" : "outline"}
+              className="cursor-pointer text-xs"
+              onClick={() => setSearchTreatAsEmployee((v) => !v)}
+            >
+              <Briefcase className="h-3 w-3 mr-1" />社員扱いのみ
+            </Badge>
+            <Badge
+              variant={searchTravelAvailable ? "default" : "outline"}
+              className="cursor-pointer text-xs"
+              onClick={() => setSearchTravelAvailable((v) => !v)}
+            >
+              <Plane className="h-3 w-3 mr-1" />出張可のみ
+            </Badge>
+          </div>
           {hasSearch && (
-            <Button variant="ghost" size="sm" className="mt-2" onClick={() => { setSearchName(""); setSearchAgency(""); setSearchArea(""); }}>
+            <Button variant="ghost" size="sm" className="mt-2" onClick={() => { setSearchName(""); setSearchAgency(""); setSearchArea(""); setSearchTreatAsEmployee(false); setSearchTravelAvailable(false); }}>
               <X className="h-3 w-3 mr-1" />
               検索クリア
             </Button>
@@ -684,7 +712,21 @@ export default function AgenciesPage() {
                         <TableRow key={person.id}>
                           <TableCell className="p-0" style={{ backgroundColor: personColor, width: 6 }} />
                           <TableCell className="text-xs text-muted-foreground">{regionName}</TableCell>
-                          <TableCell className="font-medium">{person.name}</TableCell>
+                          <TableCell className="font-medium">
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <span>{person.name}</span>
+                              {person.treat_as_employee && (
+                                <Badge variant="secondary" className="text-[9px] px-1 py-0 bg-blue-100 text-blue-800 border-blue-200" title="社員扱い（社員配置UIで選択可・社員スケジュール表に表示）">
+                                  <Briefcase className="h-2.5 w-2.5 mr-0.5" />社員扱
+                                </Badge>
+                              )}
+                              {person.travel_available && (
+                                <Badge variant="secondary" className="text-[9px] px-1 py-0 bg-amber-100 text-amber-800 border-amber-200" title="出張可">
+                                  <Plane className="h-2.5 w-2.5 mr-0.5" />出張可
+                                </Badge>
+                              )}
+                            </div>
+                          </TableCell>
                           <TableCell>{getAgencyName(person.agency_id)}</TableCell>
                           <TableCell className="hidden md:table-cell text-sm">
                             {(person.mobile_phone || person.phone) ? (
@@ -856,6 +898,47 @@ export default function AgenciesPage() {
                 onChange={(e) => setPersonForm({ ...personForm, daily_rate: e.target.value })}
                 placeholder="15000"
               />
+            </div>
+
+            {/* 区分フラグ */}
+            <div className="space-y-2 rounded-md border p-3 bg-muted/30">
+              <Label className="font-semibold text-xs">区分・属性</Label>
+              <div className="flex flex-col gap-2">
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={personForm.treat_as_employee}
+                    onChange={(e) => setPersonForm({ ...personForm, treat_as_employee: e.target.checked })}
+                    className="mt-0.5"
+                  />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-1 text-sm font-medium">
+                      <Briefcase className="h-3.5 w-3.5 text-blue-700" />
+                      社員のように扱う
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      ONにすると社員配置画面で選択可能になり、社員スケジュール表に表示されます。催事のマネキンタブからは選べなくなります。
+                    </p>
+                  </div>
+                </label>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={personForm.travel_available}
+                    onChange={(e) => setPersonForm({ ...personForm, travel_available: e.target.checked })}
+                    className="mt-0.5"
+                  />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-1 text-sm font-medium">
+                      <Plane className="h-3.5 w-3.5 text-amber-700" />
+                      出張可能
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      対応エリア外の遠方催事でも手配できる人。検索で絞り込み可能。
+                    </p>
+                  </div>
+                </label>
+              </div>
             </div>
 
             <div className="space-y-2">

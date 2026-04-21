@@ -206,7 +206,7 @@ export default function SchedulePage() {
 
     const [empRes, mpRes, staffRes] = await Promise.all([
       supabase.from("employees").select("id, name").order("sort_order").order("name"),
-      supabase.from("mannequin_people").select("id, name").order("name"),
+      supabase.from("mannequin_people").select("id, name, treat_as_employee").order("name"),
       supabase
         .from("event_staff")
         .select("id, person_type, employee_id, mannequin_person_id, event_id, start_date, end_date, role, hotel_name, hotel_check_in, hotel_check_out, events(id, name, venue, store_name, start_date, end_date)")
@@ -215,7 +215,16 @@ export default function SchedulePage() {
         .order("start_date"),
     ]);
     setEmployees(empRes.data || []);
-    setMannequinPeople(mpRes.data || []);
+    // 社員扱い(treat_as_employee)のマネキン + 期間内にevent_staff配置があるマネキン(過去互換)のみを表示
+    const assignedMpIds = new Set(
+      (staffRes.data || [])
+        .filter((s: { person_type: PersonKind | null; mannequin_person_id: string | null }) => s.person_type === "mannequin" && s.mannequin_person_id)
+        .map((s: { mannequin_person_id: string | null }) => s.mannequin_person_id as string)
+    );
+    const mpFiltered = (mpRes.data || [])
+      .filter((m: { id: string; treat_as_employee: boolean }) => m.treat_as_employee || assignedMpIds.has(m.id))
+      .map((m: { id: string; name: string }) => ({ id: m.id, name: m.name }));
+    setMannequinPeople(mpFiltered);
     setAssignments((staffRes.data as unknown as StaffAssignment[]) || []);
     setLoading(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps

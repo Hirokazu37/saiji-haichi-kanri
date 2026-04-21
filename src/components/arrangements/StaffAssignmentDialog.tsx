@@ -22,7 +22,7 @@ import { addLog } from "@/lib/log";
 type PersonType = "employee" | "mannequin";
 
 type Employee = { id: string; name: string; position: string | null };
-type MannequinPerson = { id: string; name: string; agency_id: string | null };
+type MannequinPerson = { id: string; name: string; agency_id: string | null; treat_as_employee: boolean };
 type Agency = { id: string; name: string };
 
 type EventOption = { id: string; name: string | null; venue: string; store_name: string | null; start_date: string; end_date: string };
@@ -146,7 +146,7 @@ export function StaffAssignmentDialog({
   const load = useCallback(async () => {
     const [empRes, mpRes, agRes, evRes] = await Promise.all([
       supabase.from("employees").select("id, name, position").order("sort_order").order("name"),
-      supabase.from("mannequin_people").select("id, name, agency_id").order("name"),
+      supabase.from("mannequin_people").select("id, name, agency_id, treat_as_employee").order("name"),
       supabase.from("mannequin_agencies").select("id, name").order("name"),
       // 催事選択用（新規作成時のみ使う）: 過去1年〜未来1年
       showEventSelect
@@ -448,16 +448,31 @@ export function StaffAssignmentDialog({
                     <SelectValue placeholder="マネキンを選択">{selectedMannequinLabel}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    {mannequinPeople.map((p) => {
-                      const agency = agencies.find((a) => a.id === p.agency_id)?.name;
-                      return (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.name}{agency ? `（${agency}）` : ""}
-                        </SelectItem>
-                      );
-                    })}
+                    {(() => {
+                      // 「社員扱い」マネキンのみ候補に出す。ただし編集時に既に選択されている人は
+                      // 社員扱いフラグに関わらず表示する（意図しない差替えを防ぐため）
+                      const currentId = form.mannequin_person_id;
+                      const visible = mannequinPeople.filter((p) => p.treat_as_employee || p.id === currentId);
+                      if (visible.length === 0) {
+                        return (
+                          <div className="px-2 py-3 text-xs text-muted-foreground">
+                            「社員扱い」に設定されたマネキンがいません。マネキンマスターで区分を設定してください。
+                          </div>
+                        );
+                      }
+                      return visible.map((p) => {
+                        const agency = agencies.find((a) => a.id === p.agency_id)?.name;
+                        const isLegacy = !p.treat_as_employee && p.id === currentId;
+                        return (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.name}{agency ? `（${agency}）` : ""}{isLegacy ? "（社員扱い解除済）" : ""}
+                          </SelectItem>
+                        );
+                      });
+                    })()}
                   </SelectContent>
                 </Select>
+                <p className="text-[10px] text-muted-foreground">社員扱いに設定されたマネキンのみ候補に表示されます</p>
               </div>
             )}
 
