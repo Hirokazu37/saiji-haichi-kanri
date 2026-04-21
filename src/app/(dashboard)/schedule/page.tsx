@@ -96,6 +96,19 @@ export default function SchedulePage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [createInitialPersonKey, setCreateInitialPersonKey] = useState<string | null>(null);
 
+  // ドラッグ中のバー（日程調整用）。nullなら通常表示、値があればドラッグ中のゴースト表示
+  type DragState = {
+    assignmentId: string;
+    handle: "left" | "right" | "move";
+    startX: number;
+    origStart: string; // YYYY-MM-DD
+    origEnd: string;
+    currentStart: string;
+    currentEnd: string;
+    moved: boolean; // 5px以上動いたらtrue（クリックと区別）
+  };
+  const [dragState, setDragState] = useState<DragState | null>(null);
+
   const people: Person[] = useMemo(() => [
     ...employees.map((e) => ({ id: e.id, name: e.name, kind: "employee" as const })),
     ...mannequinPeople.map((m) => ({ id: m.id, name: m.name, kind: "mannequin" as const })),
@@ -274,6 +287,88 @@ export default function SchedulePage() {
     const t = setTimeout(() => scrollToBaseMonth(), 120);
     return () => clearTimeout(t);
   }, [year, month, monthSpan, loading, scrollToBaseMonth]);
+
+  // --- バーのドラッグで日程調整（PC向け） ---
+  const DRAG_THRESHOLD_PX = 5;
+  const addDaysToYmd = (ymd: string, days: number): string => {
+    const [y, m, d] = ymd.split("-").map(Number);
+    const date = new Date(y, m - 1, d);
+    date.setDate(date.getDate() + days);
+    const yy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    const dd = String(date.getDate()).padStart(2, "0");
+    return `${yy}-${mm}-${dd}`;
+  };
+  const dayDelta = (dx: number) => Math.round(dx / colWidth);
+
+  const beginDrag = (
+    e: React.PointerEvent<HTMLElement>,
+    assignmentId: string,
+    handle: "left" | "right" | "move",
+    origStart: string,
+    origEnd: string,
+  ) => {
+    if (!canEdit) return;
+    // タッチデバイスはドラッグ無効（スクロールとの競合回避。タップ=編集ダイアログに任せる）
+    if (e.pointerType === "touch") return;
+    e.stopPropagation();
+    e.preventDefault();
+    setDragState({
+      assignmentId,
+      handle,
+      startX: e.clientX,
+      origStart,
+      origEnd,
+      currentStart: origStart,
+      currentEnd: origEnd,
+      moved: false,
+    });
+  };
+
+  // ドラッグ中のマウスムーブ/アップはドキュメントで監視
+  useEffect(() => {
+    if (!dragState) return;
+    const onMove = (e: PointerEvent) => {
+      const dx = e.clientX - dragState.startX;
+      const moved = Math.abs(dx) >= DRAG_THRESHOLD_PX;
+      const delta = dayDelta(dx);
+      let ns = dragState.origStart;
+      let ne = dragState.origEnd;
+      if (dragState.handle === "left") {
+        ns = addDaysToYmd(dragState.origStart, delta);
+        if (ns > ne) ns = ne;
+      } else if (dragState.handle === "right") {
+        ne = addDaysToYmd(dragState.origEnd, delta);
+        if (ne < ns) ne = ns;
+      } else {
+        ns = addDaysToYmd(dragState.origStart, delta);
+        ne = addDaysToYmd(dragState.origEnd, delta);
+      }
+      setDragState((prev) => (prev ? { ...prev, currentStart: ns, currentEnd: ne, moved } : prev));
+    };
+    const onUp = async () => {
+      const st = dragState;
+      setDragState(null);
+      if (!st) return;
+      if (!st.moved) return; // 実質クリック扱い（button onClick が編集ダイアログを開く）
+      if (st.currentStart !== st.origStart || st.currentEnd !== st.origEnd) {
+        await supabase
+          .from("event_staff")
+          .update({ start_date: st.currentStart, end_date: st.currentEnd })
+          .eq("id", st.assignmentId);
+        fetchData();
+      }
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragState, colWidth]);
 
   const handlePrint = () => { window.print(); };
 
@@ -730,10 +825,14 @@ export default function SchedulePage() {
                         )}
                         {/* 担当バー */}
                         {empAssignments.map((a) => {
-                          const style = getBarStyle(a);
                           const color = eventColorMap.get(a.event_id) || colors[0];
                           const row = rowMap.get(a.id) || 0;
                           const top = ROW_PADDING + row * (BAR_HEIGHT + BAR_GAP);
+                          // ドラッグ中はゴーストの日付でバー位置を計算
+                          const isDragging = dragState?.assignmentId === a.id;
+                          const effectiveStart = isDragging ? dragState!.currentStart : a.start_date;
+                          const effectiveEnd = isDragging ? dragState!.currentEnd : a.end_date;
+                          const style = getBarStyle({ ...a, start_date: effectiveStart, end_date: effectiveEnd });
                           return (
                             <Tooltip key={a.id}>
                               <TooltipTrigger
@@ -741,8 +840,14 @@ export default function SchedulePage() {
                                   canEdit ? (
                                     <button
                                       type="button"
-                                      onClick={() => { setEditingAssignmentId(a.id); setEditOpen(true); }}
-                                      className={`absolute rounded text-xs leading-snug px-1.5 flex items-center overflow-hidden whitespace-nowrap hover:opacity-80 hover:ring-2 hover:ring-primary/40 transition-all z-[1] text-left cursor-pointer ${color.bar}`}
+                                      onClick={() => {
+                                        // ドラッグ直後の onClick は無視（ドラッグで日付変わった時）
+                                        if (dragState && dragState.assignmentId === a.id && dragState.moved) return;
+                                        setEditingAssignmentId(a.id);
+                                        setEditOpen(true);
+                                      }}
+                                      onPointerDown={(e) => beginDrag(e, a.id, "move", a.start_date, a.end_date)}
+                                      className={`group absolute rounded text-xs leading-snug flex items-center overflow-hidden whitespace-nowrap hover:opacity-80 hover:ring-2 hover:ring-primary/40 transition-shadow z-[1] text-left ${isDragging ? "cursor-grabbing opacity-80 ring-2 ring-primary" : "cursor-grab"} ${color.bar}`}
                                       style={{
                                         left: style.left,
                                         width: style.width,
@@ -751,10 +856,24 @@ export default function SchedulePage() {
                                       }}
                                       aria-label={`${a.events?.venue} の配置を編集`}
                                     >
-                                      <div className="truncate font-bold">{a.events?.venue}{a.events?.store_name ? ` ${a.events.store_name}` : ""}</div>
-                                      {a.hotel_name && (
-                                        <div className="truncate text-[11px] opacity-70">🏨 {a.hotel_name}</div>
-                                      )}
+                                      {/* 左端リサイズハンドル */}
+                                      <span
+                                        onPointerDown={(e) => beginDrag(e, a.id, "left", a.start_date, a.end_date)}
+                                        className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-black/10"
+                                        aria-hidden
+                                      />
+                                      <div className="px-1.5 flex-1 min-w-0">
+                                        <div className="truncate font-bold">{a.events?.venue}{a.events?.store_name ? ` ${a.events.store_name}` : ""}</div>
+                                        {a.hotel_name && (
+                                          <div className="truncate text-[11px] opacity-70">🏨 {a.hotel_name}</div>
+                                        )}
+                                      </div>
+                                      {/* 右端リサイズハンドル */}
+                                      <span
+                                        onPointerDown={(e) => beginDrag(e, a.id, "right", a.start_date, a.end_date)}
+                                        className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-black/10"
+                                        aria-hidden
+                                      />
                                     </button>
                                   ) : (
                                     <Link
@@ -803,6 +922,21 @@ export default function SchedulePage() {
           </Card>
         </TooltipProvider>
       </div>
+
+      {/* ドラッグ中の日付ヒント（画面右下にフロート表示） */}
+      {dragState && dragState.moved && (
+        <div className="fixed bottom-4 right-4 z-50 bg-primary text-primary-foreground px-3 py-2 rounded-md shadow-lg text-sm font-medium pointer-events-none">
+          {dragState.handle === "left" && (
+            <>開始日: <span className="font-bold">{dragState.currentStart}</span></>
+          )}
+          {dragState.handle === "right" && (
+            <>終了日: <span className="font-bold">{dragState.currentEnd}</span></>
+          )}
+          {dragState.handle === "move" && (
+            <>期間: <span className="font-bold">{dragState.currentStart} 〜 {dragState.currentEnd}</span></>
+          )}
+        </div>
+      )}
 
       {/* 配置編集ダイアログ（バークリック時） */}
       <StaffAssignmentDialog
