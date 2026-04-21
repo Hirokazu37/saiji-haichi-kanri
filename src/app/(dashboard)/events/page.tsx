@@ -662,82 +662,22 @@ export default function EventsPage() {
           <style>{`
             @media print {
               @page { size: A4 ${printOpts.orientation}; margin: 8mm; }
-              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 8px; }
+              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 11px; }
               nav, aside, header, footer { display: none !important; }
               main, [data-slot="main"] { margin: 0 !important; padding: 0 !important; max-width: 100% !important; }
               .md\\:pl-60 { padding-left: 0 !important; }
               .print\\:overflow-visible { overflow: visible !important; }
               .print\\:page-break { page-break-before: always; break-before: page; }
-
-              /* ===== 1ページにN個のカードを収めるための縦配分 =====
-                 ページ全体の高さを monthsPerPage で割って各カードに min-height を配る。
-                 カード内の A/B/C... 行を flex で均等割付けし、下の余白を行が埋める。 */
-              .events-print-page {
-                display: flex;
-                flex-direction: column;
-                gap: 2mm;
-              }
-              .events-print-page > [data-slot="card"] {
-                display: flex !important;
-                flex-direction: column !important;
-                overflow: hidden;
-              }
-              .events-print-page > [data-slot="card"] > [data-slot="card-content"] {
-                flex: 1 !important;
-                min-height: 0 !important;
-                display: flex;
-                flex-direction: column;
-              }
-              .events-print-page > [data-slot="card"] > [data-slot="card-content"] > div {
-                flex: 1 !important;
-                min-height: 0 !important;
-                display: flex;
-                flex-direction: column;
-                min-width: 0 !important;
-              }
-              .events-print-page > [data-slot="card"] > [data-slot="card-content"] > div > div {
-                flex: 1 !important;
-                min-height: 0 !important;
-                display: flex;
-                flex-direction: column;
-              }
-              /* トラック行(A/B/C...)を flex:1 で均等割付け → 大きく表示 */
-              .events-track-row {
-                flex: 1 1 0 !important;
-                min-height: 0 !important;
-              }
-
-              /* monthsPerPage に応じてカードの最小高を配る（ページ全体を使い切る） */
-              .events-print-page[data-mpp="1"] > [data-slot="card"] { min-height: calc((100vh - 24mm) / 1); }
-              .events-print-page[data-mpp="2"] > [data-slot="card"] { min-height: calc((100vh - 24mm) / 2); }
-              .events-print-page[data-mpp="3"] > [data-slot="card"] { min-height: calc((100vh - 24mm) / 3); }
-              .events-print-page[data-mpp="4"] > [data-slot="card"] { min-height: calc((100vh - 24mm) / 4); }
-              .events-print-page[data-mpp="6"] > [data-slot="card"] { min-height: calc((100vh - 24mm) / 6); }
-
-              /* ページごとに必ず改ページ（最後のページ以外） */
-              .events-print-page { page-break-after: always; break-after: page; }
-              .events-print-page:last-child { page-break-after: auto; break-after: auto; }
             }
           `}</style>
 
           <TooltipProvider>
-            {(() => {
-              // 印刷時は monthsPerPage ごとにグループ化してページ単位レイアウトを構築
-              const N = Math.max(1, printOpts.monthsPerPage);
-              const pageGroups: typeof ganttCardGroups[] = [];
-              for (let i = 0; i < ganttCardGroups.length; i += N) {
-                pageGroups.push(ganttCardGroups.slice(i, i + N));
-              }
-              return (
-                <div className="space-y-4 print:space-y-0">
-                {pageGroups.map((pageCards, pageIdx) => (
-                  <div key={`page-${pageIdx}`} className="events-print-page space-y-4 print:space-y-1" data-mpp={printOpts.monthsPerPage}>
-                    {pageCards.map((group, _localIdx) => {
-                      const gIdx = pageIdx * N + _localIdx;
-                      const firstBlock = group[0];
-                      const cardKey = `${firstBlock.year}-${firstBlock.month}`;
-                      return (
-                  <Card key={cardKey} className={`overflow-hidden`}>
+            <div className="space-y-4">
+              {ganttCardGroups.map((group, gIdx) => {
+                const firstBlock = group[0];
+                const cardKey = `${firstBlock.year}-${firstBlock.month}`;
+                return (
+                  <Card key={cardKey} className={`overflow-hidden ${gIdx > 0 && gIdx % printOpts.monthsPerPage === 0 ? "print:page-break" : ""}`}>
                     <CardContent className="p-0 overflow-x-auto print:overflow-visible [touch-action:pan-x_pan-y_pinch-zoom]">
                       <div className="min-w-[600px]">
                         {group.map((cm, subIdx) => {
@@ -797,7 +737,7 @@ export default function EventsPage() {
                           const trackEvents = monthEvents.filter((e) => trackMap.get(e.id) === trackIdx);
                           const rowMinHeight = showArrangementIcons ? 76 : 44;
                           return (
-                            <div key={trackIdx} className={`events-track-row flex border-b last:border-b-0 ${trackIdx % 2 === 1 ? "bg-slate-50/50" : "bg-white"}`} style={{ minHeight: rowMinHeight }}>
+                            <div key={trackIdx} className={`flex border-b last:border-b-0 ${trackIdx % 2 === 1 ? "bg-slate-50/50" : "bg-white"}`} style={{ minHeight: rowMinHeight }}>
                               <div className="w-14 shrink-0 border-r flex items-center justify-center text-[10px] font-bold text-muted-foreground">
                                 {TRACK_LABELS[trackIdx] || String(trackIdx + 1)}
                               </div>
@@ -914,12 +854,8 @@ export default function EventsPage() {
                     </CardContent>
                   </Card>
                 );
-                    })}
-                  </div>
-                ))}
-                </div>
-              );
-            })()}
+              })}
+            </div>
           </TooltipProvider>
         </div>
         </>
