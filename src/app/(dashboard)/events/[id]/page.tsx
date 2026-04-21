@@ -98,7 +98,9 @@ export default function EventDetailPage({
   const arrangementRef = useRef<ArrangementEditorHandle>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
-  const [originalStaffRecords, setOriginalStaffRecords] = useState<{ id: string; employee_id: string }[]>([]);
+  const [selectedMannequinIds, setSelectedMannequinIds] = useState<string[]>([]);
+  const [mannequinOptions, setMannequinOptions] = useState<{ id: string; name: string }[]>([]);
+  const [originalStaffRecords, setOriginalStaffRecords] = useState<{ id: string; person_type: "employee" | "mannequin"; employee_id: string | null; mannequin_person_id: string | null }[]>([]);
   const [form, setForm] = useState({
     name: "",
     venue: "",
@@ -124,11 +126,12 @@ export default function EventDetailPage({
   const [dailyRevenue, setDailyRevenue] = useState<Map<string, DailyInput>>(new Map());
 
   const fetchEvent = useCallback(async () => {
-    const [eventRes, empRes, staffRes, dailyRes] = await Promise.all([
+    const [eventRes, empRes, staffRes, dailyRes, mpRes] = await Promise.all([
       supabase.from("events").select("*").eq("id", id).single(),
       supabase.from("employees").select("id, name").order("sort_order").order("name"),
-      supabase.from("event_staff").select("id, employee_id").eq("event_id", id).eq("role", "担当者"),
+      supabase.from("event_staff").select("id, person_type, employee_id, mannequin_person_id").eq("event_id", id).eq("role", "担当者"),
       supabase.from("event_daily_revenue").select("*").eq("event_id", id).order("date"),
+      supabase.from("mannequin_people").select("id, name").eq("treat_as_employee", true).order("name"),
     ]);
     if (eventRes.data) {
       setEvent(eventRes.data);
@@ -166,13 +169,20 @@ export default function EventDetailPage({
     setDailyRevenue(dailyMap);
     const emps = empRes.data || [];
     setEmployees(emps);
-    const staffRecords = (staffRes.data || []) as { id: string; employee_id: string }[];
+    const mpOptions = (mpRes.data || []) as { id: string; name: string }[];
+    setMannequinOptions(mpOptions);
+    const staffRecords = (staffRes.data || []) as { id: string; person_type: "employee" | "mannequin"; employee_id: string | null; mannequin_person_id: string | null }[];
     setOriginalStaffRecords(staffRecords);
-    const staffEmpIds = staffRecords.map((s) => s.employee_id);
+    const staffEmpIds = staffRecords.filter((s) => s.person_type === "employee" && s.employee_id).map((s) => s.employee_id as string);
+    const staffMpIds = staffRecords.filter((s) => s.person_type === "mannequin" && s.mannequin_person_id).map((s) => s.mannequin_person_id as string);
     setSelectedEmployeeIds(staffEmpIds);
-    // person_in_chargeからバッジ選択済みの社員名を除外し、自由入力分だけformに残す
+    setSelectedMannequinIds(staffMpIds);
+    // person_in_chargeからバッジ選択済みの名前を除外し、自由入力分だけformに残す
     if (eventRes.data) {
-      const selectedNames = new Set(emps.filter((e) => staffEmpIds.includes(e.id)).map((e) => e.name));
+      const selectedNames = new Set([
+        ...emps.filter((e) => staffEmpIds.includes(e.id)).map((e) => e.name),
+        ...mpOptions.filter((p) => staffMpIds.includes(p.id)).map((p) => p.name),
+      ]);
       const freeText = (eventRes.data.person_in_charge || "")
         .split(/[、,]/)
         .map((s: string) => s.trim())
@@ -188,11 +198,12 @@ export default function EventDetailPage({
   }, [fetchEvent]);
 
   const buildPersonInCharge = () => {
-    const selectedNames = employees
-      .filter((e) => selectedEmployeeIds.includes(e.id))
-      .map((e) => e.name);
+    const selectedNames = [
+      ...employees.filter((e) => selectedEmployeeIds.includes(e.id)).map((e) => e.name),
+      ...mannequinOptions.filter((p) => selectedMannequinIds.includes(p.id)).map((p) => p.name),
+    ];
     const extra = form.person_in_charge.trim();
-    // 自由入力から選択済み社員名を除外
+    // 自由入力から選択済み名前を除外
     const freeText = extra
       .split(/[、,]/)
       .map((s) => s.trim())
@@ -206,15 +217,21 @@ export default function EventDetailPage({
       prev.includes(empId) ? prev.filter((x) => x !== empId) : [...prev, empId]
     );
   };
+  const toggleMannequin = (mpId: string) => {
+    setSelectedMannequinIds((prev) =>
+      prev.includes(mpId) ? prev.filter((x) => x !== mpId) : [...prev, mpId]
+    );
+  };
 
   const handleUpdate = async () => {
     setSaveState("saving");
-    // 担当者テキスト = 選択した社員名 + 自由入力テキスト
-    const selectedNames = employees
-      .filter((e) => selectedEmployeeIds.includes(e.id))
-      .map((e) => e.name);
+    // 担当者テキスト = 選択した社員/マネキン名 + 自由入力テキスト
+    const selectedNames = [
+      ...employees.filter((e) => selectedEmployeeIds.includes(e.id)).map((e) => e.name),
+      ...mannequinOptions.filter((p) => selectedMannequinIds.includes(p.id)).map((p) => p.name),
+    ];
     const extraText = form.person_in_charge.trim();
-    // person_in_charge から選択済み社員名を除いた自由入力部分だけ保持
+    // person_in_charge から選択済み名前を除いた自由入力部分だけ保持
     const freeText = extraText
       .split(/[、,]/)
       .map((s) => s.trim())
@@ -316,23 +333,43 @@ export default function EventDetailPage({
     }
 
     // event_staff の担当者を差分更新（他ロールのレコードを壊さない）
-    const originalEmpIds = originalStaffRecords.map((r) => r.employee_id);
-    const toRemove = originalStaffRecords.filter((r) => !selectedEmployeeIds.includes(r.employee_id));
-    const toAdd = selectedEmployeeIds.filter((empId) => !originalEmpIds.includes(empId));
+    const origEmpIds = originalStaffRecords.filter((r) => r.person_type === "employee" && r.employee_id).map((r) => r.employee_id as string);
+    const origMpIds = originalStaffRecords.filter((r) => r.person_type === "mannequin" && r.mannequin_person_id).map((r) => r.mannequin_person_id as string);
+    const toRemoveRecords = originalStaffRecords.filter((r) => {
+      if (r.person_type === "employee") return !selectedEmployeeIds.includes(r.employee_id || "");
+      return !selectedMannequinIds.includes(r.mannequin_person_id || "");
+    });
+    const empsToAdd = selectedEmployeeIds.filter((empId) => !origEmpIds.includes(empId));
+    const mpsToAdd = selectedMannequinIds.filter((mpId) => !origMpIds.includes(mpId));
 
-    if (toRemove.length > 0) {
-      await supabase.from("event_staff").delete().in("id", toRemove.map((r) => r.id));
+    if (toRemoveRecords.length > 0) {
+      await supabase.from("event_staff").delete().in("id", toRemoveRecords.map((r) => r.id));
     }
-    if (toAdd.length > 0) {
-      await supabase.from("event_staff").insert(
-        toAdd.map((empId) => ({
-          event_id: id,
-          employee_id: empId,
-          start_date: form.start_date,
-          end_date: form.end_date,
-          role: "担当者",
-        }))
-      );
+    const newRecords: Array<{ event_id: string; person_type: "employee" | "mannequin"; employee_id: string | null; mannequin_person_id: string | null; start_date: string; end_date: string; role: string }> = [];
+    empsToAdd.forEach((empId) => {
+      newRecords.push({
+        event_id: id,
+        person_type: "employee",
+        employee_id: empId,
+        mannequin_person_id: null,
+        start_date: form.start_date,
+        end_date: form.end_date,
+        role: "担当者",
+      });
+    });
+    mpsToAdd.forEach((mpId) => {
+      newRecords.push({
+        event_id: id,
+        person_type: "mannequin",
+        employee_id: null,
+        mannequin_person_id: mpId,
+        start_date: form.start_date,
+        end_date: form.end_date,
+        role: "担当者",
+      });
+    });
+    if (newRecords.length > 0) {
+      await supabase.from("event_staff").insert(newRecords);
     }
 
     // 手配状況（出店申込書・ホテル・交通・マネキン・DM・備品）も一緒に保存
@@ -530,6 +567,20 @@ export default function EventDetailPage({
                 return (
                   <Badge key={emp.id} variant={selected ? "default" : "outline"} className="cursor-pointer" onClick={() => toggleEmployee(emp.id)}>
                     {emp.name}{selected && <X className="h-3 w-3 ml-1" />}
+                  </Badge>
+                );
+              })}
+              {mannequinOptions.map((p) => {
+                const selected = selectedMannequinIds.includes(p.id);
+                return (
+                  <Badge
+                    key={`m:${p.id}`}
+                    variant={selected ? "default" : "outline"}
+                    className={`cursor-pointer ${selected ? "bg-pink-600 hover:bg-pink-700" : "border-pink-400 text-pink-700 hover:bg-pink-50"}`}
+                    onClick={() => toggleMannequin(p.id)}
+                    title="社員扱いマネキン"
+                  >
+                    {p.name}{selected && <X className="h-3 w-3 ml-1" />}
                   </Badge>
                 );
               })}

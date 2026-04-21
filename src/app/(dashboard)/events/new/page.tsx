@@ -22,7 +22,8 @@ import { PayerSourceSection } from "@/components/arrangements/PayerSourceSection
 import Link from "next/link";
 
 type Employee = { id: string; name: string };
-type StaffEntry = { employee_id: string; start_date: string; end_date: string; role: string };
+type StaffPersonType = "employee" | "mannequin";
+type StaffEntry = { person_type: StaffPersonType; person_id: string; start_date: string; end_date: string; role: string };
 type HotelEntry = { hotel_name: string; check_in_date: string; check_out_date: string; room_count: string; reservation_status: string; notes: string };
 type TransportEntry = { transport_type: string; departure_from: string; arrival_to: string; outbound_datetime: string; reservation_status: string };
 type MannequinEntry = { agency_name: string; staff_name: string; work_start_date: string; work_end_date: string; daily_rate: string; arrangement_status: string };
@@ -47,7 +48,7 @@ type HotelMaster = { id: string; name: string; area_id: string | null };
 type HotelVenueLink = { hotel_id: string; venue_name: string };
 type AgencyMaster = { id: string; name: string };
 type AgencyAreaLink = { agency_id: string; area_id: string };
-type MannequinPerson = { id: string; name: string; agency_id: string | null; daily_rate: number | null; rating: number | null };
+type MannequinPerson = { id: string; name: string; agency_id: string | null; daily_rate: number | null; rating: number | null; treat_as_employee: boolean };
 type MannequinHistoryRow = { staff_name: string | null; events: { venue: string; store_name: string | null } | null };
 type VenueMannequinLink = { venue_id: string; mannequin_person_id: string | null; mannequin_agency_id: string | null };
 type AreaMaster = { id: string; name: string };
@@ -132,7 +133,7 @@ function NewEventPageInner() {
       supabase.from("mannequin_agencies").select("id, name").order("name"),
       supabase.from("agency_area_links").select("agency_id, area_id"),
       supabase.from("area_master").select("id, name"),
-      supabase.from("mannequin_people").select("id, name, agency_id, daily_rate, rating").order("name"),
+      supabase.from("mannequin_people").select("id, name, agency_id, daily_rate, rating, treat_as_employee").order("name"),
       supabase.from("mannequins").select("staff_name, events:event_id(venue, store_name)"),
       supabase.from("venue_mannequin_links").select("venue_id, mannequin_person_id, mannequin_agency_id"),
     ]);
@@ -243,10 +244,11 @@ function NewEventPageInner() {
   };
 
   // --- 社員配置 ---
-  const addStaffEntry = (empId: string) => {
-    if (!staffEntries.some((e) => e.employee_id === empId)) {
+  const addStaffEntry = (personType: StaffPersonType, personId: string) => {
+    if (!staffEntries.some((e) => e.person_type === personType && e.person_id === personId)) {
       setStaffEntries((prev) => [...prev, {
-        employee_id: empId,
+        person_type: personType,
+        person_id: personId,
         start_date: form.start_date,
         end_date: form.end_date,
         role: "",
@@ -254,11 +256,17 @@ function NewEventPageInner() {
     }
   };
   const removeStaffEntry = (index: number) => setStaffEntries((prev) => prev.filter((_, i) => i !== index));
-  const updateStaffEntry = (index: number, field: keyof StaffEntry, value: string) => {
+  const updateStaffEntry = (index: number, field: "start_date" | "end_date" | "role", value: string) => {
     setStaffEntries((prev) => prev.map((e, i) => i === index ? { ...e, [field]: value } : e));
   };
-  const duplicateStaffEntry = (empId: string) => {
-    setStaffEntries((prev) => [...prev, { employee_id: empId, start_date: form.start_date, end_date: form.end_date, role: "" }]);
+  const duplicateStaffEntry = (personType: StaffPersonType, personId: string) => {
+    setStaffEntries((prev) => [...prev, { person_type: personType, person_id: personId, start_date: form.start_date, end_date: form.end_date, role: "" }]);
+  };
+
+  // 担当者の名前解決
+  const getStaffName = (e: StaffEntry): string => {
+    if (e.person_type === "employee") return employees.find((emp) => emp.id === e.person_id)?.name || "";
+    return mannequinPeople.find((p) => p.id === e.person_id)?.name || "";
   };
 
   // --- ホテル ---
@@ -581,7 +589,7 @@ function NewEventPageInner() {
     setSaving(true);
 
     try {
-      const staffNames = [...new Set(staffEntries.map((e) => employees.find((emp) => emp.id === e.employee_id)?.name || ""))].filter(Boolean);
+      const staffNames = [...new Set(staffEntries.map(getStaffName))].filter(Boolean);
       const extraText = form.person_in_charge.trim();
       const allNames = [...staffNames, ...(extraText ? [extraText] : [])];
 
@@ -618,7 +626,10 @@ function NewEventPageInner() {
       if (staffEntries.length > 0) {
         inserts.push(supabase.from("event_staff").insert(
           staffEntries.map((e) => ({
-            event_id: eventId, employee_id: e.employee_id,
+            event_id: eventId,
+            person_type: e.person_type,
+            employee_id: e.person_type === "employee" ? e.person_id : null,
+            mannequin_person_id: e.person_type === "mannequin" ? e.person_id : null,
             start_date: e.start_date || form.start_date,
             end_date: e.end_date || form.end_date,
             role: e.role || "担当者",
@@ -730,7 +741,7 @@ function NewEventPageInner() {
   };
 
   const buildPersonInCharge = () => {
-    const staffNames = [...new Set(staffEntries.map((e) => employees.find((emp) => emp.id === e.employee_id)?.name || ""))].filter(Boolean);
+    const staffNames = [...new Set(staffEntries.map(getStaffName))].filter(Boolean);
     const extra = form.person_in_charge.trim();
     return [...staffNames, ...(extra ? [extra] : [])].join("、");
   };
@@ -849,13 +860,28 @@ function NewEventPageInner() {
             <p className="text-[11px] text-muted-foreground -mt-1">
               ここで選んだ社員は「社員配置」にも会期全日で自動登録されます（日別のシフトは下の「社員配置」で調整）。一覧・カードに「担当: ○○」と表示する短い見出しとしても使われます。
             </p>
-            <Input value={buildPersonInCharge()} readOnly placeholder="下の社員名をタップして追加" className="bg-white" />
+            <Input value={buildPersonInCharge()} readOnly placeholder="下の名前をタップして追加" className="bg-white" />
             <div className="flex flex-wrap gap-2">
               {employees.map((emp) => {
-                const hasEntry = staffEntries.some((e) => e.employee_id === emp.id);
+                const hasEntry = staffEntries.some((e) => e.person_type === "employee" && e.person_id === emp.id);
                 return (
-                  <Badge key={emp.id} variant={hasEntry ? "default" : "outline"} className="cursor-pointer" onClick={() => addStaffEntry(emp.id)}>
+                  <Badge key={emp.id} variant={hasEntry ? "default" : "outline"} className="cursor-pointer" onClick={() => addStaffEntry("employee", emp.id)}>
                     {emp.name}
+                  </Badge>
+                );
+              })}
+              {/* 社員扱いマネキン（区別しやすいよう別スタイル） */}
+              {mannequinPeople.filter((p) => p.treat_as_employee).map((p) => {
+                const hasEntry = staffEntries.some((e) => e.person_type === "mannequin" && e.person_id === p.id);
+                return (
+                  <Badge
+                    key={`m:${p.id}`}
+                    variant={hasEntry ? "default" : "outline"}
+                    className={`cursor-pointer ${hasEntry ? "bg-pink-600 hover:bg-pink-700" : "border-pink-400 text-pink-700 hover:bg-pink-50"}`}
+                    onClick={() => addStaffEntry("mannequin", p.id)}
+                    title="社員扱いマネキン"
+                  >
+                    {p.name}
                   </Badge>
                 );
               })}
@@ -865,15 +891,18 @@ function NewEventPageInner() {
               <div className="space-y-2 rounded-md border bg-white p-3">
                 <p className="text-xs text-muted-foreground font-medium">担当期間を設定（同じ人を複数期間で追加可能）</p>
                 {staffEntries.map((entry, i) => {
-                  const emp = employees.find((e) => e.id === entry.employee_id);
+                  const name = getStaffName(entry);
+                  const isMannequin = entry.person_type === "mannequin";
                   return (
                     <div key={i} className="flex items-center gap-2 flex-wrap">
-                      <Badge variant="default" className="shrink-0">{emp?.name}</Badge>
+                      <Badge variant="default" className={`shrink-0 ${isMannequin ? "bg-pink-600" : ""}`}>
+                        {isMannequin ? `🧑‍💼 ${name}` : name}
+                      </Badge>
                       <Input type="date" value={entry.start_date} onChange={(e) => updateStaffEntry(i, "start_date", e.target.value)} className="w-36 h-8 text-xs" />
                       <span className="text-xs">〜</span>
                       <Input type="date" value={entry.end_date} onChange={(e) => updateStaffEntry(i, "end_date", e.target.value)} className="w-36 h-8 text-xs" />
                       <Input value={entry.role} onChange={(e) => updateStaffEntry(i, "role", e.target.value)} placeholder="メモ" className="w-20 h-8 text-xs" />
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => duplicateStaffEntry(entry.employee_id)} title="期間を追加">
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => duplicateStaffEntry(entry.person_type, entry.person_id)} title="期間を追加">
                         <Plus className="h-3 w-3" />
                       </Button>
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeStaffEntry(i)}>
