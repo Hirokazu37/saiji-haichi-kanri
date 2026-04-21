@@ -639,7 +639,9 @@ export default function EventsPage() {
           <Button variant="outline" size="icon" onClick={nextMonth}><ChevronRight className="h-4 w-4" /></Button>
           <Button variant="ghost" size="sm" onClick={() => { setCalYear(today.getFullYear()); setCalMonth(today.getMonth() + 1); }}>今月</Button>
           <Select value={ganttSpanSel} onValueChange={(v) => v && setGanttSpanSel(v)}>
-            <SelectTrigger className="w-32 sm:w-36"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-32 sm:w-36"><SelectValue>{
+              ganttSpanSel === "half-3" ? "半月×3ヶ月" : `${ganttSpanSel}ヶ月`
+            }</SelectValue></SelectTrigger>
             <SelectContent>
               <SelectItem value="half-3">半月×3ヶ月</SelectItem>
               <SelectItem value="1">1ヶ月</SelectItem>
@@ -1358,9 +1360,9 @@ export default function EventsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* 印刷設定ダイアログ */}
+      {/* 印刷設定ダイアログ（向きのみ・全月をA4 1枚に行数比例で配分） */}
       <Dialog open={printDialogOpen} onOpenChange={setPrintDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>日程表の印刷設定</DialogTitle>
           </DialogHeader>
@@ -1372,7 +1374,7 @@ export default function EventsPage() {
                   type="button"
                   size="sm"
                   variant={printOpts.orientation === "portrait" ? "default" : "outline"}
-                  onClick={() => setPrintOpts((p) => ({ orientation: "portrait", monthsPerPage: recommendedMpp("portrait") }))}
+                  onClick={() => setPrintOpts((p) => ({ ...p, orientation: "portrait" }))}
                 >
                   縦（portrait）
                 </Button>
@@ -1380,28 +1382,13 @@ export default function EventsPage() {
                   type="button"
                   size="sm"
                   variant={printOpts.orientation === "landscape" ? "default" : "outline"}
-                  onClick={() => setPrintOpts((p) => ({ orientation: "landscape", monthsPerPage: recommendedMpp("landscape") }))}
+                  onClick={() => setPrintOpts((p) => ({ ...p, orientation: "landscape" }))}
                 >
                   横（landscape）
                 </Button>
               </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-xs">1ページに表示する月数</Label>
-              <Select value={String(printOpts.monthsPerPage)} onValueChange={(v) => v && setPrintOpts((p) => ({ ...p, monthsPerPage: parseInt(v) }))}>
-                <SelectTrigger><SelectValue>{`${printOpts.monthsPerPage}ヶ月`}</SelectValue></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1">1ヶ月（最も読みやすい）</SelectItem>
-                  <SelectItem value="2">2ヶ月（バランス・現状）</SelectItem>
-                  <SelectItem value="3">3ヶ月（やや詰めて節約）</SelectItem>
-                  <SelectItem value="4">4ヶ月（限界まで詰める）</SelectItem>
-                  <SelectItem value="6">6ヶ月（半年を1枚）</SelectItem>
-                </SelectContent>
-              </Select>
               <p className="text-[10px] text-muted-foreground">
-                現在の表示期間: {ganttSpanLabel}<br />
-                出力枚数の目安: 約 {Math.max(1, Math.ceil(ganttCardGroups.length / Math.max(1, printOpts.monthsPerPage)))} 枚
+                表示期間: {ganttSpanLabel}（全月をA4 1枚に行数比例で収めます）
               </p>
             </div>
           </div>
