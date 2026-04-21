@@ -10,6 +10,7 @@ type PermissionContextType = {
   canEdit: boolean;
   canViewRatings: boolean;
   canViewAll: boolean;
+  canViewPayments: boolean;
   loading: boolean;
   displayName: string;
   userId: string | null;
@@ -20,6 +21,7 @@ const defaultState: PermissionContextType = {
   canEdit: false,
   canViewRatings: false,
   canViewAll: true,
+  canViewPayments: false,
   loading: true,
   displayName: "",
   userId: null,
@@ -46,14 +48,17 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
       if (user) {
         const { data } = await supabase
           .from("user_profiles")
-          .select("id, display_name, can_edit, role")
+          .select("id, display_name, can_edit, role, can_view_payments")
           .eq("id", user.id)
           .single();
         if (data) {
           const role = (data.role ?? (data.can_edit ? "admin" : "viewer")) as UserRole;
+          const derived = derive(role);
           setState({
             role,
-            ...derive(role),
+            ...derived,
+            // admin は自動的に経理閲覧ON扱い、他ユーザーは DB の can_view_payments に従う
+            canViewPayments: role === "admin" ? true : !!data.can_view_payments,
             loading: false,
             displayName: data.display_name,
             userId: data.id,

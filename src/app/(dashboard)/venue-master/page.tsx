@@ -56,7 +56,14 @@ type VenueMaster = {
   is_active: boolean;
   area_id: string | null;
   sort_order: number;
+  // 振込サイクル（Vol28 入金管理）
+  closing_day: number | null;
+  pay_month_offset: number | null;
+  pay_day: number | null;
+  default_payer_id: string | null;
 };
+
+type PayerMasterItem = { id: string; name: string; is_active: boolean };
 
 type AreaItem = { id: string; name: string; region: string | null; prefecture: string | null; color: string | null };
 type HotelMasterItem = { id: string; name: string; area_id: string | null };
@@ -71,6 +78,11 @@ const emptyForm = {
   sanchoku_code_2: "", sanchoku_memo_2: "",
   sanchoku_code_3: "", sanchoku_memo_3: "",
   notes: "",
+  // 振込サイクル（空文字 = 未設定）
+  closing_day: "",
+  pay_month_offset: "",
+  pay_day: "",
+  default_payer_id: "",
 };
 
 export default function VenueMasterPage() {
@@ -83,6 +95,7 @@ export default function VenueMasterPage() {
   const [mannequinPeople, setMannequinPeople] = useState<MannequinPerson[]>([]);
   const [mannequinAgencies, setMannequinAgencies] = useState<MannequinAgency[]>([]);
   const [mannequinLinks, setMannequinLinks] = useState<VenueMannequinLink[]>([]);
+  const [payers, setPayers] = useState<PayerMasterItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
@@ -172,7 +185,7 @@ export default function VenueMasterPage() {
   };
 
   const fetchData = useCallback(async () => {
-    const [venueRes, areaRes, hmRes, hlRes, mpRes, maRes, mlRes] = await Promise.all([
+    const [venueRes, areaRes, hmRes, hlRes, mpRes, maRes, mlRes, pyrRes] = await Promise.all([
       supabase.from("venue_master").select("*").order("sort_order").order("venue_name"),
       supabase.from("area_master").select("id, name, region, prefecture, color").order("sort_order"),
       supabase.from("hotel_master").select("id, name, area_id").eq("is_active", true).order("name"),
@@ -180,6 +193,7 @@ export default function VenueMasterPage() {
       supabase.from("mannequin_people").select("id, name, mannequin_agencies(name)").order("name"),
       supabase.from("mannequin_agencies").select("id, name").order("name"),
       supabase.from("venue_mannequin_links").select("*"),
+      supabase.from("payer_master").select("id, name, is_active"),
     ]);
     setVenues(venueRes.data || []);
     setAreas((areaRes.data || []) as AreaItem[]);
@@ -191,6 +205,7 @@ export default function VenueMasterPage() {
     );
     setMannequinAgencies((maRes.data || []) as MannequinAgency[]);
     setMannequinLinks((mlRes.data || []) as VenueMannequinLink[]);
+    setPayers((pyrRes.data || []) as PayerMasterItem[]);
     setLoading(false);
   }, [supabase]);
 
@@ -377,6 +392,10 @@ export default function VenueMasterPage() {
       sanchoku_memo_3: v.sanchoku_memo_3 || "",
       notes: v.notes || "",
       reading: v.reading || "",
+      closing_day: v.closing_day != null ? String(v.closing_day) : "",
+      pay_month_offset: v.pay_month_offset != null ? String(v.pay_month_offset) : "",
+      pay_day: v.pay_day != null ? String(v.pay_day) : "",
+      default_payer_id: v.default_payer_id || "",
     });
     const label = getVenueLabel(v);
     const hids = new Set(hotelLinks.filter((l) => l.venue_name === label).map((l) => l.hotel_id));
@@ -408,6 +427,10 @@ export default function VenueMasterPage() {
       sanchoku_memo_3: form.sanchoku_memo_3.trim() || null,
       notes: form.notes.trim() || null,
       reading: form.reading.trim() || null,
+      closing_day: form.closing_day === "" ? null : parseInt(form.closing_day),
+      pay_month_offset: form.pay_month_offset === "" ? null : parseInt(form.pay_month_offset),
+      pay_day: form.pay_day === "" ? null : parseInt(form.pay_day),
+      default_payer_id: form.default_payer_id || null,
     };
 
     let venueId = editingId;
@@ -707,6 +730,65 @@ export default function VenueMasterPage() {
               <div className="space-y-1">
                 <Label className="text-xs">メモ</Label>
                 <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} className="text-sm" />
+              </div>
+            </div>
+
+            {/* ①b 入金サイクル（経理閲覧権限者向け） */}
+            <div className="rounded-lg border-2 border-emerald-300 dark:border-emerald-700 p-3 space-y-2">
+              <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">入金サイクル（振込予定日の自動計算に使用）</p>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">締め日</Label>
+                  <Select value={form.closing_day || "none"} onValueChange={(v) => setForm({ ...form, closing_day: v === "none" ? "" : v })}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="未設定" /></SelectTrigger>
+                    <SelectContent className="max-h-[300px]">
+                      <SelectItem value="none">未設定</SelectItem>
+                      <SelectItem value="0">月末</SelectItem>
+                      {Array.from({ length: 31 }, (_, i) => (
+                        <SelectItem key={i + 1} value={String(i + 1)}>{i + 1}日</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">支払月</Label>
+                  <Select value={form.pay_month_offset || "none"} onValueChange={(v) => setForm({ ...form, pay_month_offset: v === "none" ? "" : v })}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="未設定" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">未設定</SelectItem>
+                      <SelectItem value="0">当月</SelectItem>
+                      <SelectItem value="1">翌月</SelectItem>
+                      <SelectItem value="2">翌々月</SelectItem>
+                      <SelectItem value="3">3ヶ月後</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">支払日</Label>
+                  <Select value={form.pay_day || "none"} onValueChange={(v) => setForm({ ...form, pay_day: v === "none" ? "" : v })}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="未設定" /></SelectTrigger>
+                    <SelectContent className="max-h-[300px]">
+                      <SelectItem value="none">未設定</SelectItem>
+                      <SelectItem value="0">月末</SelectItem>
+                      {Array.from({ length: 31 }, (_, i) => (
+                        <SelectItem key={i + 1} value={String(i + 1)}>{i + 1}日</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div>
+                <Label className="text-[10px] text-muted-foreground">デフォルト帳合先（この百貨店の催事で通常経由する問屋）</Label>
+                <Select value={form.default_payer_id || "none"} onValueChange={(v) => setForm({ ...form, default_payer_id: v === "none" ? "" : v })}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="なし（直取引）" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">なし（直取引）</SelectItem>
+                    {payers.filter((p) => p.is_active).map((p) => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground mt-1">催事作成時に自動で入金元として選ばれます。催事ごとに変更可。</p>
               </div>
             </div>
 

@@ -31,6 +31,7 @@ import Link from "next/link";
 import { prefectures, eventStatuses } from "@/lib/prefectures";
 import { ArrangementEditor, type ArrangementEditorHandle } from "@/components/arrangements/ArrangementEditor";
 import { StaffTab } from "@/components/arrangements/StaffTab";
+import { PaymentSummaryCard } from "@/components/arrangements/PaymentSummaryCard";
 import { usePermission } from "@/hooks/usePermission";
 import { downloadIcs, mapsUrl } from "@/lib/ics";
 
@@ -538,6 +539,9 @@ export default function EventDetailPage({
 
       {/* 社員配置 */}
       <StaffTab eventId={id} startDate={event.start_date} endDate={event.end_date} />
+
+      {/* 入金サマリ（経理閲覧権限がある場合のみ） */}
+      <PaymentSummaryCard eventId={id} />
 
       {/* 実績（売上・振り返り） */}
       <Card className="border-l-4 border-l-emerald-500 bg-emerald-50/30">

@@ -16,6 +16,7 @@ import {
   MapPin,
   UserCog,
   Archive,
+  Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePermission, type UserRole } from "@/hooks/usePermission";
@@ -25,6 +26,7 @@ type NavItem = {
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   roles: UserRole[];
+  requiresPayments?: boolean; // can_view_payments フラグが必要な項目
 };
 
 const navItems: NavItem[] = [
@@ -32,6 +34,7 @@ const navItems: NavItem[] = [
   { label: "日程表", href: "/events", icon: CalendarDays, roles: ["admin", "viewer", "limited"] },
   { label: "履歴（終了した催事）", href: "/archive", icon: Archive, roles: ["admin", "viewer"] },
   { label: "社員スケジュール", href: "/schedule", icon: CalendarClock, roles: ["admin", "viewer", "limited"] },
+  { label: "入金管理", href: "/payments", icon: Wallet, roles: ["admin", "viewer"], requiresPayments: true },
   { label: "ホテル・交通", href: "/hotels", icon: Hotel, roles: ["admin", "viewer"] },
   { label: "備品の流れ", href: "/shipments", icon: Package, roles: ["admin", "viewer"] },
   { label: "出店申込書", href: "/applications", icon: FileText, roles: ["admin", "viewer"] },
@@ -41,14 +44,21 @@ const navItems: NavItem[] = [
   { label: "ホテルマスター", href: "/hotel-master", icon: Hotel, roles: ["admin", "viewer"] },
   { label: "社員マスター", href: "/employees", icon: Users, roles: ["admin", "viewer"] },
   { label: "マネキン", href: "/agencies", icon: Building2, roles: ["admin", "viewer"] },
+  { label: "帳合先マスター", href: "/payer-master", icon: Store, roles: ["admin", "viewer"], requiresPayments: true },
   { label: "ユーザー管理", href: "/users", icon: UserCog, roles: ["admin"] },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { role, loading } = usePermission();
+  const { role, canViewPayments, loading } = usePermission();
 
-  const items = loading ? [] : navItems.filter((item) => item.roles.includes(role));
+  const items = loading
+    ? []
+    : navItems.filter((item) => {
+        if (!item.roles.includes(role)) return false;
+        if (item.requiresPayments && !canViewPayments) return false;
+        return true;
+      });
 
   return (
     <aside className="hidden md:flex md:w-60 md:flex-col md:fixed md:inset-y-0 border-r bg-sidebar">

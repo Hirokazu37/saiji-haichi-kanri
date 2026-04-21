@@ -16,7 +16,7 @@ export async function PATCH(
 ) {
   const { id } = await params;
   const body = await request.json();
-  const { display_name, password, role } = body;
+  const { display_name, password, role, can_view_payments } = body;
 
   const admin = createAdminClient();
 
@@ -30,6 +30,9 @@ export async function PATCH(
     profileUpdate.role = role;
     // can_edit は role から派生させる（RLS 側は can_edit を参照しているため）
     profileUpdate.can_edit = role === "admin";
+  }
+  if (can_view_payments !== undefined) {
+    profileUpdate.can_view_payments = Boolean(can_view_payments);
   }
 
   if (Object.keys(profileUpdate).length > 0) {

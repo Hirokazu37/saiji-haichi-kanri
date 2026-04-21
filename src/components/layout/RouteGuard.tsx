@@ -8,9 +8,9 @@ import { canAccessPath } from "@/lib/access";
 export function RouteGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { role, loading } = usePermission();
+  const { role, canViewPayments, loading } = usePermission();
 
-  const allowed = loading ? true : canAccessPath(role, pathname);
+  const allowed = loading ? true : canAccessPath({ role, canViewPayments }, pathname);
 
   useEffect(() => {
     if (!loading && !allowed) {

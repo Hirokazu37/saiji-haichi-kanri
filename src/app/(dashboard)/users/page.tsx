@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -27,6 +28,7 @@ type UserProfile = {
   display_name: string;
   can_edit: boolean;
   role: UserRole;
+  can_view_payments: boolean;
   created_at: string;
 };
 
@@ -50,11 +52,12 @@ const ROLE_DESC: Record<UserRole, string> = {
   limited: "ダッシュボード・日程表・社員スケジュールのみ閲覧可能。製造スタッフなど共有範囲を絞りたい人向け。",
 };
 
-const emptyForm: { display_name: string; password: string; password_confirm: string; role: UserRole } = {
+const emptyForm: { display_name: string; password: string; password_confirm: string; role: UserRole; can_view_payments: boolean } = {
   display_name: "",
   password: "",
   password_confirm: "",
   role: "viewer",
+  can_view_payments: false,
 };
 
 export default function UsersPage() {
@@ -132,6 +135,7 @@ export default function UsersPage() {
       password: "",
       password_confirm: "",
       role: user.role,
+      can_view_payments: user.can_view_payments,
     });
     setError("");
     setEditDialogOpen(true);
@@ -145,7 +149,11 @@ export default function UsersPage() {
     }
 
     setSaving(true);
-    const body: Record<string, unknown> = { display_name: form.display_name, role: form.role };
+    const body: Record<string, unknown> = {
+      display_name: form.display_name,
+      role: form.role,
+      can_view_payments: form.can_view_payments,
+    };
     if (form.password) body.password = form.password;
 
     const res = await fetch(`/api/users/${editingId}`, {
@@ -397,6 +405,22 @@ export default function UsersPage() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">{ROLE_DESC[form.role]}</p>
+            </div>
+            <div className="flex items-center justify-between rounded-md border p-3">
+              <div>
+                <Label htmlFor="can_view_payments" className="text-sm font-medium">経理（入金管理）閲覧</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  ONで入金管理ページ・帳合先マスターにアクセス可能。
+                  {form.role === "admin" && "（編集可能ロールは常にON扱い）"}
+                </p>
+              </div>
+              <Switch
+                id="can_view_payments"
+                checked={form.role === "admin" ? true : form.can_view_payments}
+                disabled={form.role === "admin"}
+                onCheckedChange={(v) => setForm({ ...form, can_view_payments: v })}
+                className="data-[state=checked]:bg-green-700"
+              />
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
           </div>

@@ -27,7 +27,19 @@ type TransportEntry = { transport_type: string; departure_from: string; arrival_
 type MannequinEntry = { agency_name: string; staff_name: string; work_start_date: string; work_end_date: string; daily_rate: string; arrangement_status: string };
 type ShipmentEntry = { recipient_name: string; direction: "send" | "return" };
 type VenueOption = { label: string };
-type VenueMaster = { id: string; venue_name: string; store_name: string | null; prefecture: string | null; area_id: string | null; reading: string | null; is_active: boolean };
+type VenueMaster = {
+  id: string;
+  venue_name: string;
+  store_name: string | null;
+  prefecture: string | null;
+  area_id: string | null;
+  reading: string | null;
+  is_active: boolean;
+  closing_day: number | null;
+  pay_month_offset: number | null;
+  pay_day: number | null;
+  default_payer_id: string | null;
+};
 type HotelMaster = { id: string; name: string; area_id: string | null };
 type HotelVenueLink = { hotel_id: string; venue_name: string };
 type AgencyMaster = { id: string; name: string };
@@ -109,7 +121,7 @@ function NewEventPageInner() {
     const [empRes, evtRes, vmRes, hmRes, hvlRes, amRes, aalRes, arRes, mpRes, mhRes, vmlRes] = await Promise.all([
       supabase.from("employees").select("id, name").order("sort_order").order("name"),
       supabase.from("events").select("venue, store_name, start_date, end_date").gte("start_date", oneYearAgoStr).order("start_date", { ascending: false }),
-      supabase.from("venue_master").select("id, venue_name, store_name, prefecture, area_id, reading, is_active").eq("is_active", true),
+      supabase.from("venue_master").select("id, venue_name, store_name, prefecture, area_id, reading, is_active, closing_day, pay_month_offset, pay_day, default_payer_id").eq("is_active", true),
       supabase.from("hotel_master").select("id, name, area_id").eq("is_active", true).order("name"),
       supabase.from("hotel_venue_links").select("hotel_id, venue_name"),
       supabase.from("mannequin_agencies").select("id, name").order("name"),
@@ -662,6 +674,40 @@ function NewEventPageInner() {
       }
 
       await Promise.all(inserts);
+
+      // 入金レコードを自動生成（催事の会場マスターから振込サイクル・デフォルト帳合先を取得）
+      // 失敗してもメイン処理は続行
+      try {
+        const venueLabel = form.venue.trim();
+        const storeLabel = form.store_name.trim();
+        const vm = venueMasters.find((v) =>
+          v.venue_name === venueLabel && (v.store_name ?? "") === storeLabel,
+        );
+        if (vm) {
+          const cycle = {
+            closing_day: vm.closing_day ?? null,
+            pay_month_offset: vm.pay_month_offset ?? null,
+            pay_day: vm.pay_day ?? null,
+          };
+          const plannedDate = (cycle.closing_day != null && cycle.pay_month_offset != null && cycle.pay_day != null)
+            ? (await import("@/lib/payment-cycle")).computePlannedPaymentDate(form.end_date, cycle)
+            : null;
+          const useDefaultPayer = !!vm.default_payer_id;
+          await supabase.from("event_payments").insert({
+            event_id: eventId,
+            venue_master_id: useDefaultPayer ? null : vm.id,
+            payer_master_id: useDefaultPayer ? vm.default_payer_id : null,
+            planned_date: plannedDate,
+            planned_amount: null,
+            planned_tax_type: "included",
+            status: "予定",
+            method: "transfer",
+          });
+        }
+      } catch (err) {
+        console.error("[event_payments auto-create] error:", err);
+      }
+
       router.push("/events");
     } finally {
       // 成功時は画面遷移するので setSaving(false) は見た目上不要だが
