@@ -122,6 +122,19 @@ export default function SchedulePage() {
   const [lastChange, setLastChange] = useState<LastDragChange | null>(null);
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // 空白セルをドラッグして新規配置する
+  type NewDragState = {
+    personKey: string;
+    personLabel: string;
+    rowLeft: number; // バー領域のviewport x (clientX基準)
+    startIdx: number;
+    currentIdx: number;
+    startClientX: number;
+  };
+  const [newDrag, setNewDrag] = useState<NewDragState | null>(null);
+  // ドラッグ完了後に開くダイアログの初期値
+  const [newDragInit, setNewDragInit] = useState<{ personKey: string; start: string; end: string } | null>(null);
+
   const people: Person[] = useMemo(() => [
     ...employees.map((e) => ({ id: e.id, name: e.name, kind: "employee" as const })),
     ...mannequinPeople.map((m) => ({ id: m.id, name: m.name, kind: "mannequin" as const })),
@@ -337,6 +350,59 @@ export default function SchedulePage() {
       moved: false,
     });
   };
+
+  // 空白領域のドラッグ開始
+  const beginNewDrag = (e: React.PointerEvent<HTMLDivElement>, personKey: string, personLabel: string) => {
+    if (!canEdit) return;
+    if (e.pointerType === "touch") return;
+    // バー本体のonPointerDownが stopPropagation 済みなので空白のみここに来る
+    const rect = e.currentTarget.getBoundingClientRect();
+    const localX = e.clientX - rect.left;
+    const idx = Math.max(0, Math.min(allDays.length - 1, Math.floor(localX / colWidth)));
+    e.preventDefault();
+    setNewDrag({
+      personKey,
+      personLabel,
+      rowLeft: rect.left,
+      startIdx: idx,
+      currentIdx: idx,
+      startClientX: e.clientX,
+    });
+  };
+
+  // 新規ドラッグ中のムーブ/アップ
+  useEffect(() => {
+    if (!newDrag) return;
+    const onMove = (e: PointerEvent) => {
+      const localX = e.clientX - newDrag.rowLeft;
+      const idx = Math.max(0, Math.min(allDays.length - 1, Math.floor(localX / colWidth)));
+      setNewDrag((prev) => (prev ? { ...prev, currentIdx: idx } : prev));
+    };
+    const onUp = (e: PointerEvent) => {
+      const st = newDrag;
+      setNewDrag(null);
+      if (!st) return;
+      const dx = Math.abs(e.clientX - st.startClientX);
+      if (dx < DRAG_THRESHOLD_PX) return; // 誤タップは無視
+      const from = Math.min(st.startIdx, st.currentIdx);
+      const to = Math.max(st.startIdx, st.currentIdx);
+      const startDate = allDays[from]?.dateStr;
+      const endDate = allDays[to]?.dateStr;
+      if (!startDate || !endDate) return;
+      setNewDragInit({ personKey: st.personKey, start: startDate, end: endDate });
+      setCreateInitialPersonKey(st.personKey);
+      setCreateOpen(true);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newDrag, colWidth, allDays.length]);
 
   // ドラッグ中のマウスムーブ/アップはドキュメントで監視
   useEffect(() => {
@@ -834,7 +900,10 @@ export default function SchedulePage() {
                           <span className="text-[9px] px-1 py-0.5 rounded bg-pink-100 text-pink-800 font-medium shrink-0">ﾏﾈｷﾝ</span>
                         )}
                       </div>
-                      <div className="flex-1 relative">
+                      <div
+                        className={`flex-1 relative ${canEdit ? "cursor-cell" : ""}`}
+                        onPointerDown={(e) => beginNewDrag(e, makePersonKey(p), p.name)}
+                      >
                         {/* 背景グリッド */}
                         <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${allDays.length}, minmax(0, 1fr))` }}>
                           {allDays.map((d, i) => {
@@ -850,6 +919,19 @@ export default function SchedulePage() {
                             );
                           })}
                         </div>
+                        {/* 新規ドラッグ選択中のハイライト */}
+                        {newDrag && newDrag.personKey === makePersonKey(p) && (() => {
+                          const from = Math.min(newDrag.startIdx, newDrag.currentIdx);
+                          const to = Math.max(newDrag.startIdx, newDrag.currentIdx);
+                          const left = (from / allDays.length) * 100;
+                          const width = ((to - from + 1) / allDays.length) * 100;
+                          return (
+                            <div
+                              className="absolute top-1 bottom-1 bg-primary/30 border-2 border-primary border-dashed rounded z-[3] pointer-events-none"
+                              style={{ left: `${left}%`, width: `${width}%` }}
+                            />
+                          );
+                        })()}
                         {/* 今日の縦ライン */}
                         {todayIndex >= 0 && (
                           <div
@@ -957,6 +1039,20 @@ export default function SchedulePage() {
         </TooltipProvider>
       </div>
 
+      {/* 空白ドラッグ中の範囲プレビュー */}
+      {newDrag && (() => {
+        const from = Math.min(newDrag.startIdx, newDrag.currentIdx);
+        const to = Math.max(newDrag.startIdx, newDrag.currentIdx);
+        const startStr = allDays[from]?.dateStr ?? "";
+        const endStr = allDays[to]?.dateStr ?? "";
+        const days = to - from + 1;
+        return (
+          <div className="fixed bottom-4 right-4 z-50 bg-primary text-primary-foreground px-3 py-2 rounded-md shadow-lg text-sm font-medium pointer-events-none">
+            {newDrag.personLabel} に新規配置: <span className="font-bold">{startStr} 〜 {endStr}</span>（{days}日）
+          </div>
+        );
+      })()}
+
       {/* ドラッグ中の日付ヒント（画面右下にフロート表示） */}
       {dragState && dragState.moved && (
         <div className="fixed bottom-4 right-4 z-50 bg-primary text-primary-foreground px-3 py-2 rounded-md shadow-lg text-sm font-medium pointer-events-none">
@@ -1023,12 +1119,17 @@ export default function SchedulePage() {
         assignmentId={editingAssignmentId}
         onSaved={fetchData}
       />
-      {/* 新規配置ダイアログ（「社員を配置」ボタン） */}
+      {/* 新規配置ダイアログ（「社員を配置」ボタン / 空白ドラッグ後） */}
       <StaffAssignmentDialog
         open={createOpen}
-        onOpenChange={setCreateOpen}
+        onOpenChange={(v) => {
+          setCreateOpen(v);
+          if (!v) setNewDragInit(null);
+        }}
         assignmentId={null}
         initialPersonKey={createInitialPersonKey}
+        defaultStart={newDragInit?.start ?? ""}
+        defaultEnd={newDragInit?.end ?? ""}
         showEventSelect={true}
         onSaved={fetchData}
       />
