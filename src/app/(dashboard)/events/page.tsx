@@ -516,7 +516,7 @@ export default function EventsPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h1 className="text-2xl font-bold">日程表</h1>
+        <h1 className="text-2xl font-bold print:hidden">日程表</h1>
         <div className="flex gap-2 items-center">
           <div className="flex border rounded-md print:hidden">
             <Button variant={viewMode === "gantt" ? "default" : "ghost"} size="sm" className="rounded-r-none" onClick={() => setViewMode("gantt")} title="ガントチャート">
@@ -659,10 +659,10 @@ export default function EventsPage() {
         </div>
 
         <div ref={listRef} className="events-print-zone" data-mpp={printOpts.monthsPerPage}>
-          {/* 印刷用タイトル */}
-          <div className="hidden print:block text-center mb-2">
-            <h2 className="text-base font-bold">日程表　{ganttSpanLabel}</h2>
-            <p className="text-xs text-muted-foreground">印刷日時 {new Date().toLocaleString("ja-JP")}</p>
+          {/* 印刷用タイトル（1行にまとめて省スペース化） */}
+          <div className="hidden print:flex items-baseline justify-between gap-2 mb-1 border-b pb-0.5">
+            <h2 className="text-sm font-bold">日程表　{ganttSpanLabel}</h2>
+            <p className="text-[10px] text-muted-foreground">印刷日時 {new Date().toLocaleString("ja-JP")}</p>
           </div>
 
           <style>{`
