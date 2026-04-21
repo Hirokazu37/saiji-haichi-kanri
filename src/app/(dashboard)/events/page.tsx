@@ -673,18 +673,71 @@ export default function EventsPage() {
               main, [data-slot="main"] { margin: 0 !important; padding: 0 !important; max-width: 100% !important; }
               .md\\:pl-60 { padding-left: 0 !important; }
               .print\\:overflow-visible { overflow: visible !important; }
-              /* ページ区切り（Tailwindユーティリティではなくプレーンクラスで確実に効かせる） */
-              .events-page-break { page-break-before: always !important; break-before: page !important; }
+
+              /* ===== 1ページ強制 + 行数比例レイアウト ===== */
+              /* ページ区切りは使わない（全部1ページ強制） */
+              .events-page-break { page-break-before: auto !important; break-before: auto !important; }
+
+              /* カード一覧コンテナを flex-col にして縦に並べる */
+              .events-cards-container {
+                display: flex !important;
+                flex-direction: column !important;
+                min-height: calc(100vh - 14mm);
+                gap: 2mm !important;
+              }
+              /* 各月カード: --ratio (行数) に比例して高さを取る */
+              .events-cards-container > [data-slot="card"] {
+                flex: var(--ratio, 1) 1 0 !important;
+                min-height: 0 !important;
+                display: flex !important;
+                flex-direction: column !important;
+                overflow: hidden;
+              }
+              .events-cards-container > [data-slot="card"] > [data-slot="card-content"] {
+                flex: 1 !important;
+                min-height: 0 !important;
+                display: flex;
+                flex-direction: column;
+              }
+              .events-cards-container > [data-slot="card"] > [data-slot="card-content"] > div {
+                flex: 1 !important;
+                min-height: 0 !important;
+                display: flex;
+                flex-direction: column;
+                min-width: 0 !important;
+              }
+              .events-cards-container > [data-slot="card"] > [data-slot="card-content"] > div > div {
+                flex: 1 !important;
+                min-height: 0 !important;
+                display: flex;
+                flex-direction: column;
+              }
+              /* 日付ヘッダは自然高さ、トラック行は flex:1 で均等割付け */
+              .events-day-header { flex: 0 0 auto !important; }
+              .events-track-row {
+                flex: 1 1 0 !important;
+                min-height: 0 !important;
+              }
             }
           `}</style>
 
           <TooltipProvider>
-            <div className="space-y-4">
+            <div className="space-y-4 events-cards-container">
               {ganttCardGroups.map((group, gIdx) => {
                 const firstBlock = group[0];
                 const cardKey = `${firstBlock.year}-${firstBlock.month}`;
+                // この月の実トラック数（ABCDE…の数）を計算して flex 比率に使う
+                const cardRatio = group.reduce((sum, cm) => {
+                  const tm = assignTracks(filtered, cm.year, cm.month);
+                  const mt = tm.size > 0 ? Math.max(...Array.from(tm.values())) + 1 : 1;
+                  return sum + mt;
+                }, 0);
                 return (
-                  <Card key={cardKey} className={`overflow-hidden ${gIdx > 0 && gIdx % printOpts.monthsPerPage === 0 ? "events-page-break" : ""}`}>
+                  <Card
+                    key={cardKey}
+                    className={`overflow-hidden ${gIdx > 0 && gIdx % printOpts.monthsPerPage === 0 ? "events-page-break" : ""}`}
+                    style={{ ["--ratio" as string]: String(cardRatio) }}
+                  >
                     <CardContent className="p-0 overflow-x-auto print:overflow-visible [touch-action:pan-x_pan-y_pinch-zoom]">
                       <div className="min-w-[600px]">
                         {group.map((cm, subIdx) => {
@@ -705,7 +758,7 @@ export default function EventsPage() {
                           return (
                             <div key={`${cm.halfLabel || "full"}`} className={subIdx > 0 ? "border-t-2 border-sky-200" : ""}>
                         {/* 月タイトル */}
-                        <div className="flex border-b bg-white">
+                        <div className="events-day-header flex border-b bg-white">
                           <div className="w-14 shrink-0 border-r flex flex-col items-center justify-center py-1.5 bg-sky-50">
                             {isFirstSub && <span className="text-sky-700 text-base font-black leading-none">{cm.month}<span className="text-xs">月</span></span>}
                             {cm.halfLabel && <span className={`text-[11px] text-sky-600 font-semibold leading-none ${isFirstSub ? "mt-0.5" : ""}`}>{cm.halfLabel}</span>}
@@ -744,7 +797,7 @@ export default function EventsPage() {
                           const trackEvents = monthEvents.filter((e) => trackMap.get(e.id) === trackIdx);
                           const rowMinHeight = showArrangementIcons ? 76 : 44;
                           return (
-                            <div key={trackIdx} className={`flex border-b last:border-b-0 ${trackIdx % 2 === 1 ? "bg-slate-50/50" : "bg-white"}`} style={{ minHeight: rowMinHeight }}>
+                            <div key={trackIdx} className={`events-track-row flex border-b last:border-b-0 ${trackIdx % 2 === 1 ? "bg-slate-50/50" : "bg-white"}`} style={{ minHeight: rowMinHeight }}>
                               <div className="w-14 shrink-0 border-r flex items-center justify-center text-[10px] font-bold text-muted-foreground">
                                 {TRACK_LABELS[trackIdx] || String(trackIdx + 1)}
                               </div>
