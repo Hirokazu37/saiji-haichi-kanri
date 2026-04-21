@@ -619,10 +619,12 @@ export default function SchedulePage() {
   // 印刷設定ダイアログを開く
   const handleOpenPrintDialog = () => setPrintDialogOpen(true);
 
-  // 印刷を実行（ダイアログを閉じて少し待ってから window.print）
+  // 印刷を実行（printMode=trueで月数を monthSpan 通りに固定してから window.print）
   const handleDoPrint = () => {
     setPrintDialogOpen(false);
-    setTimeout(() => window.print(), 150);
+    setPrintMode(true);
+    // React の再レンダリングを待ってから print（月数が monthSpan 通りに縮まるのを待つ）
+    setTimeout(() => window.print(), 250);
   };
 
   const handleSaveJpg = async () => {
