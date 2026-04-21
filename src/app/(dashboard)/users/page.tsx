@@ -410,14 +410,12 @@ export default function UsersPage() {
               <div>
                 <Label htmlFor="can_view_payments" className="text-sm font-medium">経理（入金管理）閲覧</Label>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  ONで入金管理ページ・帳合先マスターにアクセス可能。
-                  {form.role === "admin" && "（編集可能ロールは常にON扱い）"}
+                  ONで入金管理ページ・帳合先マスターにアクセス可能。ロールとは独立して個別に設定できます。
                 </p>
               </div>
               <Switch
                 id="can_view_payments"
-                checked={form.role === "admin" ? true : form.can_view_payments}
-                disabled={form.role === "admin"}
+                checked={form.can_view_payments}
                 onCheckedChange={(v) => setForm({ ...form, can_view_payments: v })}
                 className="data-[state=checked]:bg-green-700"
               />

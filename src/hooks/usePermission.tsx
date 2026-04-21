@@ -57,8 +57,8 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
           setState({
             role,
             ...derived,
-            // admin は自動的に経理閲覧ON扱い、他ユーザーは DB の can_view_payments に従う
-            canViewPayments: role === "admin" ? true : !!data.can_view_payments,
+            // 経理閲覧は role とは独立のフラグ。admin でも DB の値に従う
+            canViewPayments: !!data.can_view_payments,
             loading: false,
             displayName: data.display_name,
             userId: data.id,
