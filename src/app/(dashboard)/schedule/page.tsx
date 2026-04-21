@@ -32,7 +32,7 @@ type StaffAssignment = {
   hotel_name: string | null;
   hotel_check_in: string | null;
   hotel_check_out: string | null;
-  events: { id: string; name: string | null; venue: string; store_name: string | null } | null;
+  events: { id: string; name: string | null; venue: string; store_name: string | null; start_date: string; end_date: string } | null;
 };
 
 const personKey = (a: StaffAssignment): string | null => {
@@ -205,7 +205,7 @@ export default function SchedulePage() {
       supabase.from("mannequin_people").select("id, name").order("name"),
       supabase
         .from("event_staff")
-        .select("id, person_type, employee_id, mannequin_person_id, event_id, start_date, end_date, role, hotel_name, hotel_check_in, hotel_check_out, events(id, name, venue, store_name)")
+        .select("id, person_type, employee_id, mannequin_person_id, event_id, start_date, end_date, role, hotel_name, hotel_check_in, hotel_check_out, events(id, name, venue, store_name, start_date, end_date)")
         .gte("end_date", startOfRange)
         .lte("start_date", endOfRange)
         .order("start_date"),
@@ -355,6 +355,14 @@ export default function SchedulePage() {
     return `${yy}-${mm}-${dd}`;
   };
   const dayDelta = (dx: number) => Math.round(dx / colWidth);
+  // YYYY-MM-DD 同士の日数差（b - a）。正なら b の方が未来
+  const diffDaysYmd = (a: string, b: string) => {
+    const [ay, am, ad] = a.split("-").map(Number);
+    const [by, bm, bd] = b.split("-").map(Number);
+    const da = new Date(ay, am - 1, ad).getTime();
+    const db = new Date(by, bm - 1, bd).getTime();
+    return Math.round((db - da) / 86400000);
+  };
 
   const beginDrag = (
     e: React.PointerEvent<HTMLElement>,
@@ -451,6 +459,28 @@ export default function SchedulePage() {
       } else {
         ns = addDaysToYmd(dragState.origStart, delta);
         ne = addDaysToYmd(dragState.origEnd, delta);
+      }
+      // 催事の会期内にクランプ（その催事の start_date 〜 end_date を超えないように）
+      const a = assignments.find((x) => x.id === dragState.assignmentId);
+      const evStart = a?.events?.start_date;
+      const evEnd = a?.events?.end_date;
+      if (evStart && evEnd) {
+        if (dragState.handle === "move") {
+          // 期間長を保ちつつ催事期間内にシフト
+          if (ns < evStart) {
+            const shift = diffDaysYmd(evStart, ns);
+            ns = evStart;
+            ne = addDaysToYmd(ne, -shift);
+          }
+          if (ne > evEnd) {
+            const shift = diffDaysYmd(ne, evEnd);
+            ne = evEnd;
+            ns = addDaysToYmd(ns, shift);
+          }
+        } else {
+          if (ns < evStart) ns = evStart;
+          if (ne > evEnd) ne = evEnd;
+        }
       }
       setDragState((prev) => (prev ? { ...prev, currentStart: ns, currentEnd: ne, moved } : prev));
     };

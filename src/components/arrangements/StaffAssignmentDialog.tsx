@@ -232,6 +232,13 @@ export function StaffAssignmentDialog({
 
   const save = async () => {
     if (!canSave) return;
+    // 催事の会期を超える場合はアラートして中断
+    if (eventStart && eventEnd) {
+      if (form.start_date < eventStart || form.end_date > eventEnd) {
+        alert(`催事の会期（${eventStart} 〜 ${eventEnd}）を超えた日付は設定できません。`);
+        return;
+      }
+    }
     setSaving(true);
     try {
       const payload = {
@@ -337,6 +344,20 @@ export function StaffAssignmentDialog({
       })()
     : undefined;
 
+  // 選択中の催事の会期（日付入力の min/max に使う）
+  const selectedEvent = events.find((x) => x.id === form.event_id);
+  const eventStart = selectedEvent?.start_date;
+  const eventEnd = selectedEvent?.end_date;
+
+  // 催事ドロップダウンのフィルタリング:
+  // すでに開始/終了日が決まっている場合（空白ドラッグ後など）、その期間を含む催事のみを候補にする
+  // 編集モード（assignmentId 有）の時は制限しない（既存の紐付けを壊さない）
+  const filteredEvents = (() => {
+    if (assignmentId) return events;
+    if (!form.start_date || !form.end_date) return events;
+    return events.filter((e) => e.start_date <= form.start_date && e.end_date >= form.end_date);
+  })();
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -358,7 +379,12 @@ export function StaffAssignmentDialog({
                     <SelectValue placeholder="催事を選択">{selectedEventLabel}</SelectValue>
                   </SelectTrigger>
                   <SelectContent className="max-h-[300px]">
-                    {events.map((e) => {
+                    {filteredEvents.length === 0 && !assignmentId && form.start_date && form.end_date && (
+                      <div className="px-2 py-3 text-xs text-muted-foreground">
+                        選択した期間（{form.start_date}〜{form.end_date}）を含む催事がありません。<br />期間を短くするか、催事の会期を拡げてください。
+                      </div>
+                    )}
+                    {filteredEvents.map((e) => {
                       const venueLabel = e.store_name ? `${e.venue} ${e.store_name}` : e.venue;
                       return (
                         <SelectItem key={e.id} value={e.id}>
@@ -369,6 +395,9 @@ export function StaffAssignmentDialog({
                   </SelectContent>
                 </Select>
                 {assignmentId && <p className="text-[10px] text-muted-foreground">別催事へ移動したい場合は一度削除して再追加してください</p>}
+                {!assignmentId && form.start_date && form.end_date && (
+                  <p className="text-[10px] text-muted-foreground">期間「{form.start_date} 〜 {form.end_date}」に開催する催事のみ表示しています</p>
+                )}
               </div>
             )}
 
@@ -436,13 +465,40 @@ export function StaffAssignmentDialog({
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>開始日 *</Label>
-                <Input type="date" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} />
+                <Input
+                  type="date"
+                  value={form.start_date}
+                  min={eventStart}
+                  max={form.end_date || eventEnd}
+                  onChange={(e) => {
+                    let v = e.target.value;
+                    if (eventStart && v < eventStart) v = eventStart;
+                    if (eventEnd && v > eventEnd) v = eventEnd;
+                    setForm({ ...form, start_date: v });
+                  }}
+                />
               </div>
               <div className="space-y-2">
                 <Label>終了日 *</Label>
-                <Input type="date" value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} />
+                <Input
+                  type="date"
+                  value={form.end_date}
+                  min={form.start_date || eventStart}
+                  max={eventEnd}
+                  onChange={(e) => {
+                    let v = e.target.value;
+                    if (eventStart && v < eventStart) v = eventStart;
+                    if (eventEnd && v > eventEnd) v = eventEnd;
+                    setForm({ ...form, end_date: v });
+                  }}
+                />
               </div>
             </div>
+            {eventStart && eventEnd && (
+              <p className="text-[10px] text-muted-foreground -mt-2">
+                催事の会期: {eventStart} 〜 {eventEnd}（この範囲内でのみ設定可能）
+              </p>
+            )}
 
             {/* 役割 */}
             <div className="space-y-2">
