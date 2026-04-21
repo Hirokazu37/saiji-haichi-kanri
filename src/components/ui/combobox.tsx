@@ -95,6 +95,8 @@ export function Combobox({
   const handleSwitchToMaster = () => {
     setCustomMode(false);
     onChange("");
+    // マスターから選びなおせるよう、次のレンダリングでポップオーバーを自動で開く
+    setOpen(true);
   };
 
   // 自由入力モード
@@ -111,13 +113,14 @@ export function Combobox({
         />
         <Button
           type="button"
-          variant="ghost"
+          variant="outline"
           size="sm"
           onClick={handleSwitchToMaster}
           disabled={disabled}
           title="マスターから選ぶ"
+          className="shrink-0"
         >
-          一覧
+          一覧から選ぶ
         </Button>
       </div>
     );
