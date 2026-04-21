@@ -234,10 +234,12 @@ export default function EventsPage() {
   const [ganttSpanSel, setGanttSpanSel] = useState<string>("6");
 
   // 印刷設定（向き / 1ページの月数）
+  // 向きごとのおすすめ月数: 縦=4ヶ月、横=3ヶ月
+  const recommendedMpp = (o: "landscape" | "portrait") => (o === "portrait" ? 4 : 3);
   const [printDialogOpen, setPrintDialogOpen] = useState(false);
   const [printOpts, setPrintOpts] = useState({
     orientation: "portrait" as "landscape" | "portrait",
-    monthsPerPage: 2,
+    monthsPerPage: 4,
   });
 
   const calMonths = useMemo(() => {
@@ -303,7 +305,11 @@ export default function EventsPage() {
     return getHolidaysForRange(years);
   }, [calMonths]);
 
-  const handleOpenPrintDialog = () => setPrintDialogOpen(true);
+  const handleOpenPrintDialog = () => {
+    // 開くたびに現在の向きに合わせておすすめ値にリセット
+    setPrintOpts((p) => ({ ...p, monthsPerPage: recommendedMpp(p.orientation) }));
+    setPrintDialogOpen(true);
+  };
   const handleDoPrint = () => {
     setPrintDialogOpen(false);
     // DialogのcloseアニメをやめてからprintしないとUIが残ったまま映る
@@ -1313,7 +1319,7 @@ export default function EventsPage() {
                   type="button"
                   size="sm"
                   variant={printOpts.orientation === "portrait" ? "default" : "outline"}
-                  onClick={() => setPrintOpts((p) => ({ ...p, orientation: "portrait" }))}
+                  onClick={() => setPrintOpts((p) => ({ orientation: "portrait", monthsPerPage: recommendedMpp("portrait") }))}
                 >
                   縦（portrait）
                 </Button>
@@ -1321,7 +1327,7 @@ export default function EventsPage() {
                   type="button"
                   size="sm"
                   variant={printOpts.orientation === "landscape" ? "default" : "outline"}
-                  onClick={() => setPrintOpts((p) => ({ ...p, orientation: "landscape" }))}
+                  onClick={() => setPrintOpts((p) => ({ orientation: "landscape", monthsPerPage: recommendedMpp("landscape") }))}
                 >
                   横（landscape）
                 </Button>
