@@ -1342,7 +1342,7 @@ export default function EventsPage() {
             <div className="space-y-2">
               <Label className="text-xs">1ページに表示する月数</Label>
               <Select value={String(printOpts.monthsPerPage)} onValueChange={(v) => v && setPrintOpts((p) => ({ ...p, monthsPerPage: parseInt(v) }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger><SelectValue>{`${printOpts.monthsPerPage}ヶ月`}</SelectValue></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="1">1ヶ月（最も読みやすい）</SelectItem>
                   <SelectItem value="2">2ヶ月（バランス・現状）</SelectItem>
