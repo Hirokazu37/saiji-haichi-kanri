@@ -460,6 +460,8 @@ function NewEventPageInner() {
       ? agencyMasters.find((a) => a.name === agencyFilter)?.id ?? null
       : null;
 
+    // 社員扱いマネキンも催事によっては「普通のマネキン」として動くことがあるため
+    // マネキン手配の候補からは除外しない（同じ催事で担当者と二重にしないのは運用で担保）
     const filtered = filterAgencyId
       ? mannequinPeople.filter((p) => p.agency_id === filterAgencyId)
       : mannequinPeople;
