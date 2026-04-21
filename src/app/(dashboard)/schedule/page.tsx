@@ -115,11 +115,12 @@ export default function SchedulePage() {
   const [lastChange, setLastChange] = useState<StaffChange | null>(null);
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // 変更を記録してトースト表示 + 15秒後に自動クリア
+  // 変更を記録してトースト表示（自動消去しない：ユーザー要望）
+  // 次の変更が来れば上書き、×ボタン or 元に戻すクリックで明示的に閉じる
   const recordChange = (change: StaffChange) => {
     setLastChange(change);
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
-    undoTimerRef.current = setTimeout(() => setLastChange(null), 15_000);
+    undoTimerRef.current = null;
   };
 
   // 元に戻す実行
