@@ -89,6 +89,8 @@ export default function SchedulePage() {
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   // モバイル専用のビュー切替（カード / カレンダー / ガント）
   const [mobileView, setMobileView] = useState<"card" | "calendar" | "gantt">("card");
+  // 印刷モード（window.print() 実行中はTRUE）。レンダリング範囲を絞って用紙に収めるため
+  const [printMode, setPrintMode] = useState(false);
   // 配置編集ダイアログの状態
   const { canEdit } = usePermission();
   const [editOpen, setEditOpen] = useState(false);
@@ -167,11 +169,12 @@ export default function SchedulePage() {
   ], [employees, mannequinPeople]);
 
   // monthSpan の値だけ連続した月を返す
-  // ただし最小6ヶ月は常に描画する（右にスクロールして先の月まで見えるように）
+  // 通常は最小6ヶ月描画（右スクロールで先の月まで見られる）
+  // 印刷モードでは monthSpan そのまま（用紙に収める）
   const RENDER_MIN_MONTHS = 6;
   const getMonthRange = () => {
     const months: { year: number; month: number; days: number }[] = [];
-    const span = Math.max(monthSpan, RENDER_MIN_MONTHS);
+    const span = printMode ? monthSpan : Math.max(monthSpan, RENDER_MIN_MONTHS);
     for (let i = 0; i < span; i++) {
       let m = month + i;
       let y = year;
@@ -499,7 +502,28 @@ export default function SchedulePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dragState, colWidth]);
 
-  const handlePrint = () => { window.print(); };
+  // 印刷ダイアログ呼出し前後で printMode を切替（レンダリング範囲を用紙に合わせる）
+  useEffect(() => {
+    const onBefore = () => setPrintMode(true);
+    const onAfter = () => setPrintMode(false);
+    window.addEventListener("beforeprint", onBefore);
+    window.addEventListener("afterprint", onAfter);
+    return () => {
+      window.removeEventListener("beforeprint", onBefore);
+      window.removeEventListener("afterprint", onAfter);
+    };
+  }, []);
+
+  const handlePrint = () => {
+    // 先にprintModeに切替→レイアウト再計算してからプリントダイアログ
+    setPrintMode(true);
+    // Reactの再レンダリングを待ってから印刷
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.print();
+      });
+    });
+  };
 
   const handleSaveJpg = async () => {
     if (!tableRef.current) return;
@@ -536,8 +560,21 @@ export default function SchedulePage() {
       {/* 印刷用スタイル */}
       <style>{`
         @media print {
-          @page { size: landscape; margin: 10mm; }
+          @page { size: A4 landscape; margin: 10mm; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          /* 印刷時はガントの横スクロール・sticky を全解除して用紙に収める */
+          .gantt-scroll {
+            overflow: visible !important;
+          }
+          .gantt-inner {
+            min-width: 0 !important;
+            width: 100% !important;
+          }
+          .gantt-label-cell {
+            position: static !important;
+          }
+          /* モバイル用のカード・カレンダービュー・モード切替タブは印刷しない */
+          .mobile-only-view { display: none !important; }
         }
       `}</style>
 
@@ -608,7 +645,7 @@ export default function SchedulePage() {
       </div>
 
       {/* モバイル用ビュー切替（カード / カレンダー / ガント） */}
-      <div className="md:hidden flex gap-1 rounded-md border p-0.5 bg-muted/30 w-fit print:hidden">
+      <div className="mobile-only-view md:hidden flex gap-1 rounded-md border p-0.5 bg-muted/30 w-fit print:hidden">
         {([
           { k: "card" as const, label: "カード" },
           { k: "calendar" as const, label: "カレンダー" },
@@ -651,7 +688,7 @@ export default function SchedulePage() {
         </div>
 
         {/* ===== モバイル: カードビュー（mobileView='card'の時のみ） ===== */}
-        <div className={`${mobileView === "card" ? "block" : "hidden"} md:hidden space-y-3`}>
+        <div className={`mobile-only-view ${mobileView === "card" ? "block" : "hidden"} md:hidden space-y-3`}>
           {(() => {
             const todayStr = new Date().toISOString().slice(0, 10);
             type Grouped = {
@@ -800,7 +837,7 @@ export default function SchedulePage() {
           };
 
           return (
-            <div className="md:hidden">
+            <div className="mobile-only-view md:hidden">
               <Card>
                 <CardContent className="p-2">
                   <div className="text-center text-sm font-bold mb-2">{baseMonth.year}年 {baseMonth.month}月</div>
@@ -864,12 +901,12 @@ export default function SchedulePage() {
             <CardContent className="p-0">
               <div
                 ref={ganttScrollRef}
-                className="overflow-x-auto print:overflow-visible [touch-action:pan-x_pan-y_pinch-zoom]"
+                className="gantt-scroll overflow-x-auto print:overflow-visible [touch-action:pan-x_pan-y_pinch-zoom]"
               >
-                <div style={{ minWidth: `${ganttMinWidth}px` }}>
+                <div className="gantt-inner" style={{ minWidth: `${ganttMinWidth}px` }}>
                 {/* 月ヘッダー（常時表示：右スクロールで5月/6月/7月...を見られるように） */}
                 <div className="flex border-b">
-                  <div className="w-28 shrink-0 border-r sticky left-0 bg-background z-20" />
+                  <div className="gantt-label-cell w-28 shrink-0 border-r sticky left-0 bg-background z-20" />
                   <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${allDays.length}, minmax(0, 1fr))` }}>
                     {monthRange.map((m) => (
                       <div
@@ -885,7 +922,7 @@ export default function SchedulePage() {
 
                 {/* 日付ヘッダー */}
                 <div className="flex border-b sticky top-0 bg-background z-10">
-                  <div className="w-28 shrink-0 p-2 border-r font-medium text-sm sticky left-0 bg-background z-20">社員名</div>
+                  <div className="gantt-label-cell w-28 shrink-0 p-2 border-r font-medium text-sm sticky left-0 bg-background z-20">社員名</div>
                   <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${allDays.length}, minmax(0, 1fr))` }}>
                     {allDays.map((d, i) => {
                       const holiday = holidays.get(d.dateStr);
@@ -923,7 +960,7 @@ export default function SchedulePage() {
                       className={`flex border-b last:border-b-0 ${empIdx % 2 === 1 ? "bg-muted/20" : ""}`}
                       style={{ minHeight }}
                     >
-                      <div className={`w-28 shrink-0 p-2 border-r text-sm font-medium flex items-center gap-1 sticky left-0 z-[8] ${empIdx % 2 === 1 ? "bg-muted/80" : "bg-background"}`}>
+                      <div className={`gantt-label-cell w-28 shrink-0 p-2 border-r text-sm font-medium flex items-center gap-1 sticky left-0 z-[8] ${empIdx % 2 === 1 ? "bg-muted/80" : "bg-background"}`}>
                         <span className="truncate">{p.name}</span>
                         {p.kind === "mannequin" && (
                           <span className="text-[9px] px-1 py-0.5 rounded bg-pink-100 text-pink-800 font-medium shrink-0">ﾏﾈｷﾝ</span>
