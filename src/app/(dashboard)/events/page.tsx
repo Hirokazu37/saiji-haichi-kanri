@@ -233,6 +233,13 @@ export default function EventsPage() {
   //   1/3/6/12 : 1ヶ月1カードで月数分表示
   const [ganttSpanSel, setGanttSpanSel] = useState<string>("6");
 
+  // 印刷設定（向き / 1ページの月数）
+  const [printDialogOpen, setPrintDialogOpen] = useState(false);
+  const [printOpts, setPrintOpts] = useState({
+    orientation: "portrait" as "landscape" | "portrait",
+    monthsPerPage: 2,
+  });
+
   const calMonths = useMemo(() => {
     const months: { year: number; month: number }[] = [];
     for (let i = 0; i < calSpan; i++) {
@@ -296,7 +303,12 @@ export default function EventsPage() {
     return getHolidaysForRange(years);
   }, [calMonths]);
 
-  const handlePrint = () => window.print();
+  const handleOpenPrintDialog = () => setPrintDialogOpen(true);
+  const handleDoPrint = () => {
+    setPrintDialogOpen(false);
+    // DialogのcloseアニメをやめてからprintしないとUIが残ったまま映る
+    setTimeout(() => window.print(), 150);
+  };
   const handleSaveJpg = async () => {
     if (!listRef.current) return;
     try {
@@ -511,7 +523,7 @@ export default function EventsPage() {
               <LayoutGrid className="h-4 w-4" />
             </Button>
           </div>
-          <Button variant="outline" size="sm" onClick={handlePrint} className="print:hidden"><Printer className="h-4 w-4 mr-1" />印刷</Button>
+          <Button variant="outline" size="sm" onClick={handleOpenPrintDialog} className="print:hidden"><Printer className="h-4 w-4 mr-1" />印刷</Button>
           <Button variant="outline" size="sm" onClick={handleSaveJpg} className="print:hidden"><ImageDown className="h-4 w-4 mr-1" />JPG保存</Button>
           {canEdit && (
             <Link href="/events/new" className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 print:hidden">
@@ -649,10 +661,11 @@ export default function EventsPage() {
 
           <style>{`
             @media print {
-              @page { size: A4 portrait; margin: 8mm; }
+              @page { size: A4 ${printOpts.orientation}; margin: 8mm; }
               body { -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 8px; }
-              nav, aside, header { display: none !important; }
+              nav, aside, header, footer { display: none !important; }
               main, [data-slot="main"] { margin: 0 !important; padding: 0 !important; max-width: 100% !important; }
+              .md\\:pl-60 { padding-left: 0 !important; }
               .print\\:overflow-visible { overflow: visible !important; }
               .print\\:page-break { page-break-before: always; break-before: page; }
             }
@@ -664,7 +677,7 @@ export default function EventsPage() {
                 const firstBlock = group[0];
                 const cardKey = `${firstBlock.year}-${firstBlock.month}`;
                 return (
-                  <Card key={cardKey} className={`overflow-hidden ${gIdx > 0 && gIdx % 2 === 0 ? "print:page-break" : ""}`}>
+                  <Card key={cardKey} className={`overflow-hidden ${gIdx > 0 && gIdx % printOpts.monthsPerPage === 0 ? "print:page-break" : ""}`}>
                     <CardContent className="p-0 overflow-x-auto print:overflow-visible [touch-action:pan-x_pan-y_pinch-zoom]">
                       <div className="min-w-[600px]">
                         {group.map((cm, subIdx) => {
@@ -1281,6 +1294,62 @@ export default function EventsPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>キャンセル</Button>
             <Button onClick={handleDialogSave} disabled={dialogSaving}>{dialogSaving ? "保存中..." : "保存する"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 印刷設定ダイアログ */}
+      <Dialog open={printDialogOpen} onOpenChange={setPrintDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>日程表の印刷設定</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label className="text-xs">用紙の向き</Label>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={printOpts.orientation === "portrait" ? "default" : "outline"}
+                  onClick={() => setPrintOpts((p) => ({ ...p, orientation: "portrait" }))}
+                >
+                  縦（portrait）
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={printOpts.orientation === "landscape" ? "default" : "outline"}
+                  onClick={() => setPrintOpts((p) => ({ ...p, orientation: "landscape" }))}
+                >
+                  横（landscape）
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs">1ページに表示する月数</Label>
+              <Select value={String(printOpts.monthsPerPage)} onValueChange={(v) => v && setPrintOpts((p) => ({ ...p, monthsPerPage: parseInt(v) }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">1ヶ月（最も読みやすい）</SelectItem>
+                  <SelectItem value="2">2ヶ月（バランス・現状）</SelectItem>
+                  <SelectItem value="3">3ヶ月（やや詰めて節約）</SelectItem>
+                  <SelectItem value="4">4ヶ月（限界まで詰める）</SelectItem>
+                  <SelectItem value="6">6ヶ月（半年を1枚）</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground">
+                現在の表示期間: {ganttSpanLabel}<br />
+                出力枚数の目安: 約 {Math.max(1, Math.ceil(ganttCardGroups.length / Math.max(1, printOpts.monthsPerPage)))} 枚
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPrintDialogOpen(false)}>キャンセル</Button>
+            <Button onClick={handleDoPrint}>
+              <Printer className="h-4 w-4 mr-1" />印刷を実行
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
