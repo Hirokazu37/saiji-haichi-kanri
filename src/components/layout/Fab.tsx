@@ -30,7 +30,7 @@ export function Fab() {
     <Link
       href="/events/new"
       aria-label="新規催事を追加"
-      className="md:hidden fixed right-4 z-30 bg-primary text-primary-foreground shadow-lg rounded-full h-14 w-14 flex items-center justify-center active:scale-95 transition-transform"
+      className="md:hidden fixed right-4 z-30 bg-primary text-primary-foreground shadow-lg rounded-full h-14 w-14 flex items-center justify-center active:scale-95 transition-transform print:hidden"
       style={{ bottom: "calc(env(safe-area-inset-bottom) + 72px)" }}
     >
       <Plus className="h-7 w-7" strokeWidth={2.5} aria-hidden />
