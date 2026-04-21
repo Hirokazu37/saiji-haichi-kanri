@@ -645,7 +645,7 @@ export default function SchedulePage() {
                 <div style={{ minWidth: `${ganttMinWidth}px` }}>
                 {/* 月ヘッダー（常時表示：右スクロールで5月/6月/7月...を見られるように） */}
                 <div className="flex border-b">
-                  <div className="w-28 shrink-0 border-r" />
+                  <div className="w-28 shrink-0 border-r sticky left-0 bg-background z-20" />
                   <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${allDays.length}, minmax(0, 1fr))` }}>
                     {monthRange.map((m) => (
                       <div
@@ -661,7 +661,7 @@ export default function SchedulePage() {
 
                 {/* 日付ヘッダー */}
                 <div className="flex border-b sticky top-0 bg-background z-10">
-                  <div className="w-28 shrink-0 p-2 border-r font-medium text-sm">社員名</div>
+                  <div className="w-28 shrink-0 p-2 border-r font-medium text-sm sticky left-0 bg-background z-20">社員名</div>
                   <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${allDays.length}, minmax(0, 1fr))` }}>
                     {allDays.map((d, i) => {
                       const holiday = holidays.get(d.dateStr);
@@ -699,7 +699,7 @@ export default function SchedulePage() {
                       className={`flex border-b last:border-b-0 ${empIdx % 2 === 1 ? "bg-muted/20" : ""}`}
                       style={{ minHeight }}
                     >
-                      <div className="w-28 shrink-0 p-2 border-r text-sm font-medium flex items-center gap-1">
+                      <div className={`w-28 shrink-0 p-2 border-r text-sm font-medium flex items-center gap-1 sticky left-0 z-[8] ${empIdx % 2 === 1 ? "bg-muted/80" : "bg-background"}`}>
                         <span className="truncate">{p.name}</span>
                         {p.kind === "mannequin" && (
                           <span className="text-[9px] px-1 py-0.5 rounded bg-pink-100 text-pink-800 font-medium shrink-0">ﾏﾈｷﾝ</span>
