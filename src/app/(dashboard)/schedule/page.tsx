@@ -707,9 +707,10 @@ export default function SchedulePage() {
           .gantt-inner {
             min-width: 0 !important;
             width: 100% !important;
-            /* 印刷ヘッダー(〜5mm) + 印刷マージン(16mm) + Card border(〜2mm) を差し引く */
-            height: calc(100vh - 10mm) !important;
-            max-height: calc(100vh - 10mm) !important;
+            /* 100vh = 用紙全体(297mm portrait/210mm landscape)を含むため
+               calc は使わず向き別の明示的なmm値で固定する（印刷ヘッダー+@pageマージンを差し引いた安全値）*/
+            height: ${printOpts.orientation === "portrait" ? "255mm" : "168mm"} !important;
+            max-height: ${printOpts.orientation === "portrait" ? "255mm" : "168mm"} !important;
             min-height: 0 !important;
             display: flex !important;
             flex-direction: column !important;
