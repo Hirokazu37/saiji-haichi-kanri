@@ -775,6 +775,44 @@ export default function SchedulePage() {
       {/* 社員・マネキンフィルタ */}
       <div className="print:hidden">
         <p className="text-xs text-muted-foreground mb-1">表示する社員・マネキン（未選択で全員表示）</p>
+        <div className="flex flex-wrap gap-1 mb-1.5">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs"
+            onClick={() => setSelectedEmployeeIds(people.filter((p) => p.kind === "employee").map(makePersonKey))}
+          >
+            社員
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs border-pink-400 text-pink-700 hover:bg-pink-50"
+            onClick={() => setSelectedEmployeeIds(people.filter((p) => p.kind === "mannequin").map(makePersonKey))}
+          >
+            マネキン
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs"
+            onClick={() => setSelectedEmployeeIds(people.map(makePersonKey))}
+          >
+            すべて
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-7 text-xs text-muted-foreground"
+            onClick={() => setSelectedEmployeeIds([])}
+          >
+            選択解除
+          </Button>
+        </div>
         <div className="flex flex-wrap gap-1">
           {people.map((p) => {
             const key = makePersonKey(p);
@@ -792,11 +830,6 @@ export default function SchedulePage() {
               </Badge>
             );
           })}
-          {selectedEmployeeIds.length > 0 && (
-            <Badge variant="ghost" className="cursor-pointer text-xs text-muted-foreground" onClick={() => setSelectedEmployeeIds([])}>
-              全員表示
-            </Badge>
-          )}
         </div>
       </div>
 
