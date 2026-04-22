@@ -340,7 +340,7 @@ export default function SchedulePage() {
   // 1日あたりのカラム幅（PX）。狭くするほど同時に多くの日が見える
   const COL_WIDTH_BY_SPAN: Record<number, number> = { 1: 48, 2: 28, 3: 22 };
   const colWidth = COL_WIDTH_BY_SPAN[monthSpan] ?? 32;
-  const labelColWidth = 112; // 社員名列の幅（w-28）
+  const labelColWidth = 144; // 社員名列の幅（w-36 = 9rem = 144px）
   const ganttMinWidth = labelColWidth + allDays.length * colWidth;
 
   // ロード完了・月切替・表示月数変更時に基準月（表示範囲の先頭）へスクロール
@@ -1062,7 +1062,7 @@ export default function SchedulePage() {
                 <div className="gantt-inner" style={{ minWidth: `${ganttMinWidth}px` }}>
                 {/* 月ヘッダー（常時表示：右スクロールで5月/6月/7月...を見られるように） */}
                 <div className="gantt-header-row flex border-b">
-                  <div className="gantt-label-cell w-28 shrink-0 border-r sticky left-0 bg-background z-20" />
+                  <div className="gantt-label-cell w-36 shrink-0 border-r sticky left-0 bg-background z-20" />
                   <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${allDays.length}, minmax(0, 1fr))` }}>
                     {monthRange.map((m) => (
                       <div
@@ -1078,7 +1078,7 @@ export default function SchedulePage() {
 
                 {/* 日付ヘッダー */}
                 <div className="gantt-header-row flex border-b sticky top-0 bg-background z-10">
-                  <div className="gantt-label-cell w-28 shrink-0 p-2 border-r font-medium text-sm sticky left-0 bg-background z-20">社員名</div>
+                  <div className="gantt-label-cell w-36 shrink-0 p-2 border-r font-medium text-sm sticky left-0 bg-background z-20">社員名</div>
                   <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${allDays.length}, minmax(0, 1fr))` }}>
                     {allDays.map((d, i) => {
                       const holiday = holidays.get(d.dateStr);
@@ -1122,7 +1122,7 @@ export default function SchedulePage() {
                       className={`gantt-emp-row flex border-b last:border-b-0 ${empIdx % 2 === 1 ? "bg-muted/20" : ""} ${isDropTarget ? "ring-2 ring-primary ring-inset bg-primary/10" : ""}`}
                       style={{ minHeight, ["--emp-ratio" as string]: String(rowCount) }}
                     >
-                      <div className={`gantt-label-cell w-28 shrink-0 p-2 border-r text-sm font-medium flex items-center gap-1 sticky left-0 z-[8] ${empIdx % 2 === 1 ? "bg-muted/80" : "bg-background"}`}>
+                      <div className={`gantt-label-cell w-36 shrink-0 p-2 border-r text-sm font-medium flex items-center gap-1 sticky left-0 z-[8] ${empIdx % 2 === 1 ? "bg-muted/80" : "bg-background"}`}>
                         <span className="truncate">{p.name}</span>
                         {p.kind === "mannequin" && (
                           <span className="text-[9px] px-1 py-0.5 rounded bg-pink-100 text-pink-800 font-medium shrink-0">ﾏﾈｷﾝ</span>
