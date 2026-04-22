@@ -1066,21 +1066,36 @@ export default function AgenciesPage() {
               {areas.length === 0 ? (
                 <p className="text-xs text-muted-foreground">エリアマスターに登録がありません</p>
               ) : (
-                <div className="flex flex-wrap gap-1">
-                  {areas.map((a) => (
-                    <Badge
-                      key={a.id}
-                      variant={selectedAgencyAreaIds.has(a.id) ? "default" : "outline"}
-                      className="cursor-pointer text-xs"
-                      onClick={() => setSelectedAgencyAreaIds((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(a.id)) next.delete(a.id); else next.add(a.id);
-                        return next;
-                      })}
-                    >
-                      {a.name}
-                    </Badge>
-                  ))}
+                <div className="space-y-2">
+                  {(() => {
+                    const grouped = new Map<string, AreaItem[]>();
+                    areas.forEach((a) => {
+                      const key = a.region || "未分類";
+                      if (!grouped.has(key)) grouped.set(key, []);
+                      grouped.get(key)!.push(a);
+                    });
+                    return Array.from(grouped.entries()).map(([region, items]) => (
+                      <div key={region} className="space-y-1">
+                        <p className="text-[10px] text-muted-foreground font-medium">{region}</p>
+                        <div className="flex flex-wrap gap-1">
+                          {items.map((a) => (
+                            <Badge
+                              key={a.id}
+                              variant={selectedAgencyAreaIds.has(a.id) ? "default" : "outline"}
+                              className="cursor-pointer text-xs"
+                              onClick={() => setSelectedAgencyAreaIds((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(a.id)) next.delete(a.id); else next.add(a.id);
+                                return next;
+                              })}
+                            >
+                              {a.name}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    ));
+                  })()}
                 </div>
               )}
             </div>
