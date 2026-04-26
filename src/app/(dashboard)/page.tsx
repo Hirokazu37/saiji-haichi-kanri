@@ -57,8 +57,8 @@ type MannequinRow = { event_id: string; arrangement_status: string | null };
 
 type DeadlineAlert = {
   event: Event;
-  deadline: string; // 催事開始2ヶ月前
-  daysUntilDeadline: number; // 負なら遅延
+  deadline: string; // 締切日（現在は催事開始日と同一）
+  daysUntilDeadline: number; // 催事開始までの日数（負なら開催開始済み）
 };
 
 type UnarrangedAlert = {
@@ -75,8 +75,8 @@ const statusColor: Record<string, string> = {
   "終了": "bg-gray-200 text-gray-500",
 };
 
-const DEADLINE_DAYS_BEFORE = 60; // 2ヶ月前
-const DEADLINE_WARN_WINDOW = 14; // 締切まで14日以内で警告
+const DEADLINE_DAYS_BEFORE = 0; // 締切 = 催事開始日
+const DEADLINE_WARN_WINDOW = 28; // 催事開始4週間前から表示
 
 const fmtLocalYmd = (d: Date) => {
   const y = d.getFullYear();
@@ -170,7 +170,7 @@ export default function DashboardPage() {
       active: me.filter((e) => e.status === "開催中" || (e.start_date <= t && e.end_date >= t)).length,
     });
 
-    // 締切アラート: 申込書 未提出 & 催事開始 <= today + 120 & 締切まで14日以内 or 過ぎた
+    // 出店申込書アラート: 未提出 & 催事開始まで4週間以内
     const dAlerts: DeadlineAlert[] = [];
     for (const e of horizon) {
       if (e.application_status === "提出済") continue;
@@ -471,15 +471,15 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      {/* 出店申込書 締切アラート */}
+      {/* 出店申込書 アラート */}
       {deadlineAlerts.length > 0 && (
         <Card className="border-l-4 border-l-red-500">
           <CardHeader className="pb-2 pt-3 px-4">
             <CardTitle className="text-sm font-bold text-red-800 flex items-center gap-2">
-              <FileText className="h-4 w-4" />出店申込書 締切アラート
+              <FileText className="h-4 w-4" />出店申込書 アラート
               <Badge variant="outline" className="bg-red-100 text-red-800 text-xs">{deadlineAlerts.length}</Badge>
             </CardTitle>
-            <p className="text-[10px] text-muted-foreground mt-0.5">催事開始 2ヶ月前（{DEADLINE_DAYS_BEFORE}日前）を締切として、14日前以内・遅延を表示</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">催事開始 {DEADLINE_WARN_WINDOW}日前以内・未提出のものを表示</p>
           </CardHeader>
           <CardContent className="px-4 pb-4">
             <div className="space-y-1.5">
@@ -490,7 +490,7 @@ export default function DashboardPage() {
                     <Link href={`/events/${a.event.id}`} className="flex-1 min-w-0 hover:underline">
                       <div className="text-sm font-bold truncate">{venueLabel(a.event)}</div>
                       <div className="text-[10px] text-muted-foreground">
-                        催事 {a.event.start_date} 〜 {a.event.end_date}・締切 {a.deadline}
+                        催事 {a.event.start_date} 〜 {a.event.end_date}
                       </div>
                     </Link>
                     <div className={`text-xs font-bold shrink-0 ${overdue ? "text-red-700" : "text-amber-700"}`}>
