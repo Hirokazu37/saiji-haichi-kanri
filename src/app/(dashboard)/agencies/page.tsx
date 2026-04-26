@@ -183,6 +183,7 @@ export default function AgenciesPage() {
   const [searchArea, setSearchArea] = useState("");
   const [searchTreatAsEmployee, setSearchTreatAsEmployee] = useState(false);
   const [searchTravelAvailable, setSearchTravelAvailable] = useState(false);
+  const [searchRating, setSearchRating] = useState(0);
 
   // 地方アコーディオン
   const [collapsedRegions, setCollapsedRegions] = useState<Set<string>>(new Set());
@@ -449,10 +450,11 @@ export default function AgenciesPage() {
     }
     if (searchTreatAsEmployee && !p.treat_as_employee) return false;
     if (searchTravelAvailable && !p.travel_available) return false;
+    if (searchRating > 0 && (p.rating === null || p.rating < searchRating)) return false;
     return true;
   });
 
-  const hasSearch = searchName || searchAgency || searchArea || searchTreatAsEmployee || searchTravelAvailable;
+  const hasSearch = searchName || searchAgency || searchArea || searchTreatAsEmployee || searchTravelAvailable || searchRating > 0;
 
   // マネキンさんの地方・色（最初に紐づくエリアを代表とする）
   const getPersonPrimaryArea = (personId: string): AreaItem | null => {
@@ -653,9 +655,20 @@ export default function AgenciesPage() {
             >
               <Plane className="h-3 w-3 mr-1" />出張可のみ
             </Badge>
+            {canViewRatings && [1, 2, 3, 4, 5].map((n) => (
+              <Badge
+                key={n}
+                variant={searchRating === n ? "default" : "outline"}
+                className="cursor-pointer text-xs gap-0.5"
+                onClick={() => setSearchRating(searchRating === n ? 0 : n)}
+              >
+                <Star className={`h-3 w-3 ${searchRating === n ? "fill-white text-white" : "fill-yellow-400 text-yellow-400"}`} />
+                {n === 5 ? "5のみ" : `${n}以上`}
+              </Badge>
+            ))}
           </div>
           {hasSearch && (
-            <Button variant="ghost" size="sm" className="mt-2" onClick={() => { setSearchName(""); setSearchAgency(""); setSearchArea(""); setSearchTreatAsEmployee(false); setSearchTravelAvailable(false); }}>
+            <Button variant="ghost" size="sm" className="mt-2" onClick={() => { setSearchName(""); setSearchAgency(""); setSearchArea(""); setSearchTreatAsEmployee(false); setSearchTravelAvailable(false); setSearchRating(0); }}>
               <X className="h-3 w-3 mr-1" />
               検索クリア
             </Button>

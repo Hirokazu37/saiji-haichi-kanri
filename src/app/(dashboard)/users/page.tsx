@@ -174,6 +174,28 @@ export default function UsersPage() {
     fetchData();
   };
 
+  const handleChangePaymentsAccess = async (userId: string, value: boolean) => {
+    const prev = users.find((u) => u.id === userId);
+    if (!prev) return;
+
+    setUsers((list) =>
+      list.map((u) => (u.id === userId ? { ...u, can_view_payments: value } : u))
+    );
+
+    const res = await fetch(`/api/users/${userId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ can_view_payments: value }),
+    });
+
+    if (!res.ok) {
+      setUsers((list) =>
+        list.map((u) => (u.id === userId ? { ...u, can_view_payments: prev.can_view_payments } : u))
+      );
+      alert("入金閲覧権限の更新に失敗しました");
+    }
+  };
+
   // 行の権限セレクト直接変更
   const handleChangeRole = async (userId: string, newRole: UserRole) => {
     const prev = users.find((u) => u.id === userId);
@@ -285,6 +307,7 @@ export default function UsersPage() {
                 <TableHead>ユーザー名</TableHead>
                 <TableHead>表示名</TableHead>
                 <TableHead>権限</TableHead>
+                <TableHead className="hidden md:table-cell">入金閲覧</TableHead>
                 <TableHead className="hidden md:table-cell">作成日</TableHead>
                 <TableHead className="w-24">操作</TableHead>
               </TableRow>
@@ -313,6 +336,13 @@ export default function UsersPage() {
                         <SelectItem value="limited">{ROLE_LABEL.limited}</SelectItem>
                       </SelectContent>
                     </Select>
+                  </TableCell>
+                  <TableCell className="hidden md:table-cell">
+                    <Switch
+                      checked={user.can_view_payments}
+                      onCheckedChange={(v) => handleChangePaymentsAccess(user.id, v)}
+                      className="data-[state=checked]:bg-green-700"
+                    />
                   </TableCell>
                   <TableCell className="hidden md:table-cell text-muted-foreground">
                     {new Date(user.created_at).toLocaleDateString("ja-JP")}
