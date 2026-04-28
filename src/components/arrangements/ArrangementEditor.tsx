@@ -45,6 +45,10 @@ type MannequinRow = {
   arrangement_status: string | null;
 };
 
+type MannequinPersonMaster = { id: string; name: string; agency_id: string | null; daily_rate: number | null };
+type MannequinAgencyMaster = { id: string; name: string };
+type VenueMannequinLink = { venue_id: string; mannequin_person_id: string | null; mannequin_agency_id: string | null };
+
 type EventRow = { venue: string; store_name: string | null; start_date: string; end_date: string };
 
 export const ArrangementEditor = forwardRef<ArrangementEditorHandle, { eventId: string; venue: string; storeName: string | null; startDate: string; endDate: string }>(
@@ -66,9 +70,13 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
   const [hotelMasters, setHotelMasters] = useState<{ id: string; name: string; area_id: string | null }[]>([]);
   const [hotelVenueLinks, setHotelVenueLinks] = useState<{ hotel_id: string; venue_name: string }[]>([]);
   const [venueAreaId, setVenueAreaId] = useState<string | null>(null);
+  const [venueMasterId, setVenueMasterId] = useState<string | null>(null);
+  const [mannequinPeople, setMannequinPeople] = useState<MannequinPersonMaster[]>([]);
+  const [mannequinAgencies, setMannequinAgencies] = useState<MannequinAgencyMaster[]>([]);
+  const [venueMannequinLinks, setVenueMannequinLinks] = useState<VenueMannequinLink[]>([]);
 
   const fetchData = useCallback(async () => {
-    const [staffRes, shipRes, evtRes, venueRes, hmRes, hvlRes, mannRes, vmRes] = await Promise.all([
+    const [staffRes, shipRes, evtRes, venueRes, hmRes, hvlRes, mannRes, vmRes, mpRes, maRes, vmlRes] = await Promise.all([
       supabase.from("event_staff").select("id, person_type, employee_id, mannequin_person_id, start_date, end_date, role, hotel_name, hotel_status, transport_outbound_status, transport_return_status, employees(name), mannequin_people(name)").eq("event_id", eventId).order("start_date"),
       supabase.from("shipments").select("id, item_name, recipient_name").eq("event_id", eventId),
       supabase.from("events").select("application_status, application_submitted_date, application_method, dm_status, dm_count, equipment_from, equipment_to").eq("id", eventId).single(),
@@ -76,7 +84,10 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
       supabase.from("hotel_master").select("id, name, area_id").eq("is_active", true).order("name"),
       supabase.from("hotel_venue_links").select("hotel_id, venue_name"),
       supabase.from("mannequins").select("id, agency_name, staff_name, work_start_date, work_end_date, daily_rate, arrangement_status").eq("event_id", eventId).order("work_start_date"),
-      supabase.from("venue_master").select("venue_name, store_name, area_id").eq("venue_name", venue),
+      supabase.from("venue_master").select("id, venue_name, store_name, area_id").eq("venue_name", venue),
+      supabase.from("mannequin_people").select("id, name, agency_id, daily_rate"),
+      supabase.from("mannequin_agencies").select("id, name").order("name"),
+      supabase.from("venue_mannequin_links").select("venue_id, mannequin_person_id, mannequin_agency_id"),
     ]);
     setStaff((staffRes.data || []) as unknown as StaffRow[]);
     setShipments((shipRes.data || []) as ShipmentRow[]);
@@ -98,10 +109,14 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
     setAllEvents((venueRes.data || []) as EventRow[]);
     setHotelMasters((hmRes.data || []) as { id: string; name: string; area_id: string | null }[]);
     setHotelVenueLinks((hvlRes.data || []) as { hotel_id: string; venue_name: string }[]);
-    // 当該百貨店(venue + store_name)のエリアを確定
-    const vmRows = (vmRes.data || []) as { venue_name: string; store_name: string | null; area_id: string | null }[];
+    // 当該百貨店(venue + store_name)のエリアと venue_master.id を確定
+    const vmRows = (vmRes.data || []) as { id: string; venue_name: string; store_name: string | null; area_id: string | null }[];
     const matched = vmRows.find((r) => (r.store_name ?? "") === (storeName ?? ""));
     setVenueAreaId(matched?.area_id ?? null);
+    setVenueMasterId(matched?.id ?? null);
+    setMannequinPeople((mpRes.data || []) as MannequinPersonMaster[]);
+    setMannequinAgencies((maRes.data || []) as MannequinAgencyMaster[]);
+    setVenueMannequinLinks((vmlRes.data || []) as VenueMannequinLink[]);
   }, [supabase, eventId, venue, storeName]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -192,6 +207,28 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
       return false;
     });
   }, [venue, storeName, hotelMasters, hotelVenueLinks, venueAreaId]);
+
+  // この百貨店に紐付けられたマネキン候補（既に手配リストに居る人は除外）
+  const recommendedMannequins = useMemo(() => {
+    if (!venueMasterId) return { persons: [] as MannequinPersonMaster[], agencies: [] as MannequinAgencyMaster[] };
+    const personIds = new Set(
+      venueMannequinLinks
+        .filter((l) => l.venue_id === venueMasterId && l.mannequin_person_id)
+        .map((l) => l.mannequin_person_id!)
+    );
+    const agencyIds = new Set(
+      venueMannequinLinks
+        .filter((l) => l.venue_id === venueMasterId && l.mannequin_agency_id)
+        .map((l) => l.mannequin_agency_id!)
+    );
+    const existingNames = new Set(
+      mannequins.map((m) => (m.staff_name || "").trim()).filter(Boolean)
+    );
+    return {
+      persons: mannequinPeople.filter((p) => personIds.has(p.id) && !existingNames.has(p.name)),
+      agencies: mannequinAgencies.filter((a) => agencyIds.has(a.id)),
+    };
+  }, [venueMasterId, venueMannequinLinks, mannequinPeople, mannequinAgencies, mannequins]);
 
   const updateStaffField = (i: number, field: string, value: string | null) => {
     const next = [...staff]; next[i] = { ...next[i], [field]: value }; setStaff(next);
@@ -463,6 +500,61 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
               }}
             >＋ 追加</Button>
           </div>
+          {(recommendedMannequins.persons.length > 0 || recommendedMannequins.agencies.length > 0) && (
+            <div className="space-y-1.5 pb-2 border-b border-pink-200">
+              <div className="text-[11px] text-pink-700 font-medium">
+                この百貨店のおすすめ（クリックで追加）
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {recommendedMannequins.persons.map((p) => {
+                  const agency = mannequinAgencies.find((a) => a.id === p.agency_id);
+                  return (
+                    <Badge
+                      key={`rec-p-${p.id}`}
+                      variant="outline"
+                      className="cursor-pointer text-xs border-pink-400 text-pink-700 bg-white hover:bg-pink-100"
+                      onClick={async () => {
+                        const { data } = await supabase.from("mannequins").insert({
+                          event_id: eventId,
+                          agency_name: agency?.name ?? null,
+                          staff_name: p.name,
+                          work_start_date: startDate,
+                          work_end_date: endDate,
+                          daily_rate: p.daily_rate,
+                          arrangement_status: "未手配",
+                        }).select("*").single();
+                        if (data) setMannequins((prev) => [...prev, data as MannequinRow]);
+                      }}
+                      title={agency?.name ? `${agency.name} 所属` : ""}
+                    >
+                      ＋ {p.name}{agency?.name ? `（${agency.name}）` : ""}
+                    </Badge>
+                  );
+                })}
+                {recommendedMannequins.agencies.map((a) => (
+                  <Badge
+                    key={`rec-a-${a.id}`}
+                    variant="outline"
+                    className="cursor-pointer text-xs border-pink-300 text-pink-700 bg-white hover:bg-pink-100"
+                    onClick={async () => {
+                      const { data } = await supabase.from("mannequins").insert({
+                        event_id: eventId,
+                        agency_name: a.name,
+                        staff_name: null,
+                        work_start_date: startDate,
+                        work_end_date: endDate,
+                        daily_rate: null,
+                        arrangement_status: "未手配",
+                      }).select("*").single();
+                      if (data) setMannequins((prev) => [...prev, data as MannequinRow]);
+                    }}
+                  >
+                    ＋ {a.name}（会社）
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
           {mannequins.length > 0 ? (
             <div className="space-y-2">
               {mannequins.map((m, i) => (
