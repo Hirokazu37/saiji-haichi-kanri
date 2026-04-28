@@ -246,7 +246,7 @@ export default function HotelTransportPage() {
   const getHotelTransportStatus = (evt: Event) => {
     const staff = allStaff.filter((s) => s.event_id === evt.id);
     if (staff.length === 0) return { hotel: "未登録", transport: "未登録", hasIncomplete: true };
-    const hotelOk = staff.every((s) => s.hotel_status === "手配済" || !!s.hotel_name);
+    const hotelOk = staff.every((s) => s.hotel_status === "手配済" || s.hotel_status === "不要" || !!s.hotel_name);
     const transportOk = staff.every((s) => s.transport_outbound_status === "手配済" && s.transport_return_status === "手配済");
     return {
       hotel: hotelOk ? "設定済" : "未設定",
@@ -670,18 +670,28 @@ export default function HotelTransportPage() {
                               onChange={(e) => setPanelStaff((prev) => prev.map((ps) => ps.id === s.id ? { ...ps, hotel_name: e.target.value } : ps))}
                               onBlur={(e) => updateStaffField(s.id, "hotel_name", e.target.value || null)}
                               placeholder="ホテル名（空欄でも手配済OK）"
-                              className={`h-8 text-sm flex-1 ${saving === s.id ? "opacity-50" : ""}`}
+                              className={`h-8 text-sm flex-1 ${saving === s.id ? "opacity-50" : ""} ${s.hotel_status === "不要" ? "opacity-50" : ""}`}
+                              disabled={s.hotel_status === "不要"}
                             />
-                            <button
-                              type="button"
-                              className={`relative inline-flex h-7 w-[90px] items-center rounded-full transition-colors shrink-0 ${s.hotel_status === "手配済" ? "bg-green-700" : "bg-gray-300"}`}
-                              onClick={() => { const next = s.hotel_status === "手配済" ? "未手配" : "手配済"; setPanelStaff((prev) => prev.map((ps) => ps.id === s.id ? { ...ps, hotel_status: next } : ps)); updateStaffField(s.id, "hotel_status", next); }}
-                            >
-                              <span className={`absolute text-[10px] font-medium ${s.hotel_status === "手配済" ? "left-2 text-white" : "right-2 text-gray-600"}`}>
-                                {s.hotel_status === "手配済" ? "手配済" : "未手配"}
-                              </span>
-                              <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${s.hotel_status === "手配済" ? "translate-x-[64px]" : "translate-x-0.5"}`} />
-                            </button>
+                            <div className="inline-flex rounded-md border bg-white shadow-sm shrink-0 overflow-hidden">
+                              {(["未手配", "手配済", "不要"] as const).map((opt) => {
+                                const active = (s.hotel_status || "未手配") === opt;
+                                const activeBg = opt === "手配済" ? "bg-green-700 text-white" : opt === "不要" ? "bg-slate-600 text-white" : "bg-gray-200 text-gray-800";
+                                return (
+                                  <button
+                                    key={opt}
+                                    type="button"
+                                    className={`px-2 h-7 text-[11px] font-medium transition-colors ${active ? activeBg : "text-gray-500 hover:bg-gray-50"}`}
+                                    onClick={() => {
+                                      setPanelStaff((prev) => prev.map((ps) => ps.id === s.id ? { ...ps, hotel_status: opt } : ps));
+                                      updateStaffField(s.id, "hotel_status", opt);
+                                    }}
+                                  >
+                                    {opt}
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
                           {hotelCandidates.length > 0 && (
                             <div className="flex flex-wrap gap-1">
@@ -696,9 +706,9 @@ export default function HotelTransportPage() {
                         </>
                       ) : (
                         <div className="flex items-center gap-2">
-                          <span className="text-sm">{s.hotel_name || "—"}</span>
-                          <span className={`text-xs font-medium ${s.hotel_status === "手配済" ? "text-green-700" : "text-gray-500"}`}>
-                            {s.hotel_status === "手配済" ? "(手配済)" : "(未手配)"}
+                          <span className={`text-sm ${s.hotel_status === "不要" ? "text-gray-400 line-through" : ""}`}>{s.hotel_name || "—"}</span>
+                          <span className={`text-xs font-medium ${s.hotel_status === "手配済" ? "text-green-700" : s.hotel_status === "不要" ? "text-slate-600" : "text-gray-500"}`}>
+                            {s.hotel_status === "手配済" ? "(手配済)" : s.hotel_status === "不要" ? "(不要)" : "(未手配)"}
                           </span>
                         </div>
                       )}

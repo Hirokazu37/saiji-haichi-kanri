@@ -418,8 +418,8 @@ export default function EventsPage() {
   const getArrangementStatus = (evt: Event) => {
     const staff = allStaff.filter((s) => s.event_id === evt.id);
 
-    // ホテルは hotel_status が「手配済」 OR ホテル名が入っていれば OK（空欄でも手配済にできる）
-    const hotelArranged = (s: StaffWithArrangement) => s.hotel_status === "手配済" || !!s.hotel_name;
+    // ホテルは hotel_status が「手配済」「不要」 OR ホテル名が入っていれば OK
+    const hotelArranged = (s: StaffWithArrangement) => s.hotel_status === "手配済" || s.hotel_status === "不要" || !!s.hotel_name;
     const hotelCount = staff.filter(hotelArranged).length;
     const hotelOk = staff.length > 0 && staff.every(hotelArranged);
     const transportCount = staff.filter((s) => s.transport_outbound_status === "手配済" && s.transport_return_status === "手配済").length;
@@ -1190,18 +1190,24 @@ export default function EventsPage() {
                             <Badge variant="default" className={`text-xs ${s.person_type === "mannequin" ? "bg-pink-600 hover:bg-pink-600" : ""}`}>{(s.person_type === "mannequin" ? s.mannequin_people?.name : s.employees?.name) || "不明"}{s.person_type === "mannequin" ? "(ﾏﾈｷﾝ)" : ""}</Badge>
                             <span className="text-[10px] text-muted-foreground">{s.start_date}〜{s.end_date}</span>
                           </div>
-                          <button
-                            type="button"
-                            className={`relative inline-flex h-5 w-20 items-center rounded-full transition-colors shrink-0 ${s.hotel_status === "手配済" ? "bg-green-700" : "bg-gray-300"}`}
-                            onClick={() => updateStaff("hotel_status", s.hotel_status === "手配済" ? "未手配" : "手配済")}
-                          >
-                            <span className={`absolute text-[9px] font-medium ${s.hotel_status === "手配済" ? "left-1.5 text-white" : "right-1.5 text-gray-600"}`}>
-                              {s.hotel_status === "手配済" ? "手配済" : "未手配"}
-                            </span>
-                            <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform ${s.hotel_status === "手配済" ? "translate-x-[60px]" : "translate-x-0.5"}`} />
-                          </button>
+                          <div className="inline-flex rounded-md border bg-white shadow-sm shrink-0 overflow-hidden">
+                            {(["未手配", "手配済", "不要"] as const).map((opt) => {
+                              const active = (s.hotel_status || "未手配") === opt;
+                              const activeBg = opt === "手配済" ? "bg-green-700 text-white" : opt === "不要" ? "bg-slate-600 text-white" : "bg-gray-200 text-gray-800";
+                              return (
+                                <button
+                                  key={opt}
+                                  type="button"
+                                  className={`px-2 h-6 text-[10px] font-medium transition-colors ${active ? activeBg : "text-gray-500 hover:bg-gray-50"}`}
+                                  onClick={() => updateStaff("hotel_status", opt)}
+                                >
+                                  {opt}
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
-                        <Input value={s.hotel_name || ""} onChange={(e) => updateStaff("hotel_name", e.target.value)} placeholder="ホテル名（空欄でも手配済にできます）" className="h-7 text-xs" />
+                        <Input value={s.hotel_name || ""} onChange={(e) => updateStaff("hotel_name", e.target.value)} placeholder="ホテル名（空欄でも手配済にできます）" className={`h-7 text-xs ${s.hotel_status === "不要" ? "opacity-50" : ""}`} disabled={s.hotel_status === "不要"} />
                         {dialogEvent && getHotelCandidates(dialogEvent.venue, dialogEvent.store_name).length > 0 && (
                           <div className="flex flex-wrap gap-1">
                             {getHotelCandidates(dialogEvent.venue, dialogEvent.store_name).map((h) => (

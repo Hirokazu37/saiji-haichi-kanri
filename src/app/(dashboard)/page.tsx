@@ -200,7 +200,7 @@ export default function DashboardPage() {
       if (evt.start_date > oneMonth) break;
 
       const evtStaff = allStaff.filter((s) => s.event_id === evt.id);
-      const hotelOk = evtStaff.length > 0 && evtStaff.every((s) => s.hotel_status === "手配済" || !!s.hotel_name);
+      const hotelOk = evtStaff.length > 0 && evtStaff.every((s) => s.hotel_status === "手配済" || s.hotel_status === "不要" || !!s.hotel_name);
       const hotelHas = evtStaff.length > 0;
       const transportOk = evtStaff.length > 0 && evtStaff.every((s) => s.transport_outbound_status === "手配済" && s.transport_return_status === "手配済");
       const transportHas = evtStaff.length > 0;
