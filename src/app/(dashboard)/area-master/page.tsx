@@ -175,15 +175,24 @@ export default function AreaMasterPage() {
     const newIndex = regionAreas.findIndex((a) => a.id === overId);
     if (oldIndex < 0 || newIndex < 0) return;
     const reordered = arrayMove(regionAreas, oldIndex, newIndex);
-    const originalOrders = regionAreas.map((a) => a.sort_order);
-    const updateMap = new Map<string, number>();
-    reordered.forEach((a, i) => updateMap.set(a.id, originalOrders[i]));
 
-    // オプティミスティック更新
-    setAreas((prev) => prev.map((a) => {
-      const newOrder = updateMap.get(a.id);
-      return newOrder !== undefined ? { ...a, sort_order: newOrder } : a;
-    }));
+    // 新しい sort_order は「地方内の位置インデックス」をそのまま使う。
+    // 既存値が全部 0 で重複しているケース（DB デフォルト）でも確実に並び替えできる。
+    const updateMap = new Map<string, number>();
+    reordered.forEach((a, i) => updateMap.set(a.id, i));
+
+    // オプティミスティック更新: sort_order を書き換えるだけだと配列の表示順が変わらないので、
+    // 配列自体を sort_order → name で並び替え直す。
+    setAreas((prev) => {
+      const updated = prev.map((a) => {
+        const newOrder = updateMap.get(a.id);
+        return newOrder !== undefined ? { ...a, sort_order: newOrder } : a;
+      });
+      return [...updated].sort((a, b) => {
+        if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+        return a.name.localeCompare(b.name, "ja");
+      });
+    });
 
     // DB更新
     await Promise.all(
