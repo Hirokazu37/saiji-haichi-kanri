@@ -235,6 +235,31 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
     markDirty();
   };
 
+  // 同じ人の event_staff 行が複数登録されているケース（担当者トグル + 社員配置の重複登録など）
+  // ホテル/交通は「一人につき1部屋・1座席」なので人単位で集約して表示する。
+  // 集約時はホテル名・状況など情報量の多い行を採用する。
+  const dedupedStaff = useMemo(() => {
+    const seen = new Map<string, StaffRow>();
+    const score = (r: StaffRow) =>
+      (r.hotel_name ? 8 : 0) +
+      (r.hotel_status && r.hotel_status !== "未手配" ? 4 : 0) +
+      (r.transport_outbound_status && r.transport_outbound_status !== "未手配" ? 2 : 0) +
+      (r.transport_return_status && r.transport_return_status !== "未手配" ? 1 : 0);
+    for (const s of staff) {
+      const key = s.person_type === "mannequin"
+        ? `m:${s.mannequin_person_id ?? ""}`
+        : `e:${s.employee_id ?? ""}`;
+      if (!key.endsWith(":")) {
+        const existing = seen.get(key);
+        if (!existing || score(s) > score(existing)) seen.set(key, s);
+      } else {
+        // person_id が無い行（不正データ）は id をキーにして単独表示
+        seen.set(`x:${s.id}`, s);
+      }
+    }
+    return Array.from(seen.values()).sort((a, b) => a.start_date.localeCompare(b.start_date));
+  }, [staff]);
+
   const updateMannequinField = (i: number, field: string, value: string | number | null) => {
     const next = [...mannequins]; next[i] = { ...next[i], [field]: value }; setMannequins(next);
     markDirty();
@@ -351,9 +376,11 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
             <Hotel className="h-4 w-4 text-blue-600" />
             <span className="text-sm font-bold text-blue-800">ホテル</span>
           </div>
-          {staff.length > 0 ? (
+          {dedupedStaff.length > 0 ? (
             <div className="space-y-2">
-              {staff.map((s, i) => (
+              {dedupedStaff.map((s) => {
+                const i = staff.findIndex((x) => x.id === s.id);
+                return (
                 <div key={s.id} className="bg-white rounded border p-3 space-y-2">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-2">
@@ -394,7 +421,13 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
                     )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
+              {dedupedStaff.length < staff.length && (
+                <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                  ⚠️ 同じ人の社員配置が複数登録されています（{staff.length - dedupedStaff.length}件分）。ここでは1人につき1行にまとめて表示しています。重複データを整理する場合は「社員配置」タブから不要な行を削除してください。
+                </p>
+              )}
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">社員が配置されていません。「社員配置」タブで追加してください。</p>
@@ -409,9 +442,11 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
             <Train className="h-4 w-4 text-orange-600" />
             <span className="text-sm font-bold text-orange-800">交通</span>
           </div>
-          {staff.length > 0 ? (
+          {dedupedStaff.length > 0 ? (
             <div className="space-y-2">
-              {staff.map((s, i) => (
+              {dedupedStaff.map((s) => {
+                const i = staff.findIndex((x) => x.id === s.id);
+                return (
                 <div key={s.id} className="bg-white rounded border p-3">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-sm font-bold">{(s.person_type === "mannequin" ? s.mannequin_people?.name : s.employees?.name) || "不明"}</span>
@@ -445,7 +480,8 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
                     </button>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">社員が配置されていません。「社員配置」タブで追加してください。</p>
