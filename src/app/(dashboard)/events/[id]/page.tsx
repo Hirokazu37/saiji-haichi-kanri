@@ -743,7 +743,9 @@ export default function EventDetailPage({
                             onValueChange={(v) => v && updateInput(ymd, { tax_rate: parseFloat(v) })}
                           >
                             <SelectTrigger className="h-9 w-[80px] text-xs">
-                              <SelectValue />
+                              <SelectValue>
+                                {(v: string) => v === "0.08" ? "8%" : v === "0.1" ? "10%" : v}
+                              </SelectValue>
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="0.08">8%</SelectItem>
