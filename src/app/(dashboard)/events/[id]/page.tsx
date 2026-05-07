@@ -232,6 +232,9 @@ export default function EventDetailPage({
 
   const handleUpdate = async () => {
     setSaveState("saving");
+    // エラーが出たら最後にまとめて表示する
+    const errors: string[] = [];
+
     // 担当者テキスト = 選択した社員/マネキン名 + 自由入力テキスト
     const selectedNames = [
       ...employees.filter((e) => selectedEmployeeIds.includes(e.id)).map((e) => e.name),
@@ -265,7 +268,7 @@ export default function EventDetailPage({
     const payerMasterIdToSave = payerSource.startsWith("payer:") ? payerSource.slice(6) : null;
     const forceDirectToSave = payerSource === "direct";
 
-    await supabase
+    const evtUpdate = await supabase
       .from("events")
       .update({
         name: form.name.trim() || null,
@@ -287,13 +290,21 @@ export default function EventDetailPage({
         force_direct: forceDirectToSave,
       })
       .eq("id", id);
+    if (evtUpdate.error) {
+      console.error("[events update] error:", evtUpdate.error);
+      errors.push(`催事情報の保存に失敗: ${evtUpdate.error.message}`);
+    }
 
     // 日別売上テーブルを差分更新
     // 現在DBにある行を取得 → 新しいMapと突き合わせて upsert / delete
-    const { data: existingDaily } = await supabase
+    const { data: existingDaily, error: dailyReadErr } = await supabase
       .from("event_daily_revenue")
       .select("id, date, amount")
       .eq("event_id", id);
+    if (dailyReadErr) {
+      console.error("[event_daily_revenue read] error:", dailyReadErr);
+      errors.push(`日別売上の取得に失敗: ${dailyReadErr.message}`);
+    }
     const existingByDate = new Map<string, { id: string; amount: number | null }>();
     (existingDaily || []).forEach((r: { id: string; date: string; amount: number | null }) => {
       existingByDate.set(r.date, { id: r.id, amount: r.amount });
@@ -332,10 +343,18 @@ export default function EventDetailPage({
     }
 
     if (toDelete.length > 0) {
-      await supabase.from("event_daily_revenue").delete().in("id", toDelete);
+      const delRes = await supabase.from("event_daily_revenue").delete().in("id", toDelete);
+      if (delRes.error) {
+        console.error("[event_daily_revenue delete] error:", delRes.error);
+        errors.push(`日別売上の削除に失敗: ${delRes.error.message}`);
+      }
     }
     if (toUpsert.length > 0) {
-      await supabase.from("event_daily_revenue").upsert(toUpsert, { onConflict: "event_id,date" });
+      const upRes = await supabase.from("event_daily_revenue").upsert(toUpsert, { onConflict: "event_id,date" });
+      if (upRes.error) {
+        console.error("[event_daily_revenue upsert] error:", upRes.error);
+        errors.push(`日別売上の保存に失敗: ${upRes.error.message}`);
+      }
     }
 
     // event_staff の担当者を差分更新（他ロールのレコードを壊さない）
@@ -349,7 +368,11 @@ export default function EventDetailPage({
     const mpsToAdd = selectedMannequinIds.filter((mpId) => !origMpIds.includes(mpId));
 
     if (toRemoveRecords.length > 0) {
-      await supabase.from("event_staff").delete().in("id", toRemoveRecords.map((r) => r.id));
+      const remRes = await supabase.from("event_staff").delete().in("id", toRemoveRecords.map((r) => r.id));
+      if (remRes.error) {
+        console.error("[event_staff delete] error:", remRes.error);
+        errors.push(`担当者の削除に失敗: ${remRes.error.message}`);
+      }
     }
     const newRecords: Array<{ event_id: string; person_type: "employee" | "mannequin"; employee_id: string | null; mannequin_person_id: string | null; start_date: string; end_date: string; role: string }> = [];
     empsToAdd.forEach((empId) => {
@@ -375,13 +398,29 @@ export default function EventDetailPage({
       });
     });
     if (newRecords.length > 0) {
-      await supabase.from("event_staff").insert(newRecords);
+      const insRes = await supabase.from("event_staff").insert(newRecords);
+      if (insRes.error) {
+        console.error("[event_staff insert] error:", insRes.error);
+        errors.push(`担当者の追加に失敗: ${insRes.error.message}`);
+      }
     }
 
     // 手配状況（出店申込書・ホテル・交通・マネキン・DM・備品）も一緒に保存
-    await arrangementRef.current?.save();
+    try {
+      await arrangementRef.current?.save();
+    } catch (e) {
+      console.error("[arrangement save] error:", e);
+      errors.push(`手配状況の保存に失敗: ${e instanceof Error ? e.message : String(e)}`);
+    }
 
     await fetchEvent();
+
+    if (errors.length > 0) {
+      alert(`保存中にエラーが発生しました:\n\n${errors.join("\n")}\n\n（詳細はブラウザのコンソールを確認してください）`);
+      setSaveState("idle");
+      return;
+    }
+
     setSaveState("saved");
     setTimeout(() => setSaveState("idle"), 2500);
   };
