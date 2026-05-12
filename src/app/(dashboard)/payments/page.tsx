@@ -258,7 +258,22 @@ function PaymentsPageInner() {
       // 日別が無い場合は events.revenue（税込合計として扱う）を使う
       const ev = events.find((e) => e.id === form.event_id);
       const r = ev?.revenue ?? 0;
-      salesTotal = taxType === "included" ? r : Math.round(r / 1.08);
+      if (taxType === "included") {
+        salesTotal = r;
+      } else if (r > 0) {
+        // 税抜換算には品目ごとの税率が必要だが、events.revenue は税込合計しか持たない。
+        // 日別売上が未入力なら正確な税抜が出せないので、確認したうえで軽減税率 8% 概算で続行。
+        const ok = confirm(
+          "日別売上が未入力です。\n\n" +
+          "税抜換算には品目ごとの税率が必要ですが、現在は税込合計しか保存されていません。" +
+          "概算で 軽減税率 8% として換算します（酒類等 10% を含む場合は誤差が出ます）。\n\n" +
+          "OK で続行 / キャンセルで中止し、日別売上を先に入力してください。"
+        );
+        if (!ok) return;
+        salesTotal = Math.round(r / 1.08);
+      } else {
+        salesTotal = 0;
+      }
     }
     // 入金率（applied_rate）が設定されていれば乗算
     const rate = form.applied_rate.trim() ? parseFloat(form.applied_rate) : NaN;
@@ -434,7 +449,7 @@ function PaymentsPageInner() {
             placeholder="催事名・会場で検索"
             className="w-60 h-9"
           />
-          <Select value={filterStatus} onValueChange={setFilterStatus}>
+          <Select value={filterStatus} onValueChange={(v) => v && setFilterStatus(v)}>
             <SelectTrigger className="w-[140px] h-9"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">すべて</SelectItem>
@@ -563,7 +578,7 @@ function PaymentsPageInner() {
                 >帳合先経由</Button>
               </div>
               {form.payer_kind === "venue" ? (
-                <Select value={form.venue_master_id || "none"} onValueChange={(v) => setForm({ ...form, venue_master_id: v === "none" ? "" : v })}>
+                <Select value={form.venue_master_id || "none"} onValueChange={(v) => setForm({ ...form, venue_master_id: !v || v === "none" ? "" : v })}>
                   <SelectTrigger><SelectValue placeholder="百貨店を選択" /></SelectTrigger>
                   <SelectContent className="max-h-[300px]">
                     <SelectItem value="none">未選択</SelectItem>
@@ -575,7 +590,7 @@ function PaymentsPageInner() {
                   </SelectContent>
                 </Select>
               ) : (
-                <Select value={form.payer_master_id || "none"} onValueChange={(v) => setForm({ ...form, payer_master_id: v === "none" ? "" : v })}>
+                <Select value={form.payer_master_id || "none"} onValueChange={(v) => setForm({ ...form, payer_master_id: !v || v === "none" ? "" : v })}>
                   <SelectTrigger><SelectValue placeholder="帳合先を選択" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">未選択</SelectItem>

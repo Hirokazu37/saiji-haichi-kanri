@@ -120,10 +120,11 @@ export function usePaymentAlerts(): PaymentAlerts {
         }
       }
 
-      // 未回収: 予定日を過ぎて 入金済み・キャンセル以外
+      // 未回収: 予定日を過ぎて まだ「予定」状態のもの
+      // 「保留」「キャンセル」「入金済」は意図的に外したステータスなのでアラートしない
       for (const p of ps) {
         if (!p.planned_date) continue;
-        if (p.planned_date < today && p.status !== "入金済" && p.status !== "キャンセル") {
+        if (p.planned_date < today && p.status === "予定") {
           overdue.push(e);
           hasAlertByEvent.add(e.id);
           break; // 同じ催事で複数カウント防止

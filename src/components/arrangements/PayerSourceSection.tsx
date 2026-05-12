@@ -82,7 +82,7 @@ export function PayerSourceSection({
         <Label className="text-sm font-semibold text-blue-800">入金設定</Label>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2">
-        <Select value={payerSource} onValueChange={onChange}>
+        <Select value={payerSource} onValueChange={(v) => v && onChange(v)}>
           <SelectTrigger>
             <SelectValue>
               {payerSource === "venue" && "百貨店の設定に従う"}
