@@ -6,7 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { FileText, Hotel, Train, Mail, UserCheck, Package, Trash2 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
+import { FileText, Hotel, Train, Mail, UserCheck, Package, Trash2, User, Building2, UserPlus, Search } from "lucide-react";
 
 export type ArrangementEditorHandle = {
   save: () => Promise<void>;
@@ -43,6 +44,9 @@ type MannequinRow = {
   work_end_date: string | null;
   daily_rate: number | null;
   arrangement_status: string | null;
+  mannequin_person_id: string | null;
+  mannequin_agency_id: string | null;
+  headcount: number;
 };
 
 type MannequinPersonMaster = { id: string; name: string; agency_id: string | null; daily_rate: number | null };
@@ -74,6 +78,12 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
   const [mannequinPeople, setMannequinPeople] = useState<MannequinPersonMaster[]>([]);
   const [mannequinAgencies, setMannequinAgencies] = useState<MannequinAgencyMaster[]>([]);
   const [venueMannequinLinks, setVenueMannequinLinks] = useState<VenueMannequinLink[]>([]);
+  // マネキン追加・個人化ダイアログ用
+  const [personPickerOpen, setPersonPickerOpen] = useState(false);
+  const [agencyPickerOpen, setAgencyPickerOpen] = useState(false);
+  const [individualizeRowId, setIndividualizeRowId] = useState<string | null>(null);
+  const [pickerSearch, setPickerSearch] = useState("");
+  const [agencyHeadcount, setAgencyHeadcount] = useState<string>("2");
 
   const fetchData = useCallback(async () => {
     const [staffRes, shipRes, evtRes, venueRes, hmRes, hvlRes, mannRes, vmRes, mpRes, maRes, vmlRes] = await Promise.all([
@@ -83,7 +93,7 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
       supabase.from("events").select("venue, store_name, start_date, end_date").order("start_date").limit(200),
       supabase.from("hotel_master").select("id, name, area_id").eq("is_active", true).order("name"),
       supabase.from("hotel_venue_links").select("hotel_id, venue_name"),
-      supabase.from("mannequins").select("id, agency_name, staff_name, work_start_date, work_end_date, daily_rate, arrangement_status").eq("event_id", eventId).order("work_start_date"),
+      supabase.from("mannequins").select("id, agency_name, staff_name, work_start_date, work_end_date, daily_rate, arrangement_status, mannequin_person_id, mannequin_agency_id, headcount").eq("event_id", eventId).order("work_start_date"),
       supabase.from("venue_master").select("id, venue_name, store_name, area_id").eq("venue_name", venue),
       supabase.from("mannequin_people").select("id, name, agency_id, daily_rate"),
       supabase.from("mannequin_agencies").select("id, name").order("name"),
@@ -208,7 +218,7 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
     });
   }, [venue, storeName, hotelMasters, hotelVenueLinks, venueAreaId]);
 
-  // この百貨店に紐付けられたマネキン候補（既に手配リストに居る人は除外）
+  // この百貨店に紐付けられたマネキン候補（既に手配リストに居る人/会社は除外）
   const recommendedMannequins = useMemo(() => {
     if (!venueMasterId) return { persons: [] as MannequinPersonMaster[], agencies: [] as MannequinAgencyMaster[] };
     const personIds = new Set(
@@ -221,12 +231,18 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
         .filter((l) => l.venue_id === venueMasterId && l.mannequin_agency_id)
         .map((l) => l.mannequin_agency_id!)
     );
+    // 既に追加済みのマスター個人/会社を除外（FK ベースで判定）
+    const existingPersonIds = new Set(mannequins.map((m) => m.mannequin_person_id).filter(Boolean) as string[]);
+    const existingAgencyIds = new Set(mannequins.map((m) => m.mannequin_agency_id).filter(Boolean) as string[]);
+    // 自由入力で氏名がマスターと一致するケースもダブり扱い
     const existingNames = new Set(
       mannequins.map((m) => (m.staff_name || "").trim()).filter(Boolean)
     );
     return {
-      persons: mannequinPeople.filter((p) => personIds.has(p.id) && !existingNames.has(p.name)),
-      agencies: mannequinAgencies.filter((a) => agencyIds.has(a.id)),
+      persons: mannequinPeople.filter(
+        (p) => personIds.has(p.id) && !existingPersonIds.has(p.id) && !existingNames.has(p.name)
+      ),
+      agencies: mannequinAgencies.filter((a) => agencyIds.has(a.id) && !existingAgencyIds.has(a.id)),
     };
   }, [venueMasterId, venueMannequinLinks, mannequinPeople, mannequinAgencies, mannequins]);
 
@@ -265,6 +281,97 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
     markDirty();
   };
 
+  // 4種類の追加方法
+  const addPersonRow = async (person: MannequinPersonMaster) => {
+    const agency = mannequinAgencies.find((a) => a.id === person.agency_id);
+    const { data } = await supabase.from("mannequins").insert({
+      event_id: eventId,
+      mannequin_person_id: person.id,
+      mannequin_agency_id: person.agency_id,
+      agency_name: agency?.name ?? null,
+      staff_name: person.name,
+      headcount: 1,
+      work_start_date: startDate,
+      work_end_date: endDate,
+      daily_rate: person.daily_rate,
+      arrangement_status: "未手配",
+    }).select("*").single();
+    if (data) setMannequins((prev) => [...prev, data as MannequinRow]);
+  };
+
+  const addAgencyRow = async (agency: MannequinAgencyMaster, count: number) => {
+    const { data } = await supabase.from("mannequins").insert({
+      event_id: eventId,
+      mannequin_person_id: null,
+      mannequin_agency_id: agency.id,
+      agency_name: agency.name,
+      staff_name: null,
+      headcount: Math.max(1, count),
+      work_start_date: startDate,
+      work_end_date: endDate,
+      arrangement_status: "未手配",
+    }).select("*").single();
+    if (data) setMannequins((prev) => [...prev, data as MannequinRow]);
+  };
+
+  const addFreeformRow = async () => {
+    const { data } = await supabase.from("mannequins").insert({
+      event_id: eventId,
+      mannequin_person_id: null,
+      mannequin_agency_id: null,
+      agency_name: null,
+      staff_name: null,
+      headcount: 1,
+      work_start_date: startDate,
+      work_end_date: endDate,
+      arrangement_status: "未手配",
+    }).select("*").single();
+    if (data) setMannequins((prev) => [...prev, data as MannequinRow]);
+  };
+
+  // 枠行(会社+人数) を個人化: 1人を選んで個人行に変換
+  // - 枠の headcount=1 のときは その行を個人行に変換（行は1つのまま）
+  // - 枠の headcount>1 のときは その行の headcount を 1 減らし、別途 個人行を追加
+  const individualizeRow = async (rowId: string, person: MannequinPersonMaster) => {
+    const row = mannequins.find((m) => m.id === rowId);
+    if (!row) return;
+    const personAgency = mannequinAgencies.find((a) => a.id === person.agency_id);
+    if ((row.headcount || 1) <= 1) {
+      // 行をそのまま個人化
+      const { data } = await supabase.from("mannequins").update({
+        mannequin_person_id: person.id,
+        mannequin_agency_id: person.agency_id ?? row.mannequin_agency_id,
+        agency_name: personAgency?.name ?? row.agency_name,
+        staff_name: person.name,
+        headcount: 1,
+        daily_rate: person.daily_rate ?? row.daily_rate,
+      }).eq("id", rowId).select("*").single();
+      if (data) setMannequins((prev) => prev.map((m) => m.id === rowId ? (data as MannequinRow) : m));
+    } else {
+      // 枠を1減らして、新規個人行を追加
+      const newCount = (row.headcount || 1) - 1;
+      const updateRes = await supabase.from("mannequins").update({ headcount: newCount }).eq("id", rowId).select("*").single();
+      const insertRes = await supabase.from("mannequins").insert({
+        event_id: eventId,
+        mannequin_person_id: person.id,
+        mannequin_agency_id: person.agency_id ?? row.mannequin_agency_id,
+        agency_name: personAgency?.name ?? row.agency_name,
+        staff_name: person.name,
+        headcount: 1,
+        work_start_date: row.work_start_date,
+        work_end_date: row.work_end_date,
+        daily_rate: person.daily_rate ?? null,
+        arrangement_status: row.arrangement_status,
+      }).select("*").single();
+      setMannequins((prev) => {
+        let next = prev;
+        if (updateRes.data) next = next.map((m) => m.id === rowId ? (updateRes.data as MannequinRow) : m);
+        if (insertRes.data) next = [...next, insertRes.data as MannequinRow];
+        return next;
+      });
+    }
+  };
+
   const toggleDest = (label: string, type: "send" | "return") => {
     setSelectedDests((prev) => {
       const next = new Map(prev);
@@ -293,6 +400,9 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
         work_start_date: m.work_start_date || null,
         work_end_date: m.work_end_date || null,
         arrangement_status: m.arrangement_status || "未手配",
+        mannequin_person_id: m.mannequin_person_id,
+        mannequin_agency_id: m.mannequin_agency_id,
+        headcount: m.headcount || 1,
       }).eq("id", m.id);
     }
 
@@ -520,21 +630,22 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
       {/* マネキン */}
       <Card className="border-l-4 border-l-pink-500 bg-pink-50/50">
         <CardContent className="pt-4 pb-4 space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2">
               <UserCheck className="h-4 w-4 text-pink-600" />
               <span className="text-sm font-bold text-pink-800">マネキン</span>
             </div>
-            <Button variant="outline" size="sm" className="h-7 text-xs"
-              onClick={async () => {
-                const { data } = await supabase.from("mannequins").insert({
-                  event_id: eventId, agency_name: null, staff_name: null,
-                  work_start_date: startDate, work_end_date: endDate,
-                  daily_rate: null, arrangement_status: "未手配",
-                }).select("*").single();
-                if (data) setMannequins((prev) => [...prev, data as MannequinRow]);
-              }}
-            >＋ 追加</Button>
+            <div className="flex items-center gap-1 flex-wrap">
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setPickerSearch(""); setPersonPickerOpen(true); }}>
+                <User className="h-3 w-3 mr-1" />個人を追加
+              </Button>
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setPickerSearch(""); setAgencyHeadcount("2"); setAgencyPickerOpen(true); }}>
+                <Building2 className="h-3 w-3 mr-1" />会社+人数
+              </Button>
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={addFreeformRow}>
+                ＋ 自由入力
+              </Button>
+            </div>
           </div>
           {(recommendedMannequins.persons.length > 0 || recommendedMannequins.agencies.length > 0) && (
             <div className="space-y-1.5 pb-2 border-b border-pink-200">
@@ -549,18 +660,7 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
                       key={`rec-p-${p.id}`}
                       variant="outline"
                       className="cursor-pointer text-xs border-pink-400 text-pink-700 bg-white hover:bg-pink-100"
-                      onClick={async () => {
-                        const { data } = await supabase.from("mannequins").insert({
-                          event_id: eventId,
-                          agency_name: agency?.name ?? null,
-                          staff_name: p.name,
-                          work_start_date: startDate,
-                          work_end_date: endDate,
-                          daily_rate: p.daily_rate,
-                          arrangement_status: "未手配",
-                        }).select("*").single();
-                        if (data) setMannequins((prev) => [...prev, data as MannequinRow]);
-                      }}
+                      onClick={() => addPersonRow(p)}
                       title={agency?.name ? `${agency.name} 所属` : ""}
                     >
                       ＋ {p.name}{agency?.name ? `（${agency.name}）` : ""}
@@ -572,18 +672,7 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
                     key={`rec-a-${a.id}`}
                     variant="outline"
                     className="cursor-pointer text-xs border-pink-300 text-pink-700 bg-white hover:bg-pink-100"
-                    onClick={async () => {
-                      const { data } = await supabase.from("mannequins").insert({
-                        event_id: eventId,
-                        agency_name: a.name,
-                        staff_name: null,
-                        work_start_date: startDate,
-                        work_end_date: endDate,
-                        daily_rate: null,
-                        arrangement_status: "未手配",
-                      }).select("*").single();
-                      if (data) setMannequins((prev) => [...prev, data as MannequinRow]);
-                    }}
+                    onClick={() => addAgencyRow(a, 2)}
                   >
                     ＋ {a.name}（会社）
                   </Badge>
@@ -593,14 +682,47 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
           )}
           {mannequins.length > 0 ? (
             <div className="space-y-2">
-              {mannequins.map((m, i) => (
+              {mannequins.map((m, i) => {
+                const isPersonRow = !!m.mannequin_person_id;
+                const isAgencyOnlyRow = !!m.mannequin_agency_id && !m.mannequin_person_id;
+                const linkedPerson = isPersonRow ? mannequinPeople.find((p) => p.id === m.mannequin_person_id) : null;
+                const linkedAgency = m.mannequin_agency_id ? mannequinAgencies.find((a) => a.id === m.mannequin_agency_id) : null;
+                return (
                 <div key={m.id} className="bg-white rounded border p-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Input value={m.agency_name || ""} onChange={(e) => updateMannequinField(i, "agency_name", e.target.value)} placeholder="派遣会社名" className="h-8 text-sm w-40" />
-                      <Input value={m.staff_name || ""} onChange={(e) => updateMannequinField(i, "staff_name", e.target.value)} placeholder="人数（例: 2名）" className="h-8 text-sm w-24" />
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      {isPersonRow ? (
+                        <>
+                          <User className="h-3.5 w-3.5 text-pink-600 shrink-0" />
+                          <span className="text-sm font-bold">{linkedPerson?.name || m.staff_name || "（削除されたマネキン）"}</span>
+                          {(linkedAgency?.name || m.agency_name) && (
+                            <span className="text-xs text-muted-foreground">/ {linkedAgency?.name || m.agency_name}</span>
+                          )}
+                          <span className="text-[10px] px-1 py-0.5 rounded bg-pink-100 text-pink-800">マスター</span>
+                        </>
+                      ) : isAgencyOnlyRow ? (
+                        <>
+                          <Building2 className="h-3.5 w-3.5 text-pink-600 shrink-0" />
+                          <span className="text-sm font-bold">{linkedAgency?.name || m.agency_name || "（削除された会社）"}</span>
+                          <span className="text-xs text-muted-foreground">×</span>
+                          <Input type="number" value={String(m.headcount || 1)} onChange={(e) => updateMannequinField(i, "headcount", parseInt(e.target.value) || 1)} className="h-7 text-xs w-14" min={1} />
+                          <span className="text-xs text-muted-foreground">名</span>
+                          <span className="text-[10px] px-1 py-0.5 rounded bg-pink-100 text-pink-800">枠</span>
+                          <Button variant="outline" size="sm" className="h-6 text-[10px] ml-1" onClick={() => { setPickerSearch(""); setIndividualizeRowId(m.id); }}>
+                            <UserPlus className="h-3 w-3 mr-0.5" />個人化
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Input value={m.agency_name || ""} onChange={(e) => updateMannequinField(i, "agency_name", e.target.value)} placeholder="派遣会社名" className="h-8 text-sm w-36" />
+                          <Input value={m.staff_name || ""} onChange={(e) => updateMannequinField(i, "staff_name", e.target.value)} placeholder="氏名（空欄=枠）" className="h-8 text-sm w-32" />
+                          <span className="text-xs text-muted-foreground">×</span>
+                          <Input type="number" value={String(m.headcount || 1)} onChange={(e) => updateMannequinField(i, "headcount", parseInt(e.target.value) || 1)} className="h-8 text-sm w-14" min={1} />
+                          <span className="text-xs text-muted-foreground">名</span>
+                        </>
+                      )}
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 shrink-0">
                       <button
                         type="button"
                         className={`relative inline-flex h-5 w-20 items-center rounded-full transition-colors ${m.arrangement_status === "手配済" ? "bg-green-700" : "bg-gray-300"}`}
@@ -626,13 +748,156 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
                     <Input type="date" value={m.work_end_date || ""} onChange={(e) => updateMannequinField(i, "work_end_date", e.target.value)} className="h-7 text-xs w-32" />
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">マネキン手配がありません。「＋ 追加」から登録してください。</p>
+            <p className="text-sm text-muted-foreground">マネキン手配がありません。上のボタンから追加してください。</p>
           )}
         </CardContent>
       </Card>
+
+      {/* 個人を追加 ダイアログ */}
+      <Dialog open={personPickerOpen} onOpenChange={setPersonPickerOpen}>
+        <DialogContent className="max-h-[80vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>マスターから個人を追加</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} placeholder="氏名・会社名で検索" className="pl-8 h-9" autoFocus />
+            </div>
+            <div className="space-y-1 max-h-[50vh] overflow-y-auto">
+              {mannequinPeople
+                .filter((p) => {
+                  const ag = mannequinAgencies.find((a) => a.id === p.agency_id);
+                  const hay = `${p.name} ${ag?.name || ""}`.toLowerCase();
+                  return !pickerSearch.trim() || hay.includes(pickerSearch.trim().toLowerCase());
+                })
+                .map((p) => {
+                  const ag = mannequinAgencies.find((a) => a.id === p.agency_id);
+                  const alreadyAdded = mannequins.some((m) => m.mannequin_person_id === p.id);
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      disabled={alreadyAdded}
+                      onClick={async () => { await addPersonRow(p); setPersonPickerOpen(false); }}
+                      className={`w-full text-left px-3 py-2 rounded border text-sm flex items-center justify-between ${alreadyAdded ? "bg-gray-50 text-muted-foreground" : "hover:bg-pink-50 hover:border-pink-300"}`}
+                    >
+                      <span>
+                        <span className="font-medium">{p.name}</span>
+                        {ag && <span className="text-xs text-muted-foreground ml-2">/ {ag.name}</span>}
+                        {p.daily_rate && <span className="text-xs text-muted-foreground ml-2">¥{p.daily_rate.toLocaleString()}/日</span>}
+                      </span>
+                      {alreadyAdded && <span className="text-[10px] text-muted-foreground">追加済み</span>}
+                    </button>
+                  );
+                })}
+              {mannequinPeople.length === 0 && (
+                <p className="text-sm text-muted-foreground py-4 text-center">マネキンマスターが空です</p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose><Button variant="outline">閉じる</Button></DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 会社+人数 ダイアログ */}
+      <Dialog open={agencyPickerOpen} onOpenChange={setAgencyPickerOpen}>
+        <DialogContent className="max-h-[80vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>会社+人数枠を追加</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="text-sm">人数:</span>
+              <Input type="number" value={agencyHeadcount} onChange={(e) => setAgencyHeadcount(e.target.value)} className="h-9 w-20" min={1} />
+              <span className="text-sm">名</span>
+            </div>
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} placeholder="会社名で検索" className="pl-8 h-9" />
+            </div>
+            <div className="space-y-1 max-h-[50vh] overflow-y-auto">
+              {mannequinAgencies
+                .filter((a) => !pickerSearch.trim() || a.name.toLowerCase().includes(pickerSearch.trim().toLowerCase()))
+                .map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={async () => {
+                      await addAgencyRow(a, parseInt(agencyHeadcount) || 1);
+                      setAgencyPickerOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2 rounded border text-sm hover:bg-pink-50 hover:border-pink-300"
+                  >
+                    <span className="font-medium">{a.name}</span>
+                  </button>
+                ))}
+              {mannequinAgencies.length === 0 && (
+                <p className="text-sm text-muted-foreground py-4 text-center">マネキン派遣会社マスターが空です</p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose><Button variant="outline">閉じる</Button></DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 個人化 ダイアログ（枠行→個人行） */}
+      <Dialog open={!!individualizeRowId} onOpenChange={(open) => { if (!open) setIndividualizeRowId(null); }}>
+        <DialogContent className="max-h-[80vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>枠を個人化</DialogTitle></DialogHeader>
+          {(() => {
+            const row = mannequins.find((m) => m.id === individualizeRowId);
+            const targetAgencyId = row?.mannequin_agency_id;
+            const candidates = mannequinPeople.filter((p) => !targetAgencyId || p.agency_id === targetAgencyId);
+            return (
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  {row?.headcount && row.headcount > 1
+                    ? `この枠 (${row.agency_name || ""} × ${row.headcount}名) から1人を個人化します。残り ${row.headcount - 1}名の枠は維持されます。`
+                    : `この枠 (${row?.agency_name || ""}) を個人行に変換します。`}
+                </p>
+                <div className="relative">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} placeholder="氏名で検索" className="pl-8 h-9" autoFocus />
+                </div>
+                <div className="space-y-1 max-h-[40vh] overflow-y-auto">
+                  {candidates
+                    .filter((p) => !pickerSearch.trim() || p.name.toLowerCase().includes(pickerSearch.trim().toLowerCase()))
+                    .map((p) => {
+                      const ag = mannequinAgencies.find((a) => a.id === p.agency_id);
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={async () => {
+                            if (individualizeRowId) await individualizeRow(individualizeRowId, p);
+                            setIndividualizeRowId(null);
+                          }}
+                          className="w-full text-left px-3 py-2 rounded border text-sm hover:bg-pink-50 hover:border-pink-300"
+                        >
+                          <span className="font-medium">{p.name}</span>
+                          {ag && <span className="text-xs text-muted-foreground ml-2">/ {ag.name}</span>}
+                        </button>
+                      );
+                    })}
+                  {candidates.length === 0 && (
+                    <p className="text-sm text-muted-foreground py-4 text-center">
+                      {targetAgencyId ? "この会社所属のマネキンがマスターに登録されていません" : "マネキンマスターが空です"}
+                    </p>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+          <DialogFooter>
+            <DialogClose><Button variant="outline">キャンセル</Button></DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* 備品の流れ */}
       <Card className="border-l-4 border-l-amber-500 bg-amber-50/50">
