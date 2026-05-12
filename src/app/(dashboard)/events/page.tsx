@@ -23,7 +23,13 @@ import { getHolidaysForRange } from "@/lib/holidays";
 import { usePermission } from "@/hooks/usePermission";
 
 type VenueOption = { label: string };
-type MannequinSummary = { event_id: string; arrangement_status: string | null };
+type MannequinSummary = {
+  event_id: string;
+  arrangement_status: string | null;
+  staff_name: string | null;
+  agency_name: string | null;
+  headcount: number | null;
+};
 type StaffWithArrangement = {
   id: string;
   event_id: string;
@@ -338,7 +344,7 @@ export default function EventsPage() {
     const [evtRes, staffRes, mannRes, venueRes, hmRes, hvlRes, vmRes] = await Promise.all([
       supabase.from("events").select("*").order("start_date", { ascending: true }),
       supabase.from("event_staff").select("id, event_id, person_type, employee_id, mannequin_person_id, start_date, end_date, role, hotel_name, hotel_check_in, hotel_check_out, hotel_status, transport_type, transport_from, transport_to, transport_status, transport_outbound_status, transport_return_status, employees(name), mannequin_people(name)"),
-      supabase.from("mannequins").select("event_id, arrangement_status"),
+      supabase.from("mannequins").select("event_id, arrangement_status, staff_name, agency_name, headcount"),
       supabase.from("events").select("venue, store_name").order("created_at", { ascending: false }).limit(100),
       supabase.from("hotel_master").select("id, name").eq("is_active", true).order("name"),
       supabase.from("hotel_venue_links").select("hotel_id, venue_name"),
@@ -413,6 +419,35 @@ export default function EventsPage() {
   };
 
   const getDayOfWeek = (date: Date) => ["日", "月", "火", "水", "木", "金", "土"][date.getDay()];
+
+  // 催事ごとのマネキン氏名/会社+人数 を短い文字列に整形（バー表示用）
+  // 例: "山田太郎・◯◯マネキン×2・主催者手配×3"
+  const mannequinLabelByEvent = useMemo(() => {
+    const map = new Map<string, string>();
+    const byEvent = new Map<string, MannequinSummary[]>();
+    for (const m of mannequinSummaries) {
+      const arr = byEvent.get(m.event_id) || [];
+      arr.push(m);
+      byEvent.set(m.event_id, arr);
+    }
+    for (const [eventId, items] of byEvent.entries()) {
+      const parts: string[] = [];
+      for (const m of items) {
+        const staffName = (m.staff_name || "").trim();
+        const agencyName = (m.agency_name || "").trim();
+        const count = m.headcount && m.headcount > 0 ? m.headcount : 1;
+        if (staffName) {
+          parts.push(staffName);
+        } else if (agencyName) {
+          parts.push(`${agencyName}×${count}名`);
+        } else if (count > 1) {
+          parts.push(`(未指定)×${count}名`);
+        }
+      }
+      if (parts.length > 0) map.set(eventId, parts.join("・"));
+    }
+    return map;
+  }, [mannequinSummaries]);
 
   // --- 手配状況ヘルパー ---
   const getArrangementStatus = (evt: Event) => {
@@ -570,7 +605,7 @@ export default function EventsPage() {
                 : "all"
           }
           onValueChange={(v) => {
-            if (v === "all") {
+            if (!v || v === "all") {
               setFilterRegion("all");
               setFilterPrefecture("all");
             } else if (v.startsWith("region:")) {
@@ -797,7 +832,7 @@ export default function EventsPage() {
                         {/* トラック行 */}
                         {Array.from({ length: trackCount }, (_, trackIdx) => {
                           const trackEvents = monthEvents.filter((e) => trackMap.get(e.id) === trackIdx);
-                          const rowMinHeight = showArrangementIcons ? 76 : 44;
+                          const rowMinHeight = showArrangementIcons ? 76 : 58;
                           return (
                             <div key={trackIdx} className={`events-track-row flex border-b last:border-b-0 ${trackIdx % 2 === 1 ? "bg-slate-50/50" : "bg-white"}`} style={{ minHeight: rowMinHeight }}>
                               <div className="w-14 shrink-0 border-r flex items-center justify-center text-[10px] font-bold text-muted-foreground">
@@ -851,7 +886,7 @@ export default function EventsPage() {
                                     { label: "マネキン", ok: arr.mannequin === "ok", na: arr.mannequin === "na" },
                                     { label: "備品", ok: arr.shipment === "設定済", na: false },
                                   ];
-                                  const barHeight = showArrangementIcons ? 72 : 40;
+                                  const barHeight = showArrangementIcons ? 72 : 54;
                                   return (
                                     <Tooltip key={evt.id}>
                                       <TooltipTrigger
@@ -883,9 +918,14 @@ export default function EventsPage() {
                                                 )}
                                               </>
                                             ) : (
-                                              evt.person_in_charge && (
-                                                <div className="truncate text-[10px] text-black/70 leading-tight">担当: {evt.person_in_charge}</div>
-                                              )
+                                              <>
+                                                {evt.person_in_charge && (
+                                                  <div className="truncate text-[10px] text-black/70 leading-tight">担当: {evt.person_in_charge}</div>
+                                                )}
+                                                {mannequinLabelByEvent.get(evt.id) && (
+                                                  <div className="truncate text-[10px] text-pink-800/80 leading-tight">マ: {mannequinLabelByEvent.get(evt.id)}</div>
+                                                )}
+                                              </>
                                             )}
                                           </div>
                                         }
@@ -897,6 +937,7 @@ export default function EventsPage() {
                                           {!evt.name && <div>{evt.prefecture}</div>}
                                           <div className="text-muted-foreground">{evt.start_date} 〜 {evt.end_date}</div>
                                           {evt.person_in_charge && <div>担当: {evt.person_in_charge}</div>}
+                                          {mannequinLabelByEvent.get(evt.id) && <div>マネキン: {mannequinLabelByEvent.get(evt.id)}</div>}
                                           <div>ホテル: {arr.hotel} / 交通: {arr.transport}</div>
                                           <div>備品: {arr.shipment} / 申込書: {arr.application}{arr.dm !== null ? ` / DM: ${arr.dm}${evt.dm_count ? `（${evt.dm_count}枚）` : ""}` : ""}</div>
                                           <div className="text-muted-foreground">クリックで手配を設定</div>
@@ -1099,6 +1140,7 @@ export default function EventsPage() {
                         <div className="flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" />{event.start_date} 〜 {event.end_date}</div>
                         <div className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" />{event.prefecture}{event.name ? `・${event.name}` : ""}</div>
                         {event.person_in_charge && <div>担当: {event.person_in_charge}</div>}
+                        {mannequinLabelByEvent.get(event.id) && <div>マネキン: {mannequinLabelByEvent.get(event.id)}</div>}
                       </div>
                       <div className="grid grid-cols-3 gap-1.5 pt-1">
                         {rows.map((r) => (
@@ -1150,6 +1192,12 @@ export default function EventsPage() {
                     <div className="flex items-start gap-1 text-xs">
                       <Users className="h-3 w-3 mt-0.5 shrink-0 text-muted-foreground" />
                       <span><span className="text-muted-foreground">担当: </span>{dialogEvent.person_in_charge}</span>
+                    </div>
+                  )}
+                  {mannequinLabelByEvent.get(dialogEvent.id) && (
+                    <div className="flex items-start gap-1 text-xs">
+                      <Users className="h-3 w-3 mt-0.5 shrink-0 text-pink-600" />
+                      <span><span className="text-muted-foreground">マネキン: </span>{mannequinLabelByEvent.get(dialogEvent.id)}</span>
                     </div>
                   )}
                   {dialogEvent.notes && (
