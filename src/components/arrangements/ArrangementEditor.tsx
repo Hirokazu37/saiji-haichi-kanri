@@ -52,6 +52,7 @@ type MannequinRow = {
 type MannequinPersonMaster = { id: string; name: string; agency_id: string | null; daily_rate: number | null };
 type MannequinAgencyMaster = { id: string; name: string };
 type VenueMannequinLink = { venue_id: string; mannequin_person_id: string | null; mannequin_agency_id: string | null };
+type AgencyAreaLink = { agency_id: string; area_id: string };
 
 type EventRow = { venue: string; store_name: string | null; start_date: string; end_date: string };
 
@@ -78,15 +79,17 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
   const [mannequinPeople, setMannequinPeople] = useState<MannequinPersonMaster[]>([]);
   const [mannequinAgencies, setMannequinAgencies] = useState<MannequinAgencyMaster[]>([]);
   const [venueMannequinLinks, setVenueMannequinLinks] = useState<VenueMannequinLink[]>([]);
+  const [agencyAreaLinks, setAgencyAreaLinks] = useState<AgencyAreaLink[]>([]);
   // マネキン追加・個人化ダイアログ用
   const [personPickerOpen, setPersonPickerOpen] = useState(false);
   const [agencyPickerOpen, setAgencyPickerOpen] = useState(false);
   const [individualizeRowId, setIndividualizeRowId] = useState<string | null>(null);
   const [pickerSearch, setPickerSearch] = useState("");
   const [agencyHeadcount, setAgencyHeadcount] = useState<string>("2");
+  const [showOtherAreas, setShowOtherAreas] = useState(false);
 
   const fetchData = useCallback(async () => {
-    const [staffRes, shipRes, evtRes, venueRes, hmRes, hvlRes, mannRes, vmRes, mpRes, maRes, vmlRes] = await Promise.all([
+    const [staffRes, shipRes, evtRes, venueRes, hmRes, hvlRes, mannRes, vmRes, mpRes, maRes, vmlRes, aalRes] = await Promise.all([
       supabase.from("event_staff").select("id, person_type, employee_id, mannequin_person_id, start_date, end_date, role, hotel_name, hotel_status, transport_outbound_status, transport_return_status, employees(name), mannequin_people(name)").eq("event_id", eventId).order("start_date"),
       supabase.from("shipments").select("id, item_name, recipient_name").eq("event_id", eventId),
       supabase.from("events").select("application_status, application_submitted_date, application_method, dm_status, dm_count, equipment_from, equipment_to").eq("id", eventId).single(),
@@ -98,6 +101,7 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
       supabase.from("mannequin_people").select("id, name, agency_id, daily_rate"),
       supabase.from("mannequin_agencies").select("id, name").order("name"),
       supabase.from("venue_mannequin_links").select("venue_id, mannequin_person_id, mannequin_agency_id"),
+      supabase.from("agency_area_links").select("agency_id, area_id"),
     ]);
     setStaff((staffRes.data || []) as unknown as StaffRow[]);
     setShipments((shipRes.data || []) as ShipmentRow[]);
@@ -127,6 +131,7 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
     setMannequinPeople((mpRes.data || []) as MannequinPersonMaster[]);
     setMannequinAgencies((maRes.data || []) as MannequinAgencyMaster[]);
     setVenueMannequinLinks((vmlRes.data || []) as VenueMannequinLink[]);
+    setAgencyAreaLinks((aalRes.data || []) as AgencyAreaLink[]);
   }, [supabase, eventId, venue, storeName]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -217,6 +222,61 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
       return false;
     });
   }, [venue, storeName, hotelMasters, hotelVenueLinks, venueAreaId]);
+
+  // 個人/会社を「この百貨店」「このエリア対応」「その他」にグルーピング
+  // ピッカーダイアログで、エリアと関係ない候補が混ざって分かりづらくならないように。
+  const groupedPersons = useMemo(() => {
+    const venuePersonIds = new Set(
+      venueMasterId
+        ? venueMannequinLinks.filter((l) => l.venue_id === venueMasterId && l.mannequin_person_id).map((l) => l.mannequin_person_id!)
+        : []
+    );
+    const venueAgencyIds = new Set(
+      venueMasterId
+        ? venueMannequinLinks.filter((l) => l.venue_id === venueMasterId && l.mannequin_agency_id).map((l) => l.mannequin_agency_id!)
+        : []
+    );
+    const areaAgencyIds = new Set(
+      venueAreaId
+        ? agencyAreaLinks.filter((l) => l.area_id === venueAreaId).map((l) => l.agency_id)
+        : []
+    );
+    const venueGroup: MannequinPersonMaster[] = [];
+    const areaGroup: MannequinPersonMaster[] = [];
+    const others: MannequinPersonMaster[] = [];
+    for (const p of mannequinPeople) {
+      if (venuePersonIds.has(p.id) || (p.agency_id && venueAgencyIds.has(p.agency_id))) {
+        venueGroup.push(p);
+      } else if (p.agency_id && areaAgencyIds.has(p.agency_id)) {
+        areaGroup.push(p);
+      } else {
+        others.push(p);
+      }
+    }
+    return { venueGroup, areaGroup, others };
+  }, [mannequinPeople, venueMannequinLinks, agencyAreaLinks, venueMasterId, venueAreaId]);
+
+  const groupedAgencies = useMemo(() => {
+    const venueAgencyIds = new Set(
+      venueMasterId
+        ? venueMannequinLinks.filter((l) => l.venue_id === venueMasterId && l.mannequin_agency_id).map((l) => l.mannequin_agency_id!)
+        : []
+    );
+    const areaAgencyIds = new Set(
+      venueAreaId
+        ? agencyAreaLinks.filter((l) => l.area_id === venueAreaId).map((l) => l.agency_id)
+        : []
+    );
+    const venueGroup: MannequinAgencyMaster[] = [];
+    const areaGroup: MannequinAgencyMaster[] = [];
+    const others: MannequinAgencyMaster[] = [];
+    for (const a of mannequinAgencies) {
+      if (venueAgencyIds.has(a.id)) venueGroup.push(a);
+      else if (areaAgencyIds.has(a.id)) areaGroup.push(a);
+      else others.push(a);
+    }
+    return { venueGroup, areaGroup, others };
+  }, [mannequinAgencies, venueMannequinLinks, agencyAreaLinks, venueMasterId, venueAreaId]);
 
   // この百貨店に紐付けられたマネキン候補（既に手配リストに居る人/会社は除外）
   const recommendedMannequins = useMemo(() => {
@@ -636,10 +696,10 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
               <span className="text-sm font-bold text-pink-800">マネキン</span>
             </div>
             <div className="flex items-center gap-1 flex-wrap">
-              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setPickerSearch(""); setPersonPickerOpen(true); }}>
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setPickerSearch(""); setShowOtherAreas(false); setPersonPickerOpen(true); }}>
                 <User className="h-3 w-3 mr-1" />個人を追加
               </Button>
-              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setPickerSearch(""); setAgencyHeadcount("2"); setAgencyPickerOpen(true); }}>
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setPickerSearch(""); setShowOtherAreas(false); setAgencyHeadcount("2"); setAgencyPickerOpen(true); }}>
                 <Building2 className="h-3 w-3 mr-1" />会社+人数
               </Button>
               <Button variant="outline" size="sm" className="h-7 text-xs" onClick={addFreeformRow}>
@@ -766,37 +826,76 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} placeholder="氏名・会社名で検索" className="pl-8 h-9" autoFocus />
             </div>
-            <div className="space-y-1 max-h-[50vh] overflow-y-auto">
-              {mannequinPeople
-                .filter((p) => {
-                  const ag = mannequinAgencies.find((a) => a.id === p.agency_id);
-                  const hay = `${p.name} ${ag?.name || ""}`.toLowerCase();
-                  return !pickerSearch.trim() || hay.includes(pickerSearch.trim().toLowerCase());
-                })
-                .map((p) => {
-                  const ag = mannequinAgencies.find((a) => a.id === p.agency_id);
-                  const alreadyAdded = mannequins.some((m) => m.mannequin_person_id === p.id);
-                  return (
+            {(() => {
+              const filterFn = (p: MannequinPersonMaster) => {
+                if (!pickerSearch.trim()) return true;
+                const ag = mannequinAgencies.find((a) => a.id === p.agency_id);
+                const hay = `${p.name} ${ag?.name || ""}`.toLowerCase();
+                return hay.includes(pickerSearch.trim().toLowerCase());
+              };
+              const renderPerson = (p: MannequinPersonMaster) => {
+                const ag = mannequinAgencies.find((a) => a.id === p.agency_id);
+                const alreadyAdded = mannequins.some((m) => m.mannequin_person_id === p.id);
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    disabled={alreadyAdded}
+                    onClick={async () => { await addPersonRow(p); setPersonPickerOpen(false); }}
+                    className={`w-full text-left px-3 py-2 rounded border text-sm flex items-center justify-between ${alreadyAdded ? "bg-gray-50 text-muted-foreground" : "hover:bg-pink-50 hover:border-pink-300"}`}
+                  >
+                    <span>
+                      <span className="font-medium">{p.name}</span>
+                      {ag && <span className="text-xs text-muted-foreground ml-2">/ {ag.name}</span>}
+                      {p.daily_rate && <span className="text-xs text-muted-foreground ml-2">¥{p.daily_rate.toLocaleString()}/日</span>}
+                    </span>
+                    {alreadyAdded && <span className="text-[10px] text-muted-foreground">追加済み</span>}
+                  </button>
+                );
+              };
+              const venueFiltered = groupedPersons.venueGroup.filter(filterFn);
+              const areaFiltered = groupedPersons.areaGroup.filter(filterFn);
+              const otherFiltered = groupedPersons.others.filter(filterFn);
+              const isSearching = !!pickerSearch.trim();
+              const showOthers = isSearching || showOtherAreas;
+              return (
+                <div className="space-y-3 max-h-[55vh] overflow-y-auto">
+                  {venueFiltered.length > 0 && (
+                    <div className="space-y-1">
+                      <div className="text-[11px] font-semibold text-pink-700 px-1">この百貨店の常連 ({venueFiltered.length})</div>
+                      {venueFiltered.map(renderPerson)}
+                    </div>
+                  )}
+                  {areaFiltered.length > 0 && (
+                    <div className="space-y-1">
+                      <div className="text-[11px] font-semibold text-blue-700 px-1">同じエリア対応 ({areaFiltered.length})</div>
+                      {areaFiltered.map(renderPerson)}
+                    </div>
+                  )}
+                  {showOthers && otherFiltered.length > 0 && (
+                    <div className="space-y-1">
+                      <div className="text-[11px] font-semibold text-muted-foreground px-1">その他のエリア ({otherFiltered.length})</div>
+                      {otherFiltered.map(renderPerson)}
+                    </div>
+                  )}
+                  {!showOthers && otherFiltered.length > 0 && (
                     <button
-                      key={p.id}
                       type="button"
-                      disabled={alreadyAdded}
-                      onClick={async () => { await addPersonRow(p); setPersonPickerOpen(false); }}
-                      className={`w-full text-left px-3 py-2 rounded border text-sm flex items-center justify-between ${alreadyAdded ? "bg-gray-50 text-muted-foreground" : "hover:bg-pink-50 hover:border-pink-300"}`}
+                      className="w-full text-center text-xs text-muted-foreground hover:text-foreground py-2 border-t"
+                      onClick={() => setShowOtherAreas(true)}
                     >
-                      <span>
-                        <span className="font-medium">{p.name}</span>
-                        {ag && <span className="text-xs text-muted-foreground ml-2">/ {ag.name}</span>}
-                        {p.daily_rate && <span className="text-xs text-muted-foreground ml-2">¥{p.daily_rate.toLocaleString()}/日</span>}
-                      </span>
-                      {alreadyAdded && <span className="text-[10px] text-muted-foreground">追加済み</span>}
+                      他のエリアも表示（{otherFiltered.length}件） ▼
                     </button>
-                  );
-                })}
-              {mannequinPeople.length === 0 && (
-                <p className="text-sm text-muted-foreground py-4 text-center">マネキンマスターが空です</p>
-              )}
-            </div>
+                  )}
+                  {venueFiltered.length === 0 && areaFiltered.length === 0 && (showOthers ? otherFiltered.length === 0 : false) && (
+                    <p className="text-sm text-muted-foreground py-4 text-center">該当するマネキンが見つかりません</p>
+                  )}
+                  {mannequinPeople.length === 0 && (
+                    <p className="text-sm text-muted-foreground py-4 text-center">マネキンマスターが空です</p>
+                  )}
+                </div>
+              );
+            })()}
           </div>
           <DialogFooter>
             <DialogClose><Button variant="outline">閉じる</Button></DialogClose>
@@ -818,26 +917,65 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} placeholder="会社名で検索" className="pl-8 h-9" />
             </div>
-            <div className="space-y-1 max-h-[50vh] overflow-y-auto">
-              {mannequinAgencies
-                .filter((a) => !pickerSearch.trim() || a.name.toLowerCase().includes(pickerSearch.trim().toLowerCase()))
-                .map((a) => (
-                  <button
-                    key={a.id}
-                    type="button"
-                    onClick={async () => {
-                      await addAgencyRow(a, parseInt(agencyHeadcount) || 1);
-                      setAgencyPickerOpen(false);
-                    }}
-                    className="w-full text-left px-3 py-2 rounded border text-sm hover:bg-pink-50 hover:border-pink-300"
-                  >
-                    <span className="font-medium">{a.name}</span>
-                  </button>
-                ))}
-              {mannequinAgencies.length === 0 && (
-                <p className="text-sm text-muted-foreground py-4 text-center">マネキン派遣会社マスターが空です</p>
-              )}
-            </div>
+            {(() => {
+              const filterFn = (a: MannequinAgencyMaster) =>
+                !pickerSearch.trim() || a.name.toLowerCase().includes(pickerSearch.trim().toLowerCase());
+              const renderAgency = (a: MannequinAgencyMaster) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={async () => {
+                    await addAgencyRow(a, parseInt(agencyHeadcount) || 1);
+                    setAgencyPickerOpen(false);
+                  }}
+                  className="w-full text-left px-3 py-2 rounded border text-sm hover:bg-pink-50 hover:border-pink-300"
+                >
+                  <span className="font-medium">{a.name}</span>
+                </button>
+              );
+              const venueFiltered = groupedAgencies.venueGroup.filter(filterFn);
+              const areaFiltered = groupedAgencies.areaGroup.filter(filterFn);
+              const otherFiltered = groupedAgencies.others.filter(filterFn);
+              const isSearching = !!pickerSearch.trim();
+              const showOthers = isSearching || showOtherAreas;
+              return (
+                <div className="space-y-3 max-h-[50vh] overflow-y-auto">
+                  {venueFiltered.length > 0 && (
+                    <div className="space-y-1">
+                      <div className="text-[11px] font-semibold text-pink-700 px-1">この百貨店の常連 ({venueFiltered.length})</div>
+                      {venueFiltered.map(renderAgency)}
+                    </div>
+                  )}
+                  {areaFiltered.length > 0 && (
+                    <div className="space-y-1">
+                      <div className="text-[11px] font-semibold text-blue-700 px-1">同じエリア対応 ({areaFiltered.length})</div>
+                      {areaFiltered.map(renderAgency)}
+                    </div>
+                  )}
+                  {showOthers && otherFiltered.length > 0 && (
+                    <div className="space-y-1">
+                      <div className="text-[11px] font-semibold text-muted-foreground px-1">その他のエリア ({otherFiltered.length})</div>
+                      {otherFiltered.map(renderAgency)}
+                    </div>
+                  )}
+                  {!showOthers && otherFiltered.length > 0 && (
+                    <button
+                      type="button"
+                      className="w-full text-center text-xs text-muted-foreground hover:text-foreground py-2 border-t"
+                      onClick={() => setShowOtherAreas(true)}
+                    >
+                      他のエリアも表示（{otherFiltered.length}件） ▼
+                    </button>
+                  )}
+                  {venueFiltered.length === 0 && areaFiltered.length === 0 && (showOthers ? otherFiltered.length === 0 : false) && (
+                    <p className="text-sm text-muted-foreground py-4 text-center">該当する派遣会社が見つかりません</p>
+                  )}
+                  {mannequinAgencies.length === 0 && (
+                    <p className="text-sm text-muted-foreground py-4 text-center">マネキン派遣会社マスターが空です</p>
+                  )}
+                </div>
+              );
+            })()}
           </div>
           <DialogFooter>
             <DialogClose><Button variant="outline">閉じる</Button></DialogClose>
