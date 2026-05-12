@@ -5,10 +5,12 @@ import { createClient } from "@/lib/supabase/client";
 import { usePermission } from "@/hooks/usePermission";
 
 export type PaymentAlertKind =
-  | "missing_record"  // event_payments が1件も無い催事
-  | "missing_setup"   // 開催前で予定日/予定額/入金率のいずれかが空
-  | "no_sales"        // 終了済みで日別売上が1件も無い
-  | "overdue";        // 予定日を過ぎても未入金（未回収）
+  | "recently_sales_pending"   // 終了から14日以内、日別売上が空
+  | "recently_amount_pending"  // 終了から14日以内、売上はあるが入金予定額が空
+  | "missing_record"           // event_payments が1件も無い催事
+  | "missing_setup"            // 開催前で予定日/予定額/入金率のいずれかが空
+  | "no_sales"                 // 15日以上前に終了済みで日別売上が1件も無い
+  | "overdue";                 // 予定日を過ぎても未入金（未回収）
 
 export type PaymentAlertEvent = {
   id: string;
@@ -17,9 +19,12 @@ export type PaymentAlertEvent = {
   store_name: string | null;
   start_date: string;
   end_date: string;
+  daysSinceEnd?: number; // 終了からの経過日数（直近終了アラート用）
 };
 
 export type PaymentAlerts = {
+  recentlySalesPending: PaymentAlertEvent[];
+  recentlyAmountPending: PaymentAlertEvent[];
   missingRecord: PaymentAlertEvent[];
   missingSetup: PaymentAlertEvent[];
   noSales: PaymentAlertEvent[];
@@ -28,7 +33,11 @@ export type PaymentAlerts = {
   loading: boolean;
 };
 
+const RECENT_WINDOW_DAYS = 14;
+
 const emptyAlerts: PaymentAlerts = {
+  recentlySalesPending: [],
+  recentlyAmountPending: [],
   missingRecord: [],
   missingSetup: [],
   noSales: [],
@@ -84,12 +93,16 @@ export function usePaymentAlerts(): PaymentAlerts {
     const hasDaily = new Set<string>();
     for (const d of dailies) hasDaily.add(d.event_id);
 
+    const recentlySalesPending: PaymentAlertEvent[] = [];
+    const recentlyAmountPending: PaymentAlertEvent[] = [];
     const missingRecord: PaymentAlertEvent[] = [];
     const missingSetup: PaymentAlertEvent[] = [];
     const noSales: PaymentAlertEvent[] = [];
     const overdue: PaymentAlertEvent[] = [];
 
     const hasAlertByEvent = new Set<string>();
+
+    const todayDate = new Date(today);
 
     for (const e of events) {
       const ps = paymentsByEvent.get(e.id) ?? [];
@@ -113,10 +126,29 @@ export function usePaymentAlerts(): PaymentAlerts {
           hasAlertByEvent.add(e.id);
         }
       } else if (isFinished) {
-        // 売上未入力
-        if (!hasDaily.has(e.id)) {
-          noSales.push(e);
+        // 終了からの日数
+        const [y, m, d] = e.end_date.split("-").map(Number);
+        const endDate = new Date(y, (m || 1) - 1, d || 1);
+        const daysSinceEnd = Math.max(0, Math.floor((todayDate.getTime() - endDate.getTime()) / 86400000));
+        const isRecent = daysSinceEnd <= RECENT_WINDOW_DAYS;
+        const hasSales = hasDaily.has(e.id);
+        const enriched: PaymentAlertEvent = { ...e, daysSinceEnd };
+
+        if (!hasSales) {
+          // 売上未入力
+          if (isRecent) {
+            recentlySalesPending.push(enriched);
+          } else {
+            noSales.push(e);
+          }
           hasAlertByEvent.add(e.id);
+        } else if (isRecent) {
+          // 売上はあるが入金予定額が空（直近終了の催事のみ「アクション促し」として出す）
+          const hasMissingAmount = ps.some((p) => p.planned_amount == null);
+          if (hasMissingAmount) {
+            recentlyAmountPending.push(enriched);
+            hasAlertByEvent.add(e.id);
+          }
         }
       }
 
@@ -132,7 +164,13 @@ export function usePaymentAlerts(): PaymentAlerts {
       }
     }
 
+    // 直近終了は日数の浅い順（新しく終わった催事ほど上）に並べる
+    recentlySalesPending.sort((a, b) => (a.daysSinceEnd ?? 0) - (b.daysSinceEnd ?? 0));
+    recentlyAmountPending.sort((a, b) => (a.daysSinceEnd ?? 0) - (b.daysSinceEnd ?? 0));
+
     setState({
+      recentlySalesPending,
+      recentlyAmountPending,
       missingRecord,
       missingSetup,
       noSales,

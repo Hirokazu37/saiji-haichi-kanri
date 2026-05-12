@@ -680,6 +680,24 @@ export default function EventDetailPage({
             <span className="text-sm font-bold text-emerald-800">実績（終了後に記録）</span>
           </div>
 
+          {/* 催事終了後 14日以内で売上未入力の催事には目立つヒントを出す */}
+          {(() => {
+            const today = new Date().toISOString().slice(0, 10);
+            if (!form.end_date || form.end_date >= today) return null;
+            const [y, m, d] = form.end_date.split("-").map(Number);
+            const endDate = new Date(y, (m || 1) - 1, d || 1);
+            const daysSinceEnd = Math.floor((Date.now() - endDate.getTime()) / 86400000);
+            const hasAnyAmount = Array.from(dailyRevenue.values()).some((v) => v.amount.trim());
+            if (hasAnyAmount) return null;
+            const dayLabel = daysSinceEnd === 0 ? "本日" : `${daysSinceEnd}日前`;
+            const isUrgent = daysSinceEnd <= 14;
+            return (
+              <div className={`text-xs rounded px-2.5 py-2 border ${isUrgent ? "bg-rose-50 border-rose-300 text-rose-800" : "bg-amber-50 border-amber-300 text-amber-800"}`}>
+                {isUrgent ? "🔥 " : "⚠️ "}この催事は <span className="font-bold">{dayLabel}に終了</span>しました。下の入力欄に日別売上を入力してください。
+              </div>
+            );
+          })()}
+
           {/* 日別売上 */}
           {(() => {
             // 会期の日付配列を作る
