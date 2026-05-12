@@ -85,7 +85,7 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
   const [agencyPickerOpen, setAgencyPickerOpen] = useState(false);
   const [individualizeRowId, setIndividualizeRowId] = useState<string | null>(null);
   const [pickerSearch, setPickerSearch] = useState("");
-  const [agencyHeadcount, setAgencyHeadcount] = useState<string>("2");
+  const [agencyHeadcount, setAgencyHeadcount] = useState<string>("1");
   const [showOtherAreas, setShowOtherAreas] = useState(false);
 
   const fetchData = useCallback(async () => {
@@ -699,7 +699,7 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
               <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setPickerSearch(""); setShowOtherAreas(false); setPersonPickerOpen(true); }}>
                 <User className="h-3 w-3 mr-1" />個人を追加
               </Button>
-              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setPickerSearch(""); setShowOtherAreas(false); setAgencyHeadcount("2"); setAgencyPickerOpen(true); }}>
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setPickerSearch(""); setShowOtherAreas(false); setAgencyHeadcount("1"); setAgencyPickerOpen(true); }}>
                 <Building2 className="h-3 w-3 mr-1" />会社+人数
               </Button>
               <Button variant="outline" size="sm" className="h-7 text-xs" onClick={addFreeformRow}>
@@ -732,7 +732,7 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
                     key={`rec-a-${a.id}`}
                     variant="outline"
                     className="cursor-pointer text-xs border-pink-300 text-pink-700 bg-white hover:bg-pink-100"
-                    onClick={() => addAgencyRow(a, 2)}
+                    onClick={() => addAgencyRow(a, 1)}
                   >
                     ＋ {a.name}（会社）
                   </Badge>
