@@ -11,6 +11,7 @@ function isRole(v: unknown): v is Role {
 }
 
 // GET /api/users — ユーザー一覧（認証済みユーザーのみ。RLSに依存）
+// auth.users から最終ログイン日時もマージして返す
 export async function GET() {
   const supabase = await createClient();
   const {
@@ -28,7 +29,25 @@ export async function GET() {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-  return NextResponse.json(data);
+
+  // auth.users から last_sign_in_at を取得してマージ（service_role が必要）
+  try {
+    const admin = createAdminClient();
+    const { data: authList } = await admin.auth.admin.listUsers({ perPage: 200 });
+    const lastSignInById = new Map<string, string | null>();
+    for (const u of authList?.users ?? []) {
+      lastSignInById.set(u.id, u.last_sign_in_at ?? null);
+    }
+    const merged = (data ?? []).map((p: { id: string }) => ({
+      ...p,
+      last_sign_in_at: lastSignInById.get(p.id) ?? null,
+    }));
+    return NextResponse.json(merged);
+  } catch (e) {
+    console.error("[/api/users] auth merge failed:", e);
+    // 最終ログイン取得に失敗しても、user_profiles だけは返す
+    return NextResponse.json(data);
+  }
 }
 
 // POST /api/users — ユーザー作成
