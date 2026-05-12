@@ -20,7 +20,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Pencil, Trash2, UserCog, Link2, Copy, Check } from "lucide-react";
-import type { UserRole } from "@/hooks/usePermission";
+import { usePermission, type UserRole } from "@/hooks/usePermission";
 
 type UserProfile = {
   id: string;
@@ -62,6 +62,8 @@ const emptyForm: { display_name: string; password: string; password_confirm: str
 };
 
 export default function UsersPage() {
+  const { username } = usePermission();
+  const isOwner = username === "hirokazu";
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [invites, setInvites] = useState<InviteToken[]>([]);
   const [loading, setLoading] = useState(true);
@@ -309,7 +311,7 @@ export default function UsersPage() {
                 <TableHead>表示名</TableHead>
                 <TableHead>権限</TableHead>
                 <TableHead className="hidden md:table-cell">入金閲覧</TableHead>
-                <TableHead className="hidden md:table-cell">最終ログイン</TableHead>
+                {isOwner && <TableHead className="hidden md:table-cell">最終ログイン</TableHead>}
                 <TableHead className="hidden md:table-cell">作成日</TableHead>
                 <TableHead className="w-24">操作</TableHead>
               </TableRow>
@@ -346,24 +348,25 @@ export default function UsersPage() {
                       className="data-[state=checked]:bg-green-700"
                     />
                   </TableCell>
-                  <TableCell className="hidden md:table-cell text-muted-foreground">
-                    {(() => {
-                      if (!user.last_sign_in_at) return <span className="text-amber-700">未ログイン</span>;
-                      const d = new Date(user.last_sign_in_at);
-                      const diffMs = Date.now() - d.getTime();
-                      const diffDays = Math.floor(diffMs / 86400000);
-                      if (diffDays < 0) return d.toLocaleDateString("ja-JP");
-                      if (diffDays === 0) {
-                        const hours = Math.floor(diffMs / 3600000);
-                        if (hours < 1) return "数分前";
-                        return `${hours}時間前`;
-                      }
-                      if (diffDays === 1) return "昨日";
-                      if (diffDays < 7) return `${diffDays}日前`;
-                      if (diffDays < 30) return `${diffDays}日前`;
-                      return d.toLocaleDateString("ja-JP");
-                    })()}
-                  </TableCell>
+                  {isOwner && (
+                    <TableCell className="hidden md:table-cell text-muted-foreground">
+                      {(() => {
+                        if (!user.last_sign_in_at) return <span className="text-amber-700">未ログイン</span>;
+                        const d = new Date(user.last_sign_in_at);
+                        const diffMs = Date.now() - d.getTime();
+                        const diffDays = Math.floor(diffMs / 86400000);
+                        if (diffDays < 0) return d.toLocaleDateString("ja-JP");
+                        if (diffDays === 0) {
+                          const hours = Math.floor(diffMs / 3600000);
+                          if (hours < 1) return "数分前";
+                          return `${hours}時間前`;
+                        }
+                        if (diffDays === 1) return "昨日";
+                        if (diffDays < 30) return `${diffDays}日前`;
+                        return d.toLocaleDateString("ja-JP");
+                      })()}
+                    </TableCell>
+                  )}
                   <TableCell className="hidden md:table-cell text-muted-foreground">
                     {new Date(user.created_at).toLocaleDateString("ja-JP")}
                   </TableCell>

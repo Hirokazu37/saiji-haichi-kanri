@@ -13,6 +13,7 @@ type PermissionContextType = {
   canViewPayments: boolean;
   loading: boolean;
   displayName: string;
+  username: string;
   userId: string | null;
 };
 
@@ -24,6 +25,7 @@ const defaultState: PermissionContextType = {
   canViewPayments: false,
   loading: true,
   displayName: "",
+  username: "",
   userId: null,
 };
 
@@ -48,7 +50,7 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
       if (user) {
         const { data } = await supabase
           .from("user_profiles")
-          .select("id, display_name, can_edit, role, can_view_payments")
+          .select("id, username, display_name, can_edit, role, can_view_payments")
           .eq("id", user.id)
           .single();
         if (data) {
@@ -61,6 +63,7 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
             canViewPayments: !!data.can_view_payments,
             loading: false,
             displayName: data.display_name,
+            username: data.username ?? "",
             userId: data.id,
           });
           return;

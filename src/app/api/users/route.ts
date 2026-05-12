@@ -11,7 +11,7 @@ function isRole(v: unknown): v is Role {
 }
 
 // GET /api/users — ユーザー一覧（認証済みユーザーのみ。RLSに依存）
-// auth.users から最終ログイン日時もマージして返す
+// hirokazu のみ auth.users の最終ログイン日時もマージして返す
 export async function GET() {
   const supabase = await createClient();
   const {
@@ -28,6 +28,14 @@ export async function GET() {
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  // 最終ログイン情報はオーナー（hirokazu）にだけ返す。
+  // 他のユーザーには user_profiles だけ返す。
+  const me = (data ?? []).find((p: { id: string }) => p.id === user.id) as { username?: string } | undefined;
+  const isOwner = me?.username === "hirokazu";
+  if (!isOwner) {
+    return NextResponse.json(data);
   }
 
   // auth.users から last_sign_in_at を取得してマージ（service_role が必要）
