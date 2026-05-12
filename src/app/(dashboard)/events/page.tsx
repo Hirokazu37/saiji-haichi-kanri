@@ -385,7 +385,17 @@ export default function EventsPage() {
 
   const filtered = events.filter((e) => {
     if (!showPast && e.end_date < todayIsoStr) return false;
-    if (filterStatus !== "all" && e.status !== filterStatus) return false;
+    // ステータスフィルタは時間軸でも判定する（status が古いまま放置されたケース対策）
+    if (filterStatus === "開催中") {
+      // 開催中: 開始日 ≦ 今日 ≦ 終了日（実際に今やっている催事のみ）
+      if (!(e.start_date <= todayIsoStr && todayIsoStr <= e.end_date)) return false;
+    } else if (filterStatus === "終了") {
+      // 終了: 終了日 < 今日
+      if (e.end_date >= todayIsoStr) return false;
+    } else if (filterStatus !== "all" && e.status !== filterStatus) {
+      // それ以外のステータス値が指定されたら従来通り status を直接比較
+      return false;
+    }
     if (filterRegion !== "all") {
       const regionPrefs = areaMap[filterRegion];
       if (!regionPrefs || !regionPrefs.includes(e.prefecture)) return false;
