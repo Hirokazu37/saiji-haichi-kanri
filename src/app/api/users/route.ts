@@ -14,7 +14,7 @@ function isRole(v: unknown): v is Role {
 }
 
 // GET /api/users — ユーザー一覧（認証済みユーザーのみ。RLSに依存）
-// hirokazu のみ user_profiles.last_active_at（最終アクセス）を含めて返す
+// hirokazu のみ最終アクセス（user_profiles.last_active_at + auth.users.last_sign_in_at の新しい方）を含めて返す
 export async function GET() {
   const supabase = await createClient();
   const {
@@ -34,7 +34,6 @@ export async function GET() {
   }
 
   // 最終アクセス情報はオーナー（hirokazu）にだけ返す。
-  // 他のユーザーには last_active_at を抜いて返す（防御）。
   const me = (data ?? []).find((p: { id: string }) => p.id === user.id) as { username?: string } | undefined;
   const isOwner = me?.username === "hirokazu";
   if (!isOwner) {
@@ -45,7 +44,35 @@ export async function GET() {
     });
     return NextResponse.json(stripped);
   }
-  return NextResponse.json(data);
+
+  // last_active_at（アプリ側 touch）と auth.users.last_sign_in_at（実ログイン）の
+  // 新しい方を採用する。新コード未アクセスのユーザーでも、実ログイン日時で表示できる。
+  type RowWithProfile = { id: string; last_active_at: string | null; created_at?: string | null };
+  try {
+    const admin = createAdminClient();
+    const { data: authList } = await admin.auth.admin.listUsers({ perPage: 200 });
+    const signInById = new Map<string, string | null>();
+    for (const u of authList?.users ?? []) {
+      signInById.set(u.id, u.last_sign_in_at ?? null);
+    }
+    const merged = (data ?? []).map((p: RowWithProfile) => {
+      const signIn = signInById.get(p.id) ?? null;
+      const active = p.last_active_at;
+      // created_at 初期値で last_active_at = created_at になっているケースを実質 null 扱いに
+      // (= まだアプリ側 touch が一度も走っていない状態)。signIn しか参考にできない。
+      const isStubActive = active && p.created_at && active === p.created_at;
+      const effectiveActive = isStubActive ? null : active;
+      let latest: string | null = null;
+      if (effectiveActive && signIn) latest = effectiveActive > signIn ? effectiveActive : signIn;
+      else if (effectiveActive) latest = effectiveActive;
+      else if (signIn) latest = signIn;
+      return { ...p, last_active_at: latest };
+    });
+    return NextResponse.json(merged);
+  } catch (e) {
+    console.error("[/api/users] auth merge failed:", e);
+    return NextResponse.json(data);
+  }
 }
 
 // POST /api/users — ユーザー作成
