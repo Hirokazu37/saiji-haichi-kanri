@@ -3,6 +3,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/auth-server";
 
+// createAdminClient is still used by POST. ESLint may warn if unused; keep silent.
+void createAdminClient;
+
 const VALID_ROLES = ["admin", "viewer", "limited"] as const;
 type Role = (typeof VALID_ROLES)[number];
 
@@ -11,7 +14,7 @@ function isRole(v: unknown): v is Role {
 }
 
 // GET /api/users — ユーザー一覧（認証済みユーザーのみ。RLSに依存）
-// hirokazu のみ auth.users の最終ログイン日時もマージして返す
+// hirokazu のみ user_profiles.last_active_at（最終アクセス）を含めて返す
 export async function GET() {
   const supabase = await createClient();
   const {
@@ -30,32 +33,19 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // 最終ログイン情報はオーナー（hirokazu）にだけ返す。
-  // 他のユーザーには user_profiles だけ返す。
+  // 最終アクセス情報はオーナー（hirokazu）にだけ返す。
+  // 他のユーザーには last_active_at を抜いて返す（防御）。
   const me = (data ?? []).find((p: { id: string }) => p.id === user.id) as { username?: string } | undefined;
   const isOwner = me?.username === "hirokazu";
   if (!isOwner) {
-    return NextResponse.json(data);
+    const stripped = (data ?? []).map((p: Record<string, unknown>) => {
+      const { last_active_at: _unused, ...rest } = p;
+      void _unused;
+      return rest;
+    });
+    return NextResponse.json(stripped);
   }
-
-  // auth.users から last_sign_in_at を取得してマージ（service_role が必要）
-  try {
-    const admin = createAdminClient();
-    const { data: authList } = await admin.auth.admin.listUsers({ perPage: 200 });
-    const lastSignInById = new Map<string, string | null>();
-    for (const u of authList?.users ?? []) {
-      lastSignInById.set(u.id, u.last_sign_in_at ?? null);
-    }
-    const merged = (data ?? []).map((p: { id: string }) => ({
-      ...p,
-      last_sign_in_at: lastSignInById.get(p.id) ?? null,
-    }));
-    return NextResponse.json(merged);
-  } catch (e) {
-    console.error("[/api/users] auth merge failed:", e);
-    // 最終ログイン取得に失敗しても、user_profiles だけは返す
-    return NextResponse.json(data);
-  }
+  return NextResponse.json(data);
 }
 
 // POST /api/users — ユーザー作成

@@ -66,6 +66,24 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
             username: data.username ?? "",
             userId: data.id,
           });
+
+          // 最終アクセス時刻を更新（5分に1回までに節流）
+          try {
+            const key = `last_active_touch_${user.id}`;
+            const lastTouchStr = typeof window !== "undefined" ? window.localStorage.getItem(key) : null;
+            const now = Date.now();
+            const TOUCH_INTERVAL_MS = 5 * 60 * 1000;
+            if (!lastTouchStr || now - parseInt(lastTouchStr, 10) > TOUCH_INTERVAL_MS) {
+              await supabase
+                .from("user_profiles")
+                .update({ last_active_at: new Date().toISOString() })
+                .eq("id", user.id);
+              if (typeof window !== "undefined") window.localStorage.setItem(key, String(now));
+            }
+          } catch (e) {
+            // 失敗してもアプリは継続
+            console.warn("[usePermission] failed to touch last_active_at:", e);
+          }
           return;
         }
       }

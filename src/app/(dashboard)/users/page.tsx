@@ -30,7 +30,7 @@ type UserProfile = {
   role: UserRole;
   can_view_payments: boolean;
   created_at: string;
-  last_sign_in_at: string | null;
+  last_active_at: string | null;
 };
 
 type InviteToken = {
@@ -311,7 +311,7 @@ export default function UsersPage() {
                 <TableHead>表示名</TableHead>
                 <TableHead>権限</TableHead>
                 <TableHead className="hidden md:table-cell">入金閲覧</TableHead>
-                {isOwner && <TableHead className="hidden md:table-cell">最終ログイン</TableHead>}
+                {isOwner && <TableHead className="hidden md:table-cell">最終アクセス</TableHead>}
                 <TableHead className="hidden md:table-cell">作成日</TableHead>
                 <TableHead className="w-24">操作</TableHead>
               </TableRow>
@@ -351,8 +351,8 @@ export default function UsersPage() {
                   {isOwner && (
                     <TableCell className="hidden md:table-cell text-muted-foreground">
                       {(() => {
-                        if (!user.last_sign_in_at) return <span className="text-amber-700">未ログイン</span>;
-                        const d = new Date(user.last_sign_in_at);
+                        if (!user.last_active_at) return <span className="text-amber-700">未アクセス</span>;
+                        const d = new Date(user.last_active_at);
                         const diffMs = Date.now() - d.getTime();
                         const diffDays = Math.floor(diffMs / 86400000);
                         if (diffDays < 0) return d.toLocaleDateString("ja-JP");
