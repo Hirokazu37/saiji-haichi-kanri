@@ -23,7 +23,8 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Wallet, Download, Plus, Pencil, Trash2, ArrowUpRight, Calculator } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Wallet, Download, Plus, Pencil, Trash2, ArrowUpRight, Calculator, Calendar as CalendarIcon, LayoutGrid, BarChart3, List } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
 import { computePlannedPaymentDate } from "@/lib/payment-cycle";
 import { PaymentAlertsCard } from "@/components/layout/PaymentAlertsCard";
@@ -661,6 +662,18 @@ function PaymentsPageInner() {
         </Card>
       </div>
 
+      {/* タブで切り替え（カレンダー / 月別 / 入金元別 / 一覧） */}
+      <Tabs defaultValue="calendar" className="w-full">
+        <TabsList className="w-full justify-start print:hidden">
+          <TabsTrigger value="calendar"><CalendarIcon className="h-3.5 w-3.5" />カレンダー</TabsTrigger>
+          <TabsTrigger value="monthly"><LayoutGrid className="h-3.5 w-3.5" />月別</TabsTrigger>
+          <TabsTrigger value="payer"><BarChart3 className="h-3.5 w-3.5" />入金元別</TabsTrigger>
+          <TabsTrigger value="list"><List className="h-3.5 w-3.5" />一覧</TabsTrigger>
+        </TabsList>
+
+        {/* タブ: カレンダー */}
+        <TabsContent value="calendar" keepMounted className="space-y-4 print:!block print:!opacity-100">
+
       {/* 催事カレンダー（/events と同じガント構造で入金情報を表示） */}
       <div className="space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-2 print:hidden">
@@ -809,6 +822,10 @@ function PaymentsPageInner() {
           );
         })}
       </div>
+        </TabsContent>
+
+        {/* タブ: 月別 (カードビュー + 月次サマリ表) */}
+        <TabsContent value="monthly" keepMounted className="space-y-4 print:!block print:!opacity-100">
 
       {/* 月別カードビュー（メインの可視化） */}
       <Card className="print-card-view">
@@ -986,6 +1003,10 @@ function PaymentsPageInner() {
           </div>
         </CardContent>
       </Card>
+        </TabsContent>
+
+        {/* タブ: 入金元別 (クロス表) */}
+        <TabsContent value="payer" keepMounted className="space-y-4 print:!block print:!opacity-100">
 
       {/* 入金元別 月次内訳（予定日ベース・税込）（印刷時非表示） */}
       {monthlySummary.payerList.length > 0 && (
@@ -1039,6 +1060,10 @@ function PaymentsPageInner() {
           </CardContent>
         </Card>
       )}
+        </TabsContent>
+
+        {/* タブ: 一覧 (フィルタ + 詳細表) */}
+        <TabsContent value="list" keepMounted className="space-y-4 print:!block print:!opacity-100">
 
       {/* フィルタ（印刷時非表示） */}
       <Card className="print:hidden">
@@ -1133,6 +1158,8 @@ function PaymentsPageInner() {
           </Table>
         </div>
       )}
+        </TabsContent>
+      </Tabs>
 
       {/* 追加/編集ダイアログ */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
