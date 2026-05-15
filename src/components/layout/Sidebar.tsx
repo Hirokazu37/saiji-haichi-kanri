@@ -17,6 +17,7 @@ import {
   UserCog,
   Archive,
   Wallet,
+  TrendingUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePermission, type UserRole } from "@/hooks/usePermission";
@@ -37,6 +38,7 @@ const navItems: NavItem[] = [
   { label: "履歴（終了した催事）", href: "/archive", icon: Archive, roles: ["admin", "viewer"] },
   { label: "社員スケジュール", href: "/schedule", icon: CalendarClock, roles: ["admin", "viewer", "limited"] },
   { label: "入金管理", href: "/payments", icon: Wallet, roles: ["admin", "viewer"], requiresPayments: true },
+  { label: "売上分析", href: "/sales", icon: TrendingUp, roles: ["admin", "viewer"], requiresPayments: true },
   { label: "ホテル・交通", href: "/hotels", icon: Hotel, roles: ["admin", "viewer"] },
   { label: "備品の流れ", href: "/shipments", icon: Package, roles: ["admin", "viewer"] },
   { label: "出店申込書", href: "/applications", icon: FileText, roles: ["admin", "viewer"] },
