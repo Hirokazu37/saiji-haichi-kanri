@@ -911,7 +911,15 @@ function PaymentsPageInner() {
             <div className="space-y-2">
               <Label className="text-xs">催事<span className="text-rose-500 ml-0.5">*</span></Label>
               <Select value={form.event_id} onValueChange={(v) => v && setForm({ ...form, event_id: v })}>
-                <SelectTrigger><SelectValue placeholder="催事を選択" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="催事を選択">
+                    {(value: string | null) => {
+                      if (!value) return null;
+                      const e = events.find((x) => x.id === value);
+                      return e ? `${eventLabel(e)} (${e.start_date}〜${e.end_date})` : value;
+                    }}
+                  </SelectValue>
+                </SelectTrigger>
                 <SelectContent className="max-h-[300px]">
                   {events.map((e) => (
                     <SelectItem key={e.id} value={e.id}>
@@ -941,7 +949,15 @@ function PaymentsPageInner() {
               </div>
               {form.payer_kind === "venue" ? (
                 <Select value={form.venue_master_id || "none"} onValueChange={(v) => setForm({ ...form, venue_master_id: !v || v === "none" ? "" : v })}>
-                  <SelectTrigger><SelectValue placeholder="百貨店を選択" /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue placeholder="百貨店を選択">
+                      {(value: string | null) => {
+                        if (!value || value === "none") return "未選択";
+                        const v = venues.find((x) => x.id === value);
+                        return v ? `${v.venue_name}${v.store_name ? ` ${v.store_name}` : ""}` : value;
+                      }}
+                    </SelectValue>
+                  </SelectTrigger>
                   <SelectContent className="max-h-[300px]">
                     <SelectItem value="none">未選択</SelectItem>
                     {venues.map((v) => (
@@ -953,7 +969,14 @@ function PaymentsPageInner() {
                 </Select>
               ) : (
                 <Select value={form.payer_master_id || "none"} onValueChange={(v) => setForm({ ...form, payer_master_id: !v || v === "none" ? "" : v })}>
-                  <SelectTrigger><SelectValue placeholder="帳合先を選択" /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue placeholder="帳合先を選択">
+                      {(value: string | null) => {
+                        if (!value || value === "none") return "未選択";
+                        return payers.find((p) => p.id === value)?.name ?? value;
+                      }}
+                    </SelectValue>
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">未選択</SelectItem>
                     {payers.filter((p) => p.is_active).map((p) => (
@@ -1037,7 +1060,11 @@ function PaymentsPageInner() {
                 <div>
                   <Label className="text-xs">入金方法</Label>
                   <Select value={form.method} onValueChange={(v) => v && setForm({ ...form, method: v as "transfer" | "cash" | "other" })}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue>
+                        {(value: string | null) => (value ? METHOD_LABEL[value] ?? value : null)}
+                      </SelectValue>
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="transfer">振込</SelectItem>
                       <SelectItem value="cash">現金</SelectItem>
