@@ -284,6 +284,76 @@ function PaymentsPageInner() {
     return { months, summary, payerList, payerTotals, totals };
   }, [payments, venues, payers]);
 
+  // 催事カレンダー: 月ごとにガント風で表示。催事バーに「百貨店名・入金予定日・予定額」を出す
+  // 過去1ヶ月 + 今月 + 未来3ヶ月 = 5ヶ月分（紙印刷でA4×5枚に収まる量）
+  const calendarMonths = useMemo(() => {
+    type EventEntry = {
+      payment: PaymentRow;
+      eventStart: string;
+      eventEnd: string;
+      venueLabelStr: string;
+    };
+    type MonthData = {
+      ym: string;
+      year: number;
+      month: number; // 1-12
+      label: string;
+      isCurrent: boolean;
+      daysInMonth: number;
+      lanes: EventEntry[][];
+    };
+
+    const today = new Date();
+    const currentYm = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+    const months: MonthData[] = [];
+
+    for (let i = -1; i <= 3; i++) {
+      const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
+      const year = d.getFullYear();
+      const month = d.getMonth() + 1;
+      const ym = `${year}-${String(month).padStart(2, "0")}`;
+      const label = `${year}年${month}月`;
+      const daysInMonth = new Date(year, month, 0).getDate();
+
+      // この月に開催される催事 (任意の日が重なる)
+      const monthStartStr = `${ym}-01`;
+      const monthEndStr = `${ym}-${String(daysInMonth).padStart(2, "0")}`;
+      const candidates = payments
+        .filter((p) => p.status !== "キャンセル")
+        .filter((p) => {
+          const ev = p.events;
+          if (!ev) return false;
+          // 催事期間とこの月が重なる
+          return ev.start_date <= monthEndStr && ev.end_date >= monthStartStr;
+        })
+        .map((p): EventEntry => ({
+          payment: p,
+          eventStart: p.events!.start_date,
+          eventEnd: p.events!.end_date,
+          venueLabelStr: p.events!.store_name ? `${p.events!.venue} ${p.events!.store_name}` : p.events!.venue,
+        }))
+        .sort((a, b) => a.eventStart.localeCompare(b.eventStart));
+
+      // レーンパッキング: 重ならない催事を同じ行に並べる
+      const lanes: EventEntry[][] = [];
+      for (const entry of candidates) {
+        let placed = false;
+        for (const lane of lanes) {
+          const last = lane[lane.length - 1];
+          if (last.eventEnd < entry.eventStart) {
+            lane.push(entry);
+            placed = true;
+            break;
+          }
+        }
+        if (!placed) lanes.push([entry]);
+      }
+
+      months.push({ ym, year, month, label, isCurrent: ym === currentYm, daysInMonth, lanes });
+    }
+    return months;
+  }, [payments]);
+
   // 月別カードビュー: 過去2ヶ月+今月+未来6ヶ月 = 9ヶ月
   // 各月の入金予定カードを並べる（キャンセルは除外）
   const cardsByMonth = useMemo(() => {
@@ -575,6 +645,132 @@ function PaymentsPageInner() {
           </CardContent>
         </Card>
       </div>
+
+      {/* 催事カレンダー（月別ガント・印刷対応） */}
+      <Card className="print-calendar-view">
+        <CardContent className="p-3 space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2 print:hidden">
+            <div className="flex items-center gap-2">
+              <Wallet className="h-4 w-4 text-emerald-700" />
+              <h2 className="text-sm font-bold">催事カレンダー（入金予定日と金額付き）</h2>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-muted-foreground">過去1ヶ月 + 未来3ヶ月</span>
+              <span className="inline-flex items-center gap-1 text-[10px]">
+                <span className="inline-block w-3 h-3 bg-yellow-100 border border-yellow-500 rounded"></span>未入金
+                <span className="inline-block w-3 h-3 bg-green-100 border border-green-500 rounded ml-1"></span>入金済
+                <span className="inline-block w-3 h-3 bg-rose-100 border border-rose-500 rounded ml-1"></span>予定日超過
+                <span className="inline-block w-3 h-3 bg-gray-100 border border-gray-400 rounded ml-1"></span>保留
+              </span>
+            </div>
+          </div>
+          <div className="space-y-4">
+            {calendarMonths.map((m) => {
+              const todayStr = new Date().toISOString().slice(0, 10);
+              return (
+                <div key={m.ym} className="border rounded-md overflow-hidden bg-white print:break-inside-avoid">
+                  <div className={`px-3 py-1.5 font-bold text-sm border-b ${m.isCurrent ? "bg-amber-100 text-amber-900" : "bg-gray-100 text-gray-800"}`}>
+                    {m.label}{m.isCurrent && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-200 text-amber-900">今月</span>}
+                  </div>
+                  <div className="overflow-x-auto">
+                    {/* 日付ヘッダ + 曜日 */}
+                    <div className="grid border-b text-[10px] bg-gray-50" style={{ gridTemplateColumns: `repeat(${m.daysInMonth}, minmax(28px, 1fr))`, minWidth: `${m.daysInMonth * 28}px` }}>
+                      {Array.from({ length: m.daysInMonth }, (_, i) => {
+                        const day = i + 1;
+                        const date = new Date(m.year, m.month - 1, day);
+                        const wday = ["日", "月", "火", "水", "木", "金", "土"][date.getDay()];
+                        const isSun = date.getDay() === 0;
+                        const isSat = date.getDay() === 6;
+                        const isToday = `${m.ym}-${String(day).padStart(2, "0")}` === todayStr;
+                        return (
+                          <div
+                            key={day}
+                            className={`text-center py-0.5 border-r border-gray-200 ${isSun ? "text-rose-600 bg-rose-50/50" : isSat ? "text-blue-600 bg-blue-50/50" : ""} ${isToday ? "bg-amber-200 font-bold" : ""}`}
+                          >
+                            <div className="text-[11px] leading-tight">{day}</div>
+                            <div className="text-[9px] leading-tight">{wday}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {/* レーン */}
+                    {m.lanes.length === 0 ? (
+                      <p className="text-xs text-muted-foreground py-3 px-3 italic">この月に催事はありません</p>
+                    ) : (
+                      <div style={{ minWidth: `${m.daysInMonth * 28}px` }}>
+                        {m.lanes.map((lane, laneIdx) => (
+                          <div key={laneIdx} className="relative border-b" style={{ height: "58px" }}>
+                            {/* 日付の縦罫線 */}
+                            <div className="absolute inset-0 grid pointer-events-none" style={{ gridTemplateColumns: `repeat(${m.daysInMonth}, minmax(28px, 1fr))` }}>
+                              {Array.from({ length: m.daysInMonth }, (_, i) => {
+                                const day = i + 1;
+                                const date = new Date(m.year, m.month - 1, day);
+                                const isSun = date.getDay() === 0;
+                                const isSat = date.getDay() === 6;
+                                return <div key={i} className={`border-r border-gray-100 ${isSun ? "bg-rose-50/30" : isSat ? "bg-blue-50/30" : ""}`} />;
+                              })}
+                            </div>
+                            {/* 催事バー */}
+                            {lane.map((entry) => {
+                              const [esy, esm, esd] = entry.eventStart.split("-").map(Number);
+                              const [eey, eem, eed] = entry.eventEnd.split("-").map(Number);
+                              const startDay = esy === m.year && esm === m.month ? esd : 1;
+                              const endDay = eey === m.year && eem === m.month ? eed : m.daysInMonth;
+                              const leftPct = ((startDay - 1) / m.daysInMonth) * 100;
+                              const widthPct = ((endDay - startDay + 1) / m.daysInMonth) * 100;
+                              const isPaid = entry.payment.status === "入金済";
+                              const isHeld = entry.payment.status === "保留";
+                              const isOverdue = !!entry.payment.planned_date && entry.payment.planned_date < todayStr && !isPaid && !isHeld;
+                              const bgClass = isPaid
+                                ? "bg-green-100 border-green-500 text-green-900"
+                                : isHeld
+                                  ? "bg-gray-100 border-gray-400 text-gray-700"
+                                  : isOverdue
+                                    ? "bg-rose-100 border-rose-500 text-rose-900"
+                                    : "bg-yellow-100 border-yellow-500 text-yellow-900";
+                              const plannedDateLabel = entry.payment.planned_date
+                                ? (() => {
+                                    const [, pmo, pd] = entry.payment.planned_date.split("-").map(Number);
+                                    return `${pmo}月${pd}日`;
+                                  })()
+                                : "未設定";
+                              const plannedAmtIncl = toIncludedAmt(entry.payment.planned_amount, entry.payment.planned_tax_type);
+                              return (
+                                <Link
+                                  key={entry.payment.id}
+                                  href={`/events/${entry.payment.event_id}`}
+                                  className={`absolute border rounded px-1.5 py-0.5 overflow-hidden hover:opacity-80 transition-opacity print:no-underline print:text-inherit ${bgClass}`}
+                                  style={{
+                                    left: `${leftPct}%`,
+                                    width: `${widthPct}%`,
+                                    top: "2px",
+                                    bottom: "2px",
+                                  }}
+                                  title={`${entry.venueLabelStr} (${entry.eventStart}〜${entry.eventEnd}) ${entry.payment.status}`}
+                                >
+                                  <div className="text-[10px] font-bold leading-tight truncate">
+                                    {entry.venueLabelStr}{isPaid && <span className="ml-1 text-[9px] text-green-700">✓</span>}
+                                  </div>
+                                  <div className="text-[9px] leading-tight truncate">
+                                    入金予定日: {plannedDateLabel}
+                                  </div>
+                                  <div className="text-[9px] leading-tight truncate font-semibold">
+                                    予定額: ¥{plannedAmtIncl > 0 ? plannedAmtIncl.toLocaleString() : "—"}
+                                  </div>
+                                </Link>
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* 月別カードビュー（メインの可視化） */}
       <Card className="print-card-view">
