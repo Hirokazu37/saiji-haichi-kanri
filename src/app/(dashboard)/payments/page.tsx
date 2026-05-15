@@ -909,7 +909,7 @@ function PaymentsPageInner() {
           <div className="space-y-4 py-2">
             {/* 催事選択 */}
             <div className="space-y-2">
-              <Label>催事 *</Label>
+              <Label className="text-xs">催事<span className="text-rose-500 ml-0.5">*</span></Label>
               <Select value={form.event_id} onValueChange={(v) => v && setForm({ ...form, event_id: v })}>
                 <SelectTrigger><SelectValue placeholder="催事を選択" /></SelectTrigger>
                 <SelectContent className="max-h-[300px]">
@@ -924,7 +924,7 @@ function PaymentsPageInner() {
 
             {/* 入金元 */}
             <div className="space-y-2">
-              <Label>入金元 *</Label>
+              <Label className="text-xs">入金元<span className="text-rose-500 ml-0.5">*</span></Label>
               <div className="flex gap-2 text-sm">
                 <Button
                   type="button"
