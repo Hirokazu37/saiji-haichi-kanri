@@ -67,11 +67,10 @@ function computePlannedPaymentDate(eventEnd, cycle) {
 }
 
 async function main() {
-  // 売上ありの全催事
+  // 全催事 (売上の有無を問わない。未来の催事も含めて event_payments を作る)
   const { data: events } = await supabase
     .from("events")
     .select("id, venue, store_name, end_date, revenue, payer_master_id, force_direct")
-    .not("revenue", "is", null)
     .order("end_date", { ascending: false });
 
   const targets = [];
