@@ -375,10 +375,38 @@ export default function EventDetailPage({
           console.error("[event_payments read for autofill] error:", payReadErr);
         } else if (paymentRows && paymentRows.length > 0) {
           // 既存行の planned_amount が空のものに金額を埋める
+          // applied_rate が null の場合は venue_master から取得を試みる
+          let venueFallback: { directRate: number | null; chouaiRate: number | null; hasDefaultPayer: boolean } | null = null;
+          try {
+            const { data: vmRows } = await supabase
+              .from("venue_master")
+              .select("venue_name, store_name, default_payer_id, direct_receive_rate, chouai_receive_rate")
+              .eq("venue_name", form.venue);
+            const vm = (vmRows ?? []).find((v: { store_name: string | null }) => (v.store_name ?? "") === (form.store_name ?? "")) as
+              | { default_payer_id: string | null; direct_receive_rate: number | null; chouai_receive_rate: number | null }
+              | undefined;
+            if (vm) {
+              venueFallback = { directRate: vm.direct_receive_rate, chouaiRate: vm.chouai_receive_rate, hasDefaultPayer: !!vm.default_payer_id };
+            }
+          } catch (e) {
+            console.warn("[autofill venue lookup] error:", e);
+          }
+
           for (const pr of paymentRows as { id: string; planned_amount: number | null; planned_tax_type: TaxType | null; applied_rate: number | null }[]) {
             if (pr.planned_amount != null) continue; // 手動入力済みは触らない
-            const rate = pr.applied_rate;
-            if (rate == null) continue; // 入金率未設定は計算不可
+            let rate = pr.applied_rate;
+            // フォールバック: applied_rate が null なら venue_master から取得
+            if (rate == null && venueFallback) {
+              const isChouai = form.payer_source.startsWith("payer:") ||
+                (form.payer_source === "venue" && venueFallback.hasDefaultPayer);
+              const fallbackRate = isChouai ? venueFallback.chouaiRate : venueFallback.directRate;
+              if (fallbackRate != null) {
+                rate = fallbackRate;
+                // event_payments.applied_rate にも書き戻し
+                await supabase.from("event_payments").update({ applied_rate: rate }).eq("id", pr.id);
+              }
+            }
+            if (rate == null) continue; // 結局取れなければスキップ
             const taxType: TaxType = pr.planned_tax_type ?? "excluded";
             const base = taxType === "excluded" ? excludedTotal : includedTotal;
             const amount = Math.round((base * rate) / 100);

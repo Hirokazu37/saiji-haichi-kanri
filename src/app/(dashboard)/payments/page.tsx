@@ -168,6 +168,14 @@ function PaymentsPageInner() {
     });
   }, [payments, filterStatus, search, eventFilter]);
 
+  // 税込換算ヘルパー (planned_tax_type を見て統一)
+  // 税抜なら 軽減税率 8% で概算換算
+  const toIncludedAmt = (amount: number | null, taxType: "excluded" | "included" | null) => {
+    if (amount == null) return 0;
+    if (taxType === "excluded") return Math.round(amount * 1.08);
+    return amount;
+  };
+
   // サマリ
   const summary = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
@@ -181,11 +189,11 @@ function PaymentsPageInner() {
     for (const p of payments) {
       if (p.status === "予定" || p.status === "保留") {
         unpaidCount++;
-        unpaidAmount += p.planned_amount || 0;
+        unpaidAmount += toIncludedAmt(p.planned_amount, p.planned_tax_type);
         if (p.planned_date && p.planned_date < today) overdue++;
       }
       if (p.planned_date && p.planned_date >= today && p.planned_date < nextMonthStart && (p.status === "予定" || p.status === "保留")) {
-        thisMonthPlanned += p.planned_amount || 0;
+        thisMonthPlanned += toIncludedAmt(p.planned_amount, p.planned_tax_type);
       }
     }
     return { unpaidCount, unpaidAmount, thisMonthPlanned, overdue };
@@ -433,7 +441,7 @@ function PaymentsPageInner() {
   // CSV エクスポート（Excel互換 UTF-8 BOM）
   const exportCsv = () => {
     const headers = [
-      "催事名", "会場", "開催期間", "入金元", "予定日", "予定額", "税区分",
+      "催事名", "会場", "開催期間", "入金元", "予定日", "予定額(税込)",
       "実入金日", "実入金額", "方法", "ステータス", "備考"
     ];
     const rows = filtered.map((p) => {
@@ -444,8 +452,7 @@ function PaymentsPageInner() {
         ev ? `${ev.start_date}〜${ev.end_date}` : "",
         paymentDisplayPayer(p),
         p.planned_date || "",
-        p.planned_amount != null ? String(p.planned_amount) : "",
-        p.planned_tax_type === "excluded" ? "税抜" : p.planned_tax_type === "included" ? "税込" : "",
+        p.planned_amount != null ? String(toIncludedAmt(p.planned_amount, p.planned_tax_type)) : "",
         p.actual_date || "",
         p.actual_amount != null ? String(p.actual_amount) : "",
         p.method ? METHOD_LABEL[p.method] : "",
@@ -506,13 +513,13 @@ function PaymentsPageInner() {
         </Card>
         <Card>
           <CardContent className="p-3">
-            <div className="text-xs text-muted-foreground">未入金合計</div>
+            <div className="text-xs text-muted-foreground">未入金合計<span className="text-[10px] ml-1">(税込)</span></div>
             <div className="text-xl font-bold">¥{summary.unpaidAmount.toLocaleString()}</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-3">
-            <div className="text-xs text-muted-foreground">今月の入金予定</div>
+            <div className="text-xs text-muted-foreground">今月の入金予定<span className="text-[10px] ml-1">(税込)</span></div>
             <div className="text-xl font-bold">¥{summary.thisMonthPlanned.toLocaleString()}</div>
           </CardContent>
         </Card>
@@ -666,7 +673,7 @@ function PaymentsPageInner() {
                 <TableHead>催事</TableHead>
                 <TableHead>入金元</TableHead>
                 <TableHead>予定日</TableHead>
-                <TableHead className="text-right">予定額</TableHead>
+                <TableHead className="text-right">予定額<span className="text-[10px] text-muted-foreground ml-1">(税込)</span></TableHead>
                 <TableHead>実入金日</TableHead>
                 <TableHead className="text-right">実入金額</TableHead>
                 <TableHead>ステータス</TableHead>
@@ -688,12 +695,7 @@ function PaymentsPageInner() {
                   <TableCell className="text-sm">{paymentDisplayPayer(p)}</TableCell>
                   <TableCell className="text-sm">{p.planned_date || "—"}</TableCell>
                   <TableCell className="text-right text-sm">
-                    {p.planned_amount != null ? `¥${p.planned_amount.toLocaleString()}` : "—"}
-                    {p.planned_tax_type && (
-                      <span className="text-[10px] text-muted-foreground ml-1">
-                        ({p.planned_tax_type === "excluded" ? "税抜" : "税込"})
-                      </span>
-                    )}
+                    {p.planned_amount != null ? `¥${toIncludedAmt(p.planned_amount, p.planned_tax_type).toLocaleString()}` : "—"}
                   </TableCell>
                   <TableCell className="text-sm">{p.actual_date || "—"}</TableCell>
                   <TableCell className="text-right text-sm">
