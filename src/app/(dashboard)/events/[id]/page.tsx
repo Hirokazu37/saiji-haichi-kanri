@@ -369,54 +369,97 @@ export default function EventDetailPage({
       try {
         const { data: paymentRows, error: payReadErr } = await supabase
           .from("event_payments")
-          .select("id, planned_amount, planned_tax_type, applied_rate")
+          .select("id, planned_date, planned_amount, planned_tax_type, applied_rate, venue_master_id, payer_master_id")
           .eq("event_id", id);
         if (payReadErr) {
           console.error("[event_payments read for autofill] error:", payReadErr);
         } else if (paymentRows && paymentRows.length > 0) {
-          // 既存行の planned_amount が空のものに金額を埋める
-          // applied_rate が null の場合は venue_master から取得を試みる
-          let venueFallback: { directRate: number | null; chouaiRate: number | null; hasDefaultPayer: boolean } | null = null;
+          // 既存行の planned_date / planned_amount / applied_rate が空のものを埋める
+          // venue_master から rate/サイクル をフォールバックで取得
+          type VenueRow = {
+            default_payer_id: string | null;
+            direct_receive_rate: number | null;
+            chouai_receive_rate: number | null;
+            closing_day: number | null;
+            pay_month_offset: number | null;
+            pay_day: number | null;
+          };
+          let venueRow: VenueRow | null = null;
           try {
             const { data: vmRows } = await supabase
               .from("venue_master")
-              .select("venue_name, store_name, default_payer_id, direct_receive_rate, chouai_receive_rate")
+              .select("venue_name, store_name, default_payer_id, direct_receive_rate, chouai_receive_rate, closing_day, pay_month_offset, pay_day")
               .eq("venue_name", form.venue);
-            const vm = (vmRows ?? []).find((v: { store_name: string | null }) => (v.store_name ?? "") === (form.store_name ?? "")) as
-              | { default_payer_id: string | null; direct_receive_rate: number | null; chouai_receive_rate: number | null }
-              | undefined;
-            if (vm) {
-              venueFallback = { directRate: vm.direct_receive_rate, chouaiRate: vm.chouai_receive_rate, hasDefaultPayer: !!vm.default_payer_id };
-            }
+            const vm = (vmRows ?? []).find((v: { store_name: string | null }) => (v.store_name ?? "") === (form.store_name ?? "")) as VenueRow | undefined;
+            if (vm) venueRow = vm;
           } catch (e) {
             console.warn("[autofill venue lookup] error:", e);
           }
+          // payer_master 取得 (planned_date 計算用)
+          const { data: payerRowsForCycle } = await supabase
+            .from("payer_master")
+            .select("id, closing_day, pay_month_offset, pay_day");
+          // 動的 import で payment-cycle ヘルパー
+          const { computePlannedPaymentDate } = await import("@/lib/payment-cycle");
 
-          for (const pr of paymentRows as { id: string; planned_amount: number | null; planned_tax_type: TaxType | null; applied_rate: number | null }[]) {
-            if (pr.planned_amount != null) continue; // 手動入力済みは触らない
-            let rate = pr.applied_rate;
-            // フォールバック: applied_rate が null なら venue_master から取得
-            if (rate == null && venueFallback) {
-              const isChouai = form.payer_source.startsWith("payer:") ||
-                (form.payer_source === "venue" && venueFallback.hasDefaultPayer);
-              const fallbackRate = isChouai ? venueFallback.chouaiRate : venueFallback.directRate;
-              if (fallbackRate != null) {
-                rate = fallbackRate;
-                // event_payments.applied_rate にも書き戻し
-                await supabase.from("event_payments").update({ applied_rate: rate }).eq("id", pr.id);
+          for (const pr of paymentRows as Array<{
+            id: string;
+            planned_date: string | null;
+            planned_amount: number | null;
+            planned_tax_type: TaxType | null;
+            applied_rate: number | null;
+            venue_master_id: string | null;
+            payer_master_id: string | null;
+          }>) {
+            const updates: Record<string, unknown> = {};
+
+            // (1) planned_date 補完: null なら現在のサイクルから計算
+            if (pr.planned_date == null && form.end_date) {
+              let cycle: { closing_day: number | null; pay_month_offset: number | null; pay_day: number | null } | null = null;
+              if (pr.payer_master_id) {
+                const py = (payerRowsForCycle ?? []).find((p: { id: string }) => p.id === pr.payer_master_id) as
+                  | { closing_day: number | null; pay_month_offset: number | null; pay_day: number | null }
+                  | undefined;
+                if (py) cycle = { closing_day: py.closing_day, pay_month_offset: py.pay_month_offset, pay_day: py.pay_day };
+              } else if (venueRow) {
+                cycle = { closing_day: venueRow.closing_day, pay_month_offset: venueRow.pay_month_offset, pay_day: venueRow.pay_day };
+              }
+              if (cycle) {
+                const planned = computePlannedPaymentDate(form.end_date, cycle);
+                if (planned) updates.planned_date = planned;
               }
             }
-            if (rate == null) continue; // 結局取れなければスキップ
-            const taxType: TaxType = pr.planned_tax_type ?? "excluded";
-            const base = taxType === "excluded" ? excludedTotal : includedTotal;
-            const amount = Math.round((base * rate) / 100);
-            const upRes2 = await supabase
-              .from("event_payments")
-              .update({ planned_amount: amount })
-              .eq("id", pr.id);
-            if (upRes2.error) {
-              console.error("[event_payments autofill] error:", upRes2.error);
-              errors.push(`入金予定額の自動入力に失敗: ${upRes2.error.message}`);
+
+            // (2) applied_rate 補完: null なら venue_master から
+            let rate = pr.applied_rate;
+            if (rate == null && venueRow) {
+              const isChouai = form.payer_source.startsWith("payer:") ||
+                (form.payer_source === "venue" && !!venueRow.default_payer_id);
+              const fallbackRate = isChouai ? venueRow.chouai_receive_rate : venueRow.direct_receive_rate;
+              if (fallbackRate != null) {
+                rate = fallbackRate;
+                updates.applied_rate = rate;
+              }
+            }
+
+            // (3) planned_amount 補完: null かつ rate がある なら売上から計算
+            if (pr.planned_amount == null && rate != null) {
+              const taxType: TaxType = pr.planned_tax_type ?? "excluded";
+              const base = taxType === "excluded" ? excludedTotal : includedTotal;
+              if (base > 0) {
+                updates.planned_amount = Math.round((base * rate) / 100);
+              }
+            }
+
+            if (Object.keys(updates).length > 0) {
+              const upRes2 = await supabase
+                .from("event_payments")
+                .update(updates)
+                .eq("id", pr.id);
+              if (upRes2.error) {
+                console.error("[event_payments autofill] error:", upRes2.error);
+                errors.push(`入金情報の自動補完に失敗: ${upRes2.error.message}`);
+              }
             }
           }
         } else if (paymentRows && paymentRows.length === 0) {
