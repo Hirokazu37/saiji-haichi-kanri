@@ -364,7 +364,7 @@ export default function EventDetailPage({
     }
 
     // 入金管理: 売上が入ったら event_payments の planned_amount が空の行に自動で金額を埋める。
-    // これにより手動で「売上から税抜をコピー」を毎回押す手間が省け、月次サマリにも即反映される。
+    // また、event_payments 自体が無い催事（古い催事）にはレコードを自動作成する。
     if (hasAnyDaily) {
       try {
         const { data: paymentRows, error: payReadErr } = await supabase
@@ -374,11 +374,11 @@ export default function EventDetailPage({
         if (payReadErr) {
           console.error("[event_payments read for autofill] error:", payReadErr);
         } else if (paymentRows && paymentRows.length > 0) {
+          // 既存行の planned_amount が空のものに金額を埋める
           for (const pr of paymentRows as { id: string; planned_amount: number | null; planned_tax_type: TaxType | null; applied_rate: number | null }[]) {
-            // 既に入っているものは手動入力の可能性があるので触らない
-            if (pr.planned_amount != null) continue;
+            if (pr.planned_amount != null) continue; // 手動入力済みは触らない
             const rate = pr.applied_rate;
-            if (rate == null) continue; // 入金率未設定は計算不可（venue/payerマスターで設定が必要）
+            if (rate == null) continue; // 入金率未設定は計算不可
             const taxType: TaxType = pr.planned_tax_type ?? "excluded";
             const base = taxType === "excluded" ? excludedTotal : includedTotal;
             const amount = Math.round((base * rate) / 100);
@@ -389,6 +389,52 @@ export default function EventDetailPage({
             if (upRes2.error) {
               console.error("[event_payments autofill] error:", upRes2.error);
               errors.push(`入金予定額の自動入力に失敗: ${upRes2.error.message}`);
+            }
+          }
+        } else if (paymentRows && paymentRows.length === 0) {
+          // event_payments がそもそも無い催事（古い催事や手動作成された催事）
+          // venue_master と payer_master を見て新規作成する
+          const { resolvePaymentSource, computePlannedPaymentDate } = await import("@/lib/payment-cycle");
+          const { data: vmRows } = await supabase
+            .from("venue_master")
+            .select("id, venue_name, store_name, closing_day, pay_month_offset, pay_day, default_payer_id, direct_receive_rate, chouai_receive_rate")
+            .eq("venue_name", form.venue);
+          const vm = (vmRows ?? []).find((v) => (v.store_name ?? "") === (form.store_name ?? "")) as
+            | { id: string; venue_name: string; store_name: string | null; closing_day: number | null; pay_month_offset: number | null; pay_day: number | null; default_payer_id: string | null; direct_receive_rate: number | null; chouai_receive_rate: number | null }
+            | undefined;
+          const { data: pyData } = await supabase
+            .from("payer_master")
+            .select("id, name, closing_day, pay_month_offset, pay_day")
+            .eq("is_active", true);
+          if (vm) {
+            const resolved = resolvePaymentSource(
+              {
+                payer_master_id: form.payer_source.startsWith("payer:") ? form.payer_source.slice(6) : null,
+                force_direct: form.payer_source === "direct",
+              },
+              vm,
+              (pyData ?? []) as { id: string; name: string; closing_day: number | null; pay_month_offset: number | null; pay_day: number | null }[],
+            );
+            const plannedDate = (resolved.cycle.closing_day != null && resolved.cycle.pay_month_offset != null && resolved.cycle.pay_day != null)
+              ? computePlannedPaymentDate(form.end_date, resolved.cycle)
+              : null;
+            // 入金率があれば金額も計算
+            const rate = resolved.appliedRate;
+            const planned_amount = rate != null ? Math.round((excludedTotal * rate) / 100) : null;
+            const insRes = await supabase.from("event_payments").insert({
+              event_id: id,
+              venue_master_id: resolved.venueMasterId,
+              payer_master_id: resolved.payerMasterId,
+              planned_date: plannedDate,
+              planned_amount,
+              planned_tax_type: "excluded",
+              status: "予定",
+              method: "transfer",
+              applied_rate: rate,
+            });
+            if (insRes.error) {
+              console.error("[event_payments auto-create] error:", insRes.error);
+              errors.push(`入金レコードの自動作成に失敗: ${insRes.error.message}`);
             }
           }
         }
