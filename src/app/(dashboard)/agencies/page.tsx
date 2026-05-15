@@ -798,11 +798,11 @@ export default function AgenciesPage() {
 
       {/* マネキン 追加/編集ダイアログ */}
       <Dialog open={personDialogOpen} onOpenChange={setPersonDialogOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto max-w-lg">
+        <DialogContent className="max-h-[90vh] flex flex-col max-w-lg">
           <DialogHeader>
             <DialogTitle>{editingPersonId ? "マネキン情報を編集" : "マネキンを追加"}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+          <div className="space-y-4 py-2 overflow-y-auto flex-1 min-h-0 pr-1">
             <div className="space-y-2">
               <Label>氏名 *</Label>
               <Input value={personForm.name} onChange={(e) => setPersonForm({ ...personForm, name: e.target.value })} />
@@ -1047,11 +1047,11 @@ export default function AgenciesPage() {
 
       {/* 会社編集ダイアログ */}
       <Dialog open={agencyDialogOpen} onOpenChange={setAgencyDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>{editingAgencyId ? "マネキン会社を編集" : "マネキン会社を追加"}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 py-2">
+          <div className="space-y-3 py-2 overflow-y-auto flex-1 min-h-0 pr-1">
             <div className="space-y-1">
               <Label className="text-xs">会社名 *</Label>
               <Input value={agencyForm.name} onChange={(e) => setAgencyForm({ ...agencyForm, name: e.target.value })} placeholder="会社名" />
