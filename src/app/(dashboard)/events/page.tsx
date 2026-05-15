@@ -205,7 +205,11 @@ export default function EventsPage() {
   // 終了した催事もカレンダー・一覧に残す運用（ユーザー要望: 過去を隠さない）
   const [showPast] = useState(true);
   const [viewMode, setViewMode] = useState<"gantt" | "calendar" | "card">("gantt");
-  const [showArrangementIcons, setShowArrangementIcons] = useState(true);
+  // バー表示モード: "icons" (手配アイコン) / "names" (担当者・マネキン名) / "compact" (現場名のみ)
+  // viewMode (gantt/calendar/card) と別の概念
+  const [barMode, setBarMode] = useState<"icons" | "names" | "compact">("icons");
+  const showArrangementIcons = barMode === "icons";
+  const isCompact = barMode === "compact";
   const listRef = useRef<HTMLDivElement>(null);
 
   // モバイル幅(768px未満)は初期表示をカードビューに切り替える
@@ -695,14 +699,30 @@ export default function EventsPage() {
               <SelectItem value="12">12ヶ月</SelectItem>
             </SelectContent>
           </Select>
-          <Button
-            variant={showArrangementIcons ? "default" : "outline"}
-            size="sm"
-            onClick={() => setShowArrangementIcons((v) => !v)}
-            title="手配アイコンの表示/非表示を切替"
-          >
-            手配アイコン: {showArrangementIcons ? "ON" : "OFF"}
-          </Button>
+          <div className="inline-flex rounded-md border overflow-hidden text-xs" title="バー表示モード">
+            <button
+              type="button"
+              onClick={() => setBarMode("icons")}
+              className={`px-2 h-9 transition-colors ${barMode === "icons" ? "bg-primary text-primary-foreground font-bold" : "bg-white text-muted-foreground hover:bg-muted"}`}
+            >
+              詳細
+            </button>
+            <button
+              type="button"
+              onClick={() => setBarMode("names")}
+              className={`px-2 h-9 border-l transition-colors ${barMode === "names" ? "bg-primary text-primary-foreground font-bold" : "bg-white text-muted-foreground hover:bg-muted"}`}
+            >
+              担当者
+            </button>
+            <button
+              type="button"
+              onClick={() => setBarMode("compact")}
+              className={`px-2 h-9 border-l transition-colors ${barMode === "compact" ? "bg-primary text-primary-foreground font-bold" : "bg-white text-muted-foreground hover:bg-muted"}`}
+              title="現場名のみ・行を詰めて表示"
+            >
+              シンプル
+            </button>
+          </div>
         </div>
 
         <div ref={listRef} className="events-print-zone" data-mpp={printOpts.monthsPerPage}>
@@ -842,7 +862,7 @@ export default function EventsPage() {
                         {/* トラック行 */}
                         {Array.from({ length: trackCount }, (_, trackIdx) => {
                           const trackEvents = monthEvents.filter((e) => trackMap.get(e.id) === trackIdx);
-                          const rowMinHeight = showArrangementIcons ? 76 : 58;
+                          const rowMinHeight = isCompact ? 26 : showArrangementIcons ? 76 : 58;
                           return (
                             <div key={trackIdx} className={`events-track-row flex border-b last:border-b-0 ${trackIdx % 2 === 1 ? "bg-slate-50/50" : "bg-white"}`} style={{ minHeight: rowMinHeight }}>
                               <div className="w-14 shrink-0 border-r flex items-center justify-center text-[10px] font-bold text-muted-foreground">
@@ -896,7 +916,7 @@ export default function EventsPage() {
                                     { label: "マネキン", ok: arr.mannequin === "ok", na: arr.mannequin === "na" },
                                     { label: "備品", ok: arr.shipment === "設定済", na: false },
                                   ];
-                                  const barHeight = showArrangementIcons ? 72 : 54;
+                                  const barHeight = isCompact ? 22 : showArrangementIcons ? 72 : 54;
                                   return (
                                     <Tooltip key={evt.id}>
                                       <TooltipTrigger
@@ -910,8 +930,8 @@ export default function EventsPage() {
                                             }}
                                             onClick={() => openDialog(evt)}
                                           >
-                                            <div className="truncate font-semibold leading-tight text-[11px] mb-0.5">{label}</div>
-                                            {showArrangementIcons ? (
+                                            <div className={`truncate font-semibold leading-tight text-[11px] ${isCompact ? "" : "mb-0.5"}`}>{label}</div>
+                                            {isCompact ? null : showArrangementIcons ? (
                                               <>
                                                 <div className="flex gap-0.5 flex-wrap">
                                                   {icons.map((ic) => (
