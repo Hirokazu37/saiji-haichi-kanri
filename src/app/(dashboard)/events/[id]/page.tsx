@@ -55,6 +55,7 @@ type EventData = {
   retrospective: string | null;
   payer_master_id: string | null;
   force_direct: boolean;
+  is_cash_on_spot: boolean;
 };
 
 type TaxType = "excluded" | "included";
@@ -120,6 +121,7 @@ export default function EventDetailPage({
     retrospective: "",
     // 入金設定（"venue" = 百貨店デフォルト, "direct" = 直取引強制, "payer:<uuid>" = 特定帳合先）
     payer_source: "venue" as string,
+    is_cash_on_spot: false,
   });
 
   // 日別売上: date(YYYY-MM-DD) -> { 金額文字列, 税抜/税込, 税率 }
@@ -155,6 +157,7 @@ export default function EventDetailPage({
         payer_source:
           eventRes.data.payer_master_id ? `payer:${eventRes.data.payer_master_id}` :
           eventRes.data.force_direct ? "direct" : "venue",
+        is_cash_on_spot: !!eventRes.data.is_cash_on_spot,
       });
     }
     // 日別売上をMapに詰める
@@ -294,6 +297,7 @@ export default function EventDetailPage({
         retrospective: form.retrospective.trim() || null,
         payer_master_id: payerMasterIdToSave,
         force_direct: forceDirectToSave,
+        is_cash_on_spot: form.is_cash_on_spot,
       })
       .eq("id", id);
     if (evtUpdate.error) {
@@ -376,6 +380,47 @@ export default function EventDetailPage({
           .eq("event_id", id);
         if (payReadErr) {
           console.error("[event_payments read for autofill] error:", payReadErr);
+        } else if (form.is_cash_on_spot) {
+          // 現金持ち帰り: 売上総額（税込）= 受領額として「入金済」状態で記録
+          // venue_master_id があれば紐づけるが、無くてもOK
+          const { data: vmRowsCash } = await supabase
+            .from("venue_master")
+            .select("id, store_name")
+            .eq("venue_name", form.venue);
+          const vmCash = ((vmRowsCash ?? []) as { id: string; store_name: string | null }[])
+            .find((v) => (v.store_name ?? "") === (form.store_name ?? ""));
+          const cashFields = {
+            method: "cash" as const,
+            status: "入金済" as const,
+            planned_date: form.end_date,
+            planned_amount: includedTotal,
+            planned_tax_type: "included" as TaxType,
+            actual_date: form.end_date,
+            actual_amount: includedTotal,
+            applied_rate: 100,
+          };
+          if (paymentRows && paymentRows.length > 0) {
+            // 既存行をすべて現金受領済に更新
+            for (const pr of paymentRows as { id: string }[]) {
+              const upRes = await supabase.from("event_payments").update(cashFields).eq("id", pr.id);
+              if (upRes.error) {
+                console.error("[event_payments cash update] error:", upRes.error);
+                errors.push(`現金受領済への更新に失敗: ${upRes.error.message}`);
+              }
+            }
+          } else {
+            // event_payments 無し → 新規作成
+            const insRes = await supabase.from("event_payments").insert({
+              event_id: id,
+              venue_master_id: vmCash?.id ?? null,
+              payer_master_id: null,
+              ...cashFields,
+            });
+            if (insRes.error) {
+              console.error("[event_payments cash insert] error:", insRes.error);
+              errors.push(`現金受領レコードの作成に失敗: ${insRes.error.message}`);
+            }
+          }
         } else if (paymentRows && paymentRows.length > 0) {
           // 既存行の planned_date / planned_amount / applied_rate が空のものを埋める
           // venue_master から rate/サイクル をフォールバックで取得
@@ -835,10 +880,28 @@ export default function EventDetailPage({
       {/* 実績（売上・振り返り） */}
       <Card className="border-l-4 border-l-emerald-500 bg-emerald-50/30">
         <CardContent className="pt-4 pb-4 space-y-3">
-          <div className="flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-emerald-700" />
-            <span className="text-sm font-bold text-emerald-800">実績（終了後に記録）</span>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-emerald-700" />
+              <span className="text-sm font-bold text-emerald-800">実績（終了後に記録）</span>
+            </div>
+            {/* 現金持ち帰りフラグ */}
+            <label className="inline-flex items-center gap-1.5 text-xs cursor-pointer select-none bg-white/80 px-2 py-1 rounded border border-emerald-200 hover:bg-white">
+              <input
+                type="checkbox"
+                checked={form.is_cash_on_spot}
+                onChange={(e) => setForm({ ...form, is_cash_on_spot: e.target.checked })}
+                className="cursor-pointer"
+              />
+              <span className="font-medium">💵 現金持ち帰り</span>
+              <span className="text-[10px] text-muted-foreground">（その場で受領）</span>
+            </label>
           </div>
+          {form.is_cash_on_spot && (
+            <p className="text-[11px] bg-emerald-100/50 border border-emerald-200 rounded px-2 py-1.5 text-emerald-800">
+              💵 売上(税込)を保存すると、自動で入金管理に「現金受領済」として記録されます。催事終了日に即入金扱いとなり、入金率は100%として計上。
+            </p>
+          )}
 
           {/* 催事終了後 14日以内で売上未入力の催事には目立つヒントを出す */}
           {(() => {
