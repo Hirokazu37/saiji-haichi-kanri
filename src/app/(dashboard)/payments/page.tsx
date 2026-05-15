@@ -191,6 +191,91 @@ function PaymentsPageInner() {
     return { unpaidCount, unpaidAmount, thisMonthPlanned, overdue };
   }, [payments]);
 
+  // 月次サマリ用ヘルパー: planned_tax_type を見て税込額に揃える
+  // (税抜なら 軽減税率 8% で概算換算)
+  const toIncludedAmount = (amount: number | null, taxType: "excluded" | "included" | null) => {
+    if (amount == null) return 0;
+    if (taxType === "excluded") return Math.round(amount * 1.08);
+    return amount;
+  };
+
+  // 月次サマリ（予定日ベース・税込）
+  // 過去6ヶ月+今月+未来6ヶ月 = 13ヶ月
+  const monthlySummary = useMemo(() => {
+    const today = new Date();
+    const currentYm = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+    const months: { ym: string; label: string; isCurrent: boolean }[] = [];
+    for (let i = -6; i <= 6; i++) {
+      const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
+      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const label = `${d.getFullYear()}年${d.getMonth() + 1}月`;
+      months.push({ ym, label, isCurrent: ym === currentYm });
+    }
+
+    type MonthData = {
+      planned: number;     // 予定額合計（税込）
+      paid: number;        // 入金済額合計（税込・actual_amount そのまま）
+      unpaid: number;      // 未入金額合計（税込・予定額ベース）
+      count: number;
+      byPayer: Map<string, number>;
+    };
+    const summary = new Map<string, MonthData>();
+    for (const { ym } of months) {
+      summary.set(ym, { planned: 0, paid: 0, unpaid: 0, count: 0, byPayer: new Map() });
+    }
+
+    // 入金元ラベル（useMemo 内では state を直接参照してクロージャを安定化）
+    const resolvePayer = (p: PaymentRow): string => {
+      if (p.venue_master_id) {
+        const v = venues.find((x) => x.id === p.venue_master_id);
+        return v ? `${v.venue_name}${v.store_name ? ` ${v.store_name}` : ""}` : "（百貨店）";
+      }
+      if (p.payer_master_id) {
+        return payers.find((x) => x.id === p.payer_master_id)?.name || "（帳合先）";
+      }
+      return p.events ? (p.events.store_name ? `${p.events.venue} ${p.events.store_name}` : p.events.venue) : "—";
+    };
+
+    const payerTotals = new Map<string, number>();
+
+    for (const p of payments) {
+      if (!p.planned_date) continue;
+      if (p.status === "キャンセル") continue;
+      const ym = p.planned_date.slice(0, 7);
+      const s = summary.get(ym);
+      if (!s) continue; // 表示期間外
+
+      const planned = toIncludedAmount(p.planned_amount, p.planned_tax_type);
+      s.planned += planned;
+      s.count += 1;
+      if (p.status === "入金済") {
+        s.paid += p.actual_amount || 0;
+      } else {
+        s.unpaid += planned;
+      }
+
+      const payerKey = resolvePayer(p);
+      s.byPayer.set(payerKey, (s.byPayer.get(payerKey) || 0) + planned);
+      payerTotals.set(payerKey, (payerTotals.get(payerKey) || 0) + planned);
+    }
+
+    // 入金元を予定額合計が大きい順にソート
+    const payerList = Array.from(payerTotals.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([name]) => name);
+
+    // 全体トータル
+    const totals = { planned: 0, paid: 0, unpaid: 0, count: 0 };
+    for (const s of summary.values()) {
+      totals.planned += s.planned;
+      totals.paid += s.paid;
+      totals.unpaid += s.unpaid;
+      totals.count += s.count;
+    }
+
+    return { months, summary, payerList, payerTotals, totals };
+  }, [payments, venues, payers]);
+
   // 催事ラベル
   const eventLabel = (e: { venue: string; store_name: string | null } | null | undefined) => {
     if (!e) return "—";
@@ -438,6 +523,109 @@ function PaymentsPageInner() {
           </CardContent>
         </Card>
       </div>
+
+      {/* 月次サマリ（予定日ベース・税込） */}
+      <Card>
+        <CardContent className="p-3 space-y-2">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <Wallet className="h-4 w-4 text-emerald-700" />
+              <h2 className="text-sm font-bold">月次入金予定（予定日ベース・税込）</h2>
+            </div>
+            <div className="text-[11px] text-muted-foreground">
+              13ヶ月分 (過去6ヶ月 〜 未来6ヶ月) ・ キャンセルは除外
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>月</TableHead>
+                  <TableHead className="text-right">予定合計</TableHead>
+                  <TableHead className="text-right">入金済</TableHead>
+                  <TableHead className="text-right">未入金</TableHead>
+                  <TableHead className="text-right w-20">件数</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {monthlySummary.months.map((m) => {
+                  const s = monthlySummary.summary.get(m.ym)!;
+                  const isPast = !m.isCurrent && new Date(m.ym + "-01") < new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+                  return (
+                    <TableRow key={m.ym} className={m.isCurrent ? "bg-amber-50 font-semibold" : isPast ? "text-muted-foreground" : ""}>
+                      <TableCell>{m.label}{m.isCurrent && <span className="ml-1 text-[10px] text-amber-700">(今月)</span>}</TableCell>
+                      <TableCell className="text-right tabular-nums">{s.planned > 0 ? `¥${s.planned.toLocaleString()}` : "—"}</TableCell>
+                      <TableCell className="text-right tabular-nums text-green-700">{s.paid > 0 ? `¥${s.paid.toLocaleString()}` : "—"}</TableCell>
+                      <TableCell className="text-right tabular-nums text-amber-700">{s.unpaid > 0 ? `¥${s.unpaid.toLocaleString()}` : "—"}</TableCell>
+                      <TableCell className="text-right tabular-nums">{s.count > 0 ? `${s.count}件` : "—"}</TableCell>
+                    </TableRow>
+                  );
+                })}
+                <TableRow className="border-t-2 font-bold bg-muted/30">
+                  <TableCell>合計（13ヶ月）</TableCell>
+                  <TableCell className="text-right tabular-nums">¥{monthlySummary.totals.planned.toLocaleString()}</TableCell>
+                  <TableCell className="text-right tabular-nums text-green-700">¥{monthlySummary.totals.paid.toLocaleString()}</TableCell>
+                  <TableCell className="text-right tabular-nums text-amber-700">¥{monthlySummary.totals.unpaid.toLocaleString()}</TableCell>
+                  <TableCell className="text-right tabular-nums">{monthlySummary.totals.count}件</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 入金元別 月次内訳（予定日ベース・税込） */}
+      {monthlySummary.payerList.length > 0 && (
+        <Card>
+          <CardContent className="p-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <Wallet className="h-4 w-4 text-blue-700" />
+              <h2 className="text-sm font-bold">入金元別 月次内訳（予定額・税込）</h2>
+              <span className="text-[11px] text-muted-foreground ml-auto">
+                合計額の大きい入金元順
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="sticky left-0 bg-background z-10 min-w-[160px]">入金元</TableHead>
+                    {monthlySummary.months.map((m) => (
+                      <TableHead key={m.ym} className={`text-right min-w-[90px] ${m.isCurrent ? "bg-amber-50" : ""}`}>
+                        {m.label.replace(/^\d{4}年/, "")}
+                      </TableHead>
+                    ))}
+                    <TableHead className="text-right min-w-[110px] bg-muted/30">合計</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {monthlySummary.payerList.map((payer) => {
+                    const total = monthlySummary.payerTotals.get(payer) || 0;
+                    return (
+                      <TableRow key={payer}>
+                        <TableCell className="sticky left-0 bg-background z-10 font-medium">{payer}</TableCell>
+                        {monthlySummary.months.map((m) => {
+                          const s = monthlySummary.summary.get(m.ym)!;
+                          const amt = s.byPayer.get(payer) || 0;
+                          return (
+                            <TableCell key={m.ym} className={`text-right tabular-nums text-xs ${m.isCurrent ? "bg-amber-50/60 font-semibold" : ""} ${amt === 0 ? "text-muted-foreground" : ""}`}>
+                              {amt > 0 ? `¥${amt.toLocaleString()}` : "—"}
+                            </TableCell>
+                          );
+                        })}
+                        <TableCell className="text-right tabular-nums font-bold bg-muted/30">¥{total.toLocaleString()}</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              ※ 13ヶ月以外の入金は集計対象外。「キャンセル」ステータスは除外。
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* フィルタ */}
       <Card>
