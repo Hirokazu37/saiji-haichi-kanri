@@ -311,7 +311,10 @@ function PaymentsPageInner() {
     const currentYm = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
     const months: MonthData[] = [];
 
-    for (let i = -1; i <= 3; i++) {
+    // 表示範囲: 今年の1月 ～ 今月+6ヶ月（"1月から入力している"のニーズに対応）
+    const startOffset = -today.getMonth(); // 今月から1月までのオフセット (May=>-4)
+    const endOffset = 6;
+    for (let i = startOffset; i <= endOffset; i++) {
       const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
       const year = d.getFullYear();
       const month = d.getMonth() + 1;
@@ -370,13 +373,15 @@ function PaymentsPageInner() {
   ];
   const TRACK_LABELS = ["A", "B", "C", "D", "E", "F", "G", "H"];
 
-  // 月別カードビュー: 過去2ヶ月+今月+未来6ヶ月 = 9ヶ月
+  // 月別カードビュー: 今年1月 〜 今月+6ヶ月
   // 各月の入金予定カードを並べる（キャンセルは除外）
   const cardsByMonth = useMemo(() => {
     const today = new Date();
     const currentYm = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
     const months: { ym: string; label: string; isCurrent: boolean }[] = [];
-    for (let i = -2; i <= 6; i++) {
+    const startOffset = -today.getMonth();
+    const endOffset = 6;
+    for (let i = startOffset; i <= endOffset; i++) {
       const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
       const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
       const label = `${d.getFullYear()}年${d.getMonth() + 1}月`;
@@ -682,7 +687,7 @@ function PaymentsPageInner() {
             <h2 className="text-sm font-bold">催事カレンダー（入金予定日・金額付き）</h2>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
-            <span className="text-[11px] text-muted-foreground">過去1ヶ月 + 未来3ヶ月</span>
+            <span className="text-[11px] text-muted-foreground">今年1月 〜 未来6ヶ月</span>
             <span className="inline-flex items-center gap-2 text-[10px] flex-wrap">
               <span className="inline-flex items-center gap-0.5"><span className="inline-block w-3 h-3 bg-yellow-100 border-2 border-yellow-500 rounded-sm"></span>未入金</span>
               <span className="inline-flex items-center gap-0.5"><span className="inline-block w-3 h-3 bg-green-100 border-2 border-green-500 rounded-sm"></span>入金済</span>
@@ -836,7 +841,7 @@ function PaymentsPageInner() {
               <h2 className="text-sm font-bold">入金予定（月別・催事ごと）</h2>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-[11px] text-muted-foreground">過去2ヶ月 + 未来6ヶ月</span>
+              <span className="text-[11px] text-muted-foreground">今年1月 〜 未来6ヶ月</span>
               <Button variant="outline" size="sm" onClick={() => window.print()} className="h-7 text-xs">
                 印刷
               </Button>
