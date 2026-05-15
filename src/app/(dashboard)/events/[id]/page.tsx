@@ -249,15 +249,21 @@ export default function EventDetailPage({
       .join("、");
     const allNames = [...selectedNames, ...(freeText ? [freeText] : [])];
 
-    // 日別売上の税込合計を計算（events.revenue には税込合計を格納）
+    // 日別売上の税込・税抜合計を計算（events.revenue には税込合計を格納）
     let includedTotal = 0;
+    let excludedTotal = 0;
     let hasAnyDaily = false;
     for (const v of dailyRevenue.values()) {
       const n = v.amount.trim() ? parseInt(v.amount) : NaN;
       if (isNaN(n)) continue;
       hasAnyDaily = true;
-      const inc = v.tax_type === "included" ? n : toIncluded(n, v.tax_rate);
-      includedTotal += inc;
+      if (v.tax_type === "excluded") {
+        excludedTotal += n;
+        includedTotal += toIncluded(n, v.tax_rate);
+      } else {
+        includedTotal += n;
+        excludedTotal += toExcluded(n, v.tax_rate);
+      }
     }
     const revenueToSave = hasAnyDaily
       ? includedTotal
@@ -354,6 +360,40 @@ export default function EventDetailPage({
       if (upRes.error) {
         console.error("[event_daily_revenue upsert] error:", upRes.error);
         errors.push(`日別売上の保存に失敗: ${upRes.error.message}`);
+      }
+    }
+
+    // 入金管理: 売上が入ったら event_payments の planned_amount が空の行に自動で金額を埋める。
+    // これにより手動で「売上から税抜をコピー」を毎回押す手間が省け、月次サマリにも即反映される。
+    if (hasAnyDaily) {
+      try {
+        const { data: paymentRows, error: payReadErr } = await supabase
+          .from("event_payments")
+          .select("id, planned_amount, planned_tax_type, applied_rate")
+          .eq("event_id", id);
+        if (payReadErr) {
+          console.error("[event_payments read for autofill] error:", payReadErr);
+        } else if (paymentRows && paymentRows.length > 0) {
+          for (const pr of paymentRows as { id: string; planned_amount: number | null; planned_tax_type: TaxType | null; applied_rate: number | null }[]) {
+            // 既に入っているものは手動入力の可能性があるので触らない
+            if (pr.planned_amount != null) continue;
+            const rate = pr.applied_rate;
+            if (rate == null) continue; // 入金率未設定は計算不可（venue/payerマスターで設定が必要）
+            const taxType: TaxType = pr.planned_tax_type ?? "excluded";
+            const base = taxType === "excluded" ? excludedTotal : includedTotal;
+            const amount = Math.round((base * rate) / 100);
+            const upRes2 = await supabase
+              .from("event_payments")
+              .update({ planned_amount: amount })
+              .eq("id", pr.id);
+            if (upRes2.error) {
+              console.error("[event_payments autofill] error:", upRes2.error);
+              errors.push(`入金予定額の自動入力に失敗: ${upRes2.error.message}`);
+            }
+          }
+        }
+      } catch (err) {
+        console.error("[event_payments autofill] exception:", err);
       }
     }
 
