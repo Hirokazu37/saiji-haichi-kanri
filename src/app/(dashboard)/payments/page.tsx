@@ -284,6 +284,49 @@ function PaymentsPageInner() {
     return { months, summary, payerList, payerTotals, totals };
   }, [payments, venues, payers]);
 
+  // 月別カードビュー: 過去2ヶ月+今月+未来6ヶ月 = 9ヶ月
+  // 各月の入金予定カードを並べる（キャンセルは除外）
+  const cardsByMonth = useMemo(() => {
+    const today = new Date();
+    const currentYm = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+    const months: { ym: string; label: string; isCurrent: boolean }[] = [];
+    for (let i = -2; i <= 6; i++) {
+      const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
+      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const label = `${d.getFullYear()}年${d.getMonth() + 1}月`;
+      months.push({ ym, label, isCurrent: ym === currentYm });
+    }
+
+    const byMonth = new Map<string, PaymentRow[]>();
+    for (const { ym } of months) byMonth.set(ym, []);
+    for (const p of payments) {
+      if (!p.planned_date) continue;
+      if (p.status === "キャンセル") continue;
+      const ym = p.planned_date.slice(0, 7);
+      const arr = byMonth.get(ym);
+      if (arr) arr.push(p);
+    }
+    for (const arr of byMonth.values()) {
+      arr.sort((a, b) => (a.planned_date || "").localeCompare(b.planned_date || ""));
+    }
+    return { months, byMonth };
+  }, [payments]);
+
+  // 入金予定日からの経過日数ラベル
+  const daysDiffLabel = (plannedDate: string | null): { text: string; tone: "past" | "today" | "soon" | "future" } => {
+    if (!plannedDate) return { text: "", tone: "future" };
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const [y, m, d] = plannedDate.split("-").map(Number);
+    if (!y || !m || !d) return { text: "", tone: "future" };
+    const target = new Date(y, m - 1, d);
+    const diff = Math.round((target.getTime() - today.getTime()) / 86400000);
+    if (diff < 0) return { text: `${-diff}日前`, tone: "past" };
+    if (diff === 0) return { text: "本日", tone: "today" };
+    if (diff <= 7) return { text: `${diff}日後`, tone: "soon" };
+    return { text: `${diff}日後`, tone: "future" };
+  };
+
   // 催事ラベル
   const eventLabel = (e: { venue: string; store_name: string | null } | null | undefined) => {
     if (!e) return "—";
@@ -476,7 +519,7 @@ function PaymentsPageInner() {
 
   return (
     <div className="space-y-4 max-w-6xl mx-auto">
-      <div className="flex items-end justify-between flex-wrap gap-2">
+      <div className="flex items-end justify-between flex-wrap gap-2 print:hidden">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Wallet className="h-6 w-6" />入金管理
@@ -497,11 +540,13 @@ function PaymentsPageInner() {
         </div>
       </div>
 
-      {/* アラート */}
-      <PaymentAlertsCard />
+      {/* アラート（印刷時非表示） */}
+      <div className="print:hidden">
+        <PaymentAlertsCard />
+      </div>
 
-      {/* サマリ */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      {/* サマリ（印刷時非表示） */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 print:hidden">
         <Card>
           <CardContent className="p-3">
             <div className="text-xs text-muted-foreground">未入金件数</div>
@@ -531,8 +576,135 @@ function PaymentsPageInner() {
         </Card>
       </div>
 
-      {/* 月次サマリ（予定日ベース・税込） */}
-      <Card>
+      {/* 月別カードビュー（メインの可視化） */}
+      <Card className="print-card-view">
+        <CardContent className="p-3 space-y-4">
+          <div className="flex items-center justify-between flex-wrap gap-2 print:hidden">
+            <div className="flex items-center gap-2">
+              <Wallet className="h-4 w-4 text-emerald-700" />
+              <h2 className="text-sm font-bold">入金予定（月別・催事ごと）</h2>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-muted-foreground">過去2ヶ月 + 未来6ヶ月</span>
+              <Button variant="outline" size="sm" onClick={() => window.print()} className="h-7 text-xs">
+                印刷
+              </Button>
+            </div>
+          </div>
+          {/* 印刷時のヘッダ（画面表示時は非表示） */}
+          <div className="hidden print:block mb-2 border-b pb-2">
+            <h1 className="text-base font-bold">入金予定一覧（月別・催事ごと）</h1>
+            <p className="text-xs text-muted-foreground">
+              発行日: {new Date().toLocaleDateString("ja-JP")}　表示期間: {cardsByMonth.months[0]?.label} 〜 {cardsByMonth.months[cardsByMonth.months.length - 1]?.label}　※金額はすべて税込
+            </p>
+          </div>
+          <div className="space-y-5 print:space-y-3">
+            {cardsByMonth.months.map((m) => {
+              const cards = cardsByMonth.byMonth.get(m.ym) || [];
+              const totalPlanned = cards.reduce((s, p) => s + toIncludedAmt(p.planned_amount, p.planned_tax_type), 0);
+              const paidCount = cards.filter((p) => p.status === "入金済").length;
+              const unpaidCount = cards.length - paidCount;
+              return (
+                <section
+                  key={m.ym}
+                  className="space-y-2 print:break-inside-avoid"
+                >
+                  <header className={`flex items-baseline justify-between gap-2 border-b-2 pb-1 ${m.isCurrent ? "border-amber-500" : "border-gray-300"}`}>
+                    <h3 className="text-base font-bold">
+                      {m.label}
+                      {m.isCurrent && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">今月</span>}
+                    </h3>
+                    <div className="text-sm">
+                      <span className="text-muted-foreground">合計</span>{" "}
+                      <span className="font-bold text-emerald-800">¥{totalPlanned.toLocaleString()}</span>
+                      <span className="text-xs text-muted-foreground ml-2">
+                        {cards.length}件 (入金済{paidCount}・未入金{unpaidCount})
+                      </span>
+                    </div>
+                  </header>
+                  {cards.length === 0 ? (
+                    <p className="text-xs text-muted-foreground italic pl-2 print:hidden">— 予定なし</p>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 print:grid-cols-2">
+                      {cards.map((p) => {
+                        const dd = daysDiffLabel(p.planned_date);
+                        const plannedAmtIncl = toIncludedAmt(p.planned_amount, p.planned_tax_type);
+                        const eventRevenue = p.events?.revenue;
+                        const isPaid = p.status === "入金済";
+                        const isHeld = p.status === "保留";
+                        return (
+                          <div
+                            key={p.id}
+                            className={`rounded-lg border p-3 space-y-2 print:break-inside-avoid ${isPaid ? "bg-green-50/50 border-green-300" : isHeld ? "bg-gray-50 border-gray-300" : dd.tone === "past" ? "bg-rose-50/50 border-rose-300" : "bg-white border-gray-200"}`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <Link href={`/events/${p.event_id}`} className="font-semibold text-sm hover:underline block truncate print:no-underline print:text-inherit">
+                                  {eventLabel(p.events)}
+                                </Link>
+                                <p className="text-[11px] text-muted-foreground">
+                                  催事 {p.events?.start_date}〜{p.events?.end_date}
+                                  {eventRevenue && (
+                                    <> ・売上 <span className="font-medium">¥{eventRevenue.toLocaleString()}</span>(税込)</>
+                                  )}
+                                </p>
+                              </div>
+                              <Badge variant="outline" className={`text-[10px] shrink-0 ${STATUS_COLOR[p.status]}`}>{p.status}</Badge>
+                            </div>
+                            <div className="border-t pt-2 grid grid-cols-2 gap-x-3 gap-y-1">
+                              <div>
+                                <div className="text-[10px] text-muted-foreground">入金予定日</div>
+                                <div className="text-sm font-semibold">
+                                  {p.planned_date || "—"}
+                                  {dd.text && !isPaid && (
+                                    <span className={`ml-1 text-[10px] ${dd.tone === "past" ? "text-rose-700 font-bold" : dd.tone === "today" ? "text-amber-700 font-bold" : dd.tone === "soon" ? "text-amber-700" : "text-muted-foreground"}`}>
+                                      ({dd.text})
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-[10px] text-muted-foreground">予定額(税込)</div>
+                                <div className="text-base font-bold text-emerald-800">¥{plannedAmtIncl.toLocaleString()}</div>
+                              </div>
+                              <div>
+                                <div className="text-[10px] text-muted-foreground">入金元</div>
+                                <div className="text-xs">{paymentDisplayPayer(p)}</div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-[10px] text-muted-foreground">入金率</div>
+                                <div className="text-xs">{p.applied_rate != null ? `${p.applied_rate}%` : "—"}</div>
+                              </div>
+                            </div>
+                            {isPaid && p.actual_date && (
+                              <div className="border-t pt-1.5 text-[11px] text-green-700">
+                                ✓ {p.actual_date} に ¥{(p.actual_amount ?? 0).toLocaleString()} 入金{p.method ? ` (${METHOD_LABEL[p.method]})` : ""}
+                              </div>
+                            )}
+                            {canEdit && !isPaid && (
+                              <div className="border-t pt-1.5 flex items-center gap-1 print:hidden">
+                                <Button size="sm" variant="outline" className="h-6 text-[10px] px-2" onClick={() => markPaid(p)}>
+                                  ✓ 入金済にする
+                                </Button>
+                                <Button variant="ghost" size="sm" className="h-6 text-[10px] px-2 ml-auto" onClick={() => openEdit(p)}>
+                                  編集
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 月次サマリ（予定日ベース・税込）（印刷時非表示） */}
+      <Card className="print:hidden">
         <CardContent className="p-3 space-y-2">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2">
@@ -581,9 +753,9 @@ function PaymentsPageInner() {
         </CardContent>
       </Card>
 
-      {/* 入金元別 月次内訳（予定日ベース・税込） */}
+      {/* 入金元別 月次内訳（予定日ベース・税込）（印刷時非表示） */}
       {monthlySummary.payerList.length > 0 && (
-        <Card>
+        <Card className="print:hidden">
           <CardContent className="p-3 space-y-2">
             <div className="flex items-center gap-2">
               <Wallet className="h-4 w-4 text-blue-700" />
@@ -634,8 +806,8 @@ function PaymentsPageInner() {
         </Card>
       )}
 
-      {/* フィルタ */}
-      <Card>
+      {/* フィルタ（印刷時非表示） */}
+      <Card className="print:hidden">
         <CardContent className="p-3 flex gap-2 flex-wrap items-center">
           <Input
             type="search"
@@ -660,13 +832,13 @@ function PaymentsPageInner() {
       </Card>
 
       {loading ? (
-        <p className="text-muted-foreground">読み込み中...</p>
+        <p className="text-muted-foreground print:hidden">読み込み中...</p>
       ) : filtered.length === 0 ? (
-        <div className="rounded-lg border p-8 text-center text-muted-foreground">
+        <div className="rounded-lg border p-8 text-center text-muted-foreground print:hidden">
           表示する入金レコードがありません。
         </div>
       ) : (
-        <div className="rounded-md border overflow-x-auto">
+        <div className="rounded-md border overflow-x-auto print:hidden">
           <Table>
             <TableHeader>
               <TableRow>
