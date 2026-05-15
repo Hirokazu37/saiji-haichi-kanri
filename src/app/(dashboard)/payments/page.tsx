@@ -154,6 +154,59 @@ function PaymentsPageInner() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // 自動バックフィル: planned_amount=null かつ event_daily_revenue がある event_payments を補完
+  // 1時間に1回まで（負荷制限）。ユーザー操作なしで未補完の入金額が埋まる。
+  useEffect(() => {
+    if (loading || !canViewPayments) return;
+    const STORAGE_KEY = "payments_autofill_lastcheck";
+    const INTERVAL_MS = 60 * 60 * 1000; // 1時間
+    const lastCheck = typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_KEY) : null;
+    const now = Date.now();
+    if (lastCheck && now - parseInt(lastCheck, 10) < INTERVAL_MS) return;
+
+    (async () => {
+      // planned_amount が null で applied_rate がある行を取得
+      const { data: missing } = await supabase
+        .from("event_payments")
+        .select("id, event_id, planned_tax_type, applied_rate")
+        .is("planned_amount", null)
+        .not("applied_rate", "is", null);
+      if (!missing || missing.length === 0) {
+        if (typeof window !== "undefined") window.localStorage.setItem(STORAGE_KEY, String(now));
+        return;
+      }
+      let filled = 0;
+      for (const p of missing as { id: string; event_id: string; planned_tax_type: "excluded" | "included" | null; applied_rate: number }[]) {
+        const { data: daily } = await supabase
+          .from("event_daily_revenue")
+          .select("amount, tax_type, tax_rate")
+          .eq("event_id", p.event_id);
+        if (!daily || daily.length === 0) continue;
+        let excludedTotal = 0;
+        let includedTotal = 0;
+        for (const d of daily as { amount: number; tax_type: "excluded" | "included"; tax_rate: number | null }[]) {
+          if (d.tax_type === "excluded") {
+            excludedTotal += d.amount;
+            includedTotal += Math.round(d.amount * (1 + (d.tax_rate ?? 0.08)));
+          } else {
+            includedTotal += d.amount;
+            excludedTotal += Math.round(d.amount / (1 + (d.tax_rate ?? 0.08)));
+          }
+        }
+        const base = p.planned_tax_type === "included" ? includedTotal : excludedTotal;
+        if (base === 0) continue;
+        const amount = Math.round((base * p.applied_rate) / 100);
+        await supabase.from("event_payments").update({ planned_amount: amount }).eq("id", p.id);
+        filled++;
+      }
+      if (typeof window !== "undefined") window.localStorage.setItem(STORAGE_KEY, String(now));
+      if (filled > 0) {
+        console.log(`[payments auto-backfill] ${filled} 件の planned_amount を補完`);
+        await fetchData(); // 補完した分を再取得
+      }
+    })();
+  }, [loading, canViewPayments, supabase, fetchData]);
+
   // 絞り込み
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
