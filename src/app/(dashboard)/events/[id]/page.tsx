@@ -86,7 +86,7 @@ export default function EventDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const { canEdit } = usePermission();
+  const { canEdit, canViewPayments } = usePermission();
   const supabase = createClient();
   const router = useRouter();
   type Employee = { id: string; name: string };
@@ -365,7 +365,10 @@ export default function EventDetailPage({
 
     // 入金管理: 売上が入ったら event_payments の planned_amount が空の行に自動で金額を埋める。
     // また、event_payments 自体が無い催事（古い催事）にはレコードを自動作成する。
-    if (hasAnyDaily) {
+    // ※ event_payments の RLS は経理閲覧権限を要求するため、権限がないユーザーは
+    //   SELECT が空配列で返り auto-create を試みて INSERT で弾かれてしまう。
+    //   その場合は auto-fill 処理ごとスキップする。
+    if (hasAnyDaily && canViewPayments) {
       try {
         const { data: paymentRows, error: payReadErr } = await supabase
           .from("event_payments")
