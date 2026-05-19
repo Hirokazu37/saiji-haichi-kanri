@@ -24,7 +24,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Wallet, Download, Plus, Pencil, Trash2, ArrowUpRight, Calculator, Calendar as CalendarIcon, LayoutGrid, BarChart3, List } from "lucide-react";
+import { Wallet, Download, Plus, Pencil, Trash2, ArrowUpRight, Calculator, Calendar as CalendarIcon, LayoutGrid, BarChart3, List, ChevronDown, ChevronRight } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
 import { computePlannedPaymentDate } from "@/lib/payment-cycle";
 import { PaymentAlertsCard } from "@/components/layout/PaymentAlertsCard";
@@ -126,6 +126,23 @@ function PaymentsPageInner() {
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [search, setSearch] = useState("");
+
+  // 月別カードビューの折りたたみ状態: 今月と来月を初期展開
+  const [expandedMonths, setExpandedMonths] = useState<Set<string>>(() => {
+    const today = new Date();
+    const ym = (y: number, m: number) => `${y}-${String(m).padStart(2, "0")}`;
+    const cur = ym(today.getFullYear(), today.getMonth() + 1);
+    const next = ym(today.getFullYear() + (today.getMonth() === 11 ? 1 : 0), today.getMonth() === 11 ? 1 : today.getMonth() + 2);
+    return new Set([cur, next]);
+  });
+  const toggleMonth = (m: string) => {
+    setExpandedMonths((prev) => {
+      const next = new Set(prev);
+      if (next.has(m)) next.delete(m);
+      else next.add(m);
+      return next;
+    });
+  };
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -907,21 +924,50 @@ function PaymentsPageInner() {
               発行日: {new Date().toLocaleDateString("ja-JP")}　表示期間: {cardsByMonth.months[0]?.label} 〜 {cardsByMonth.months[cardsByMonth.months.length - 1]?.label}　※金額はすべて税込
             </p>
           </div>
+          {/* 全展開/全折りたたみ コントロール */}
+          <div className="flex items-center justify-end gap-2 print:hidden">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 text-[10px] text-muted-foreground"
+              onClick={() => setExpandedMonths(new Set(cardsByMonth.months.map((m) => m.ym)))}
+            >
+              全て展開
+            </Button>
+            <span className="text-[10px] text-muted-foreground">|</span>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 text-[10px] text-muted-foreground"
+              onClick={() => setExpandedMonths(new Set())}
+            >
+              全て折りたたみ
+            </Button>
+          </div>
           <div className="space-y-5 print:space-y-3">
             {cardsByMonth.months.map((m) => {
               const cards = cardsByMonth.byMonth.get(m.ym) || [];
               const totalPlanned = cards.reduce((s, p) => s + toIncludedAmt(p.planned_amount, p.planned_tax_type), 0);
               const paidCount = cards.filter((p) => p.status === "入金済").length;
               const unpaidCount = cards.length - paidCount;
+              const isExpanded = expandedMonths.has(m.ym);
               return (
                 <section
                   key={m.ym}
                   className="space-y-2 print:break-inside-avoid"
                 >
-                  <header className={`flex items-baseline justify-between gap-2 border-b-2 pb-1 ${m.isCurrent ? "border-amber-500" : "border-gray-300"}`}>
-                    <h3 className="text-base font-bold">
+                  <button
+                    type="button"
+                    onClick={() => toggleMonth(m.ym)}
+                    className={`w-full flex items-baseline justify-between gap-2 border-b-2 pb-1 cursor-pointer hover:bg-muted/30 transition-colors text-left ${m.isCurrent ? "border-amber-500" : "border-gray-300"} print:cursor-default print:hover:bg-transparent`}
+                    aria-expanded={isExpanded}
+                  >
+                    <h3 className="text-base font-bold flex items-center gap-1.5">
+                      <span className="print:hidden">
+                        {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                      </span>
                       {m.label}
-                      {m.isCurrent && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">今月</span>}
+                      {m.isCurrent && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">今月</span>}
                     </h3>
                     <div className="text-sm">
                       <span className="text-muted-foreground">合計</span>{" "}
@@ -930,11 +976,12 @@ function PaymentsPageInner() {
                         {cards.length}件 (入金済{paidCount}・未入金{unpaidCount})
                       </span>
                     </div>
-                  </header>
+                  </button>
+                  {/* 折りたたまれていても印刷時は表示 */}
                   {cards.length === 0 ? (
-                    <p className="text-xs text-muted-foreground italic pl-2 print:hidden">— 予定なし</p>
+                    isExpanded && <p className="text-xs text-muted-foreground italic pl-2 print:hidden">— 予定なし</p>
                   ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 print:grid-cols-2">
+                    <div className={`grid grid-cols-1 md:grid-cols-2 gap-2 print:grid-cols-2 ${isExpanded ? "" : "hidden print:!grid"}`}>
                       {cards.map((p) => {
                         const dd = daysDiffLabel(p.planned_date);
                         const plannedAmtIncl = toIncludedAmt(p.planned_amount, p.planned_tax_type);
