@@ -680,6 +680,18 @@ function PaymentsPageInner() {
 
   return (
     <div className="space-y-4 max-w-6xl mx-auto">
+      {/* 印刷設定: A4縦・余白控えめ・ナビ非表示で印刷枚数を最小化 */}
+      <style>{`
+        @media print {
+          @page { size: A4 portrait; margin: 8mm; }
+          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 11px; background: white !important; }
+          nav, aside, header, footer { display: none !important; }
+          main, [data-slot="main"] { margin: 0 !important; padding: 0 !important; max-width: 100% !important; }
+          .md\\:pl-60 { padding-left: 0 !important; }
+          /* カードの影は印刷時カット */
+          [data-slot="card"] { box-shadow: none !important; }
+        }
+      `}</style>
       <div className="flex items-end justify-between flex-wrap gap-2 print:hidden">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
