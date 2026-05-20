@@ -130,6 +130,7 @@ function PaymentsPageInner() {
   const searchParams = useSearchParams();
   const eventFilter = searchParams?.get("event") || "";
   const autoEditFlag = searchParams?.get("edit") || "";
+  const autoEditInstallment = searchParams?.get("installment") || ""; // "1" / "2" など
 
   const [payments, setPayments] = useState<PaymentRow[]>([]);
   const [events, setEvents] = useState<EventLite[]>([]);
@@ -195,20 +196,23 @@ function PaymentsPageInner() {
     if (!fetched || autoEditTried) return; // データ取得が完了するまで待つ
     if (autoEditFlag !== "auto" || !eventFilter) return;
     setAutoEditTried(true);
-    // 該当催事の event_payments を探す (installment_no 順で最初の1件)
-    const target = payments
+    // 該当催事の event_payments を探す
+    // installment 指定があればその回、なければ最初の1件 (installment_no 順)
+    const candidates = payments
       .filter((p) => p.event_id === eventFilter)
-      .sort((a, b) => (a.installment_no || 1) - (b.installment_no || 1))[0];
+      .sort((a, b) => (a.installment_no || 1) - (b.installment_no || 1));
+    const requestedNo = autoEditInstallment ? parseInt(autoEditInstallment, 10) : null;
+    const target = (requestedNo != null && !isNaN(requestedNo))
+      ? candidates.find((p) => p.installment_no === requestedNo) || candidates[0]
+      : candidates[0];
     if (target) {
-      // 既存の payment を編集 (UPDATE)
       openEdit(target);
     }
-    // 既存無しの場合は dialog を開かない (新規作成は誤操作リスクが高いため、
-    // ユーザーが明示的に「+入金を追加」ボタンから開く運用にする)
-    // URL から ?edit=auto を取り除き、戻るボタンで再オープンを防ぐ
+    // URL から ?edit=auto, ?installment を取り除き、戻るボタンで再オープンを防ぐ
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
       url.searchParams.delete("edit");
+      url.searchParams.delete("installment");
       window.history.replaceState({}, "", url.toString());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -399,10 +403,11 @@ function PaymentsPageInner() {
   }, [payments, venues, payers]);
 
   // 催事カレンダー: /events と同じガント構造で月別表示
-  // トラック(A-H)に催事を割当てて、バーに「百貨店名・入金予定日・予定額」を表示
+  // ★ 同じ催事 (締日跨ぎで複数の event_payments がある催事) は 1本のバーにまとめる
   const calendarMonths = useMemo(() => {
     type EventEntry = {
-      payment: PaymentRow;
+      eventId: string;
+      payments: PaymentRow[]; // 同じ催事の event_payments 全部 (installment_no 順)
       eventStart: string;
       eventEnd: string;
       venueLabelStr: string;
@@ -410,11 +415,11 @@ function PaymentsPageInner() {
     type MonthData = {
       ym: string;
       year: number;
-      month: number; // 1-12
+      month: number;
       label: string;
       isCurrent: boolean;
       daysInMonth: number;
-      // /events と同じく Map<paymentId, trackIdx> 形式
+      // 催事ID → トラック番号
       trackMap: Map<string, number>;
       trackCount: number;
       entries: EventEntry[];
@@ -424,8 +429,7 @@ function PaymentsPageInner() {
     const currentYm = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
     const months: MonthData[] = [];
 
-    // 表示範囲: 今年の1月 ～ 今月+6ヶ月（"1月から入力している"のニーズに対応）
-    const startOffset = -today.getMonth(); // 今月から1月までのオフセット (May=>-4)
+    const startOffset = -today.getMonth();
     const endOffset = 6;
     for (let i = startOffset; i <= endOffset; i++) {
       const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
@@ -437,18 +441,35 @@ function PaymentsPageInner() {
       const monthStartStr = `${ym}-01`;
       const monthEndStr = `${ym}-${String(daysInMonth).padStart(2, "0")}`;
 
-      const entries = payments
-        .filter((p) => p.status !== "キャンセル")
-        .filter((p) => p.events && p.events.start_date <= monthEndStr && p.events.end_date >= monthStartStr)
-        .map((p): EventEntry => ({
-          payment: p,
-          eventStart: p.events!.start_date,
-          eventEnd: p.events!.end_date,
-          venueLabelStr: p.events!.store_name ? `${p.events!.venue} ${p.events!.store_name}` : p.events!.venue,
-        }))
-        .sort((a, b) => a.eventStart.localeCompare(b.eventStart));
+      // この月にかかる催事の event_payments を抽出
+      const relevant = payments.filter(
+        (p) => p.status !== "キャンセル" && p.events &&
+          p.events.start_date <= monthEndStr && p.events.end_date >= monthStartStr
+      );
+      // 催事ID単位でグループ化
+      const byEvent = new Map<string, EventEntry>();
+      for (const p of relevant) {
+        const ev = p.events!;
+        const existing = byEvent.get(p.event_id);
+        if (existing) {
+          existing.payments.push(p);
+        } else {
+          byEvent.set(p.event_id, {
+            eventId: p.event_id,
+            payments: [p],
+            eventStart: ev.start_date,
+            eventEnd: ev.end_date,
+            venueLabelStr: ev.store_name ? `${ev.venue} ${ev.store_name}` : ev.venue,
+          });
+        }
+      }
+      // 各 entry の payments を installment_no 順に
+      for (const e of byEvent.values()) {
+        e.payments.sort((a, b) => (a.installment_no || 1) - (b.installment_no || 1));
+      }
+      const entries = Array.from(byEvent.values()).sort((a, b) => a.eventStart.localeCompare(b.eventStart));
 
-      // /events と同じトラック割当ロジック
+      // トラック割当 (催事ID単位)
       const trackMap = new Map<string, number>();
       const trackEnds: string[] = [];
       for (const e of entries) {
@@ -456,13 +477,13 @@ function PaymentsPageInner() {
         for (let t = 0; t < trackEnds.length; t++) {
           if (e.eventStart > trackEnds[t]) {
             trackEnds[t] = e.eventEnd;
-            trackMap.set(e.payment.id, t);
+            trackMap.set(e.eventId, t);
             placed = true;
             break;
           }
         }
         if (!placed) {
-          trackMap.set(e.payment.id, trackEnds.length);
+          trackMap.set(e.eventId, trackEnds.length);
           trackEnds.push(e.eventEnd);
         }
       }
@@ -865,7 +886,7 @@ function PaymentsPageInner() {
                     <div className="px-3 py-3 text-xs text-muted-foreground italic">この月に催事はありません</div>
                   ) : (
                     Array.from({ length: m.trackCount }, (_, trackIdx) => {
-                      const trackEntries = m.entries.filter((e) => m.trackMap.get(e.payment.id) === trackIdx);
+                      const trackEntries = m.entries.filter((e) => m.trackMap.get(e.eventId) === trackIdx);
                       return (
                         <div
                           key={trackIdx}
@@ -893,7 +914,7 @@ function PaymentsPageInner() {
                                 );
                               })}
                             </div>
-                            {/* 催事バー */}
+                            {/* 催事バー (1催事 = 1本、複数 installments を集約表示) */}
                             {trackEntries.map((entry) => {
                               const [esy, esm, esd] = entry.eventStart.split("-").map(Number);
                               const [eey, eem, eed] = entry.eventEnd.split("-").map(Number);
@@ -901,47 +922,50 @@ function PaymentsPageInner() {
                               const endDay = eey === m.year && eem === m.month ? eed : m.daysInMonth;
                               const left = ((startDay - 1) / m.daysInMonth) * 100;
                               const width = ((endDay - startDay + 1) / m.daysInMonth) * 100;
-                              const isPaid = entry.payment.status === "入金済";
-                              const isHeld = entry.payment.status === "保留";
-                              const isOverdue = !!entry.payment.planned_date && entry.payment.planned_date < todayStr && !isPaid && !isHeld;
-                              const barColor = isPaid
+                              // 集約ステータス
+                              const allPaid = entry.payments.every((p) => p.status === "入金済");
+                              const anyPaid = entry.payments.some((p) => p.status === "入金済");
+                              const allHeld = entry.payments.every((p) => p.status === "保留");
+                              const anyOverdue = entry.payments.some((p) => p.planned_date && p.planned_date < todayStr && p.status !== "入金済" && p.status !== "保留" && p.status !== "キャンセル");
+                              const barColor = allPaid
                                 ? "bg-green-100 border-green-500 text-green-900"
-                                : isHeld
+                                : allHeld
                                   ? "bg-gray-100 border-gray-400 text-gray-700"
-                                  : isOverdue
+                                  : anyOverdue
                                     ? "bg-rose-100 border-rose-500 text-rose-900"
-                                    : "bg-yellow-100 border-yellow-500 text-yellow-900";
-                              const plannedDateLabel = entry.payment.planned_date
-                                ? (() => {
-                                    const [, pmo, pd] = entry.payment.planned_date.split("-").map(Number);
-                                    return `${pmo}月${pd}日`;
-                                  })()
-                                : "未設定";
-                              const plannedAmtIncl = toIncludedAmt(entry.payment.planned_amount, entry.payment.planned_tax_type);
+                                    : anyPaid
+                                      ? "bg-amber-50 border-amber-500 text-amber-900"
+                                      : "bg-yellow-100 border-yellow-500 text-yellow-900";
+                              // 集約金額 (税込)
+                              const totalAmt = entry.payments.reduce(
+                                (s, p) => s + toIncludedAmt(p.planned_amount, p.planned_tax_type), 0
+                              );
+                              const hasMulti = entry.payments.length > 1;
+                              // 予定日サマリ: 単数 → そのまま、複数 → "M/D・M/D" 連結
+                              const plannedDateSummary = entry.payments
+                                .map((p) => p.planned_date ? `${parseInt(p.planned_date.split("-")[1])}/${parseInt(p.planned_date.split("-")[2])}` : "—")
+                                .join("・");
+                              const titleStr = `${entry.venueLabelStr}${hasMulti ? ` (${entry.payments.length}回入金)` : ""} ${entry.eventStart}〜${entry.eventEnd}`;
                               return (
                                 <Link
-                                  key={entry.payment.id}
-                                  href={`/events/${entry.payment.event_id}`}
+                                  key={entry.eventId}
+                                  href={`/events/${entry.eventId}`}
                                   className={`absolute top-0.5 rounded border-2 text-[11px] leading-snug px-1 py-0.5 overflow-hidden hover:opacity-80 transition-opacity z-[1] cursor-pointer print:no-underline ${barColor}`}
-                                  style={{
-                                    left: `${left}%`,
-                                    width: `${width}%`,
-                                    height: 60,
-                                  }}
-                                  title={`${entry.venueLabelStr}${installmentLabel(entry.payment.installment_no, entry.payment.installment_total)} (${entry.eventStart}〜${entry.eventEnd}) ${entry.payment.status}`}
+                                  style={{ left: `${left}%`, width: `${width}%`, height: 60 }}
+                                  title={titleStr}
                                 >
                                   <div className="truncate font-semibold leading-tight text-[11px]">
                                     {entry.venueLabelStr}
-                                    {entry.payment.installment_total > 1 && (
-                                      <span className="ml-0.5 text-[9px] text-blue-700">[{entry.payment.installment_no}/{entry.payment.installment_total}]</span>
+                                    {hasMulti && (
+                                      <span className="ml-0.5 text-[9px] text-blue-700">[{entry.payments.length}回]</span>
                                     )}
-                                    {isPaid && <span className="ml-0.5 text-[10px]">✓</span>}
+                                    {allPaid && <span className="ml-0.5 text-[10px]">✓</span>}
                                   </div>
                                   <div className="truncate text-[10px] leading-tight">
-                                    入金予定日: {plannedDateLabel}
+                                    {hasMulti ? "入金予定日(複数): " : "入金予定日: "}{plannedDateSummary}
                                   </div>
                                   <div className="truncate text-[10px] leading-tight font-semibold">
-                                    予定額: ¥{plannedAmtIncl > 0 ? plannedAmtIncl.toLocaleString() : "—"}
+                                    {hasMulti ? "合計: " : "予定額: "}¥{totalAmt > 0 ? totalAmt.toLocaleString() : "—"}
                                   </div>
                                 </Link>
                               );

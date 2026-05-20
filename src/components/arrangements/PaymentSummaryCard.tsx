@@ -78,17 +78,23 @@ export function PaymentSummaryCard({ eventId }: { eventId: string }) {
         {rows.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {rows.map((r) => (
-              <Badge key={r.id} variant="outline" className={`text-xs ${STATUS_COLOR[r.status]}`}>
-                {r.installment_total > 1 && (
-                  <span className="mr-1 px-1 rounded bg-blue-100 text-blue-800 font-bold text-[10px]">{r.installment_no}/{r.installment_total}回目</span>
-                )}
-                {r.status}
-                {r.planned_date && <span className="ml-1 opacity-70">{r.planned_date}</span>}
-                {r.planned_amount != null && <span className="ml-1 opacity-70">¥{r.planned_amount.toLocaleString()}</span>}
-                {r.installment_total > 1 && r.period_start_date && r.period_end_date && (
-                  <span className="ml-1 opacity-60 text-[10px]">[{r.period_start_date.slice(5)}〜{r.period_end_date.slice(5)}]</span>
-                )}
-              </Badge>
+              <Link
+                key={r.id}
+                href={`/payments?event=${eventId}&edit=auto&installment=${r.installment_no}`}
+                title="クリックでこの回の編集ダイアログを開く"
+              >
+                <Badge variant="outline" className={`text-xs cursor-pointer hover:opacity-80 transition-opacity ${STATUS_COLOR[r.status]}`}>
+                  {r.installment_total > 1 && (
+                    <span className="mr-1 px-1 rounded bg-blue-100 text-blue-800 font-bold text-[10px]">{r.installment_no}/{r.installment_total}回目</span>
+                  )}
+                  {r.status}
+                  {r.planned_date && <span className="ml-1 opacity-70">{r.planned_date}</span>}
+                  {r.planned_amount != null && <span className="ml-1 opacity-70">¥{r.planned_amount.toLocaleString()}</span>}
+                  {r.installment_total > 1 && r.period_start_date && r.period_end_date && (
+                    <span className="ml-1 opacity-60 text-[10px]">[{r.period_start_date.slice(5)}〜{r.period_end_date.slice(5)}]</span>
+                  )}
+                </Badge>
+              </Link>
             ))}
           </div>
         )}
