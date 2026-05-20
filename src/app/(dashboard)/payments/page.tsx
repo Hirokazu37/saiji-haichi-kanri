@@ -1409,9 +1409,74 @@ function PaymentsPageInner() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingId ? "入金を編集" : "入金を追加"}</DialogTitle>
+            <DialogTitle>
+              {editingId ? "入金を編集" : "入金を追加"}
+              {(() => {
+                if (!editingId) return null;
+                const cur = payments.find((p) => p.id === editingId);
+                if (!cur || cur.installment_total <= 1) return null;
+                return (
+                  <span className="ml-2 text-sm font-normal text-blue-700">
+                    （{cur.installment_no}/{cur.installment_total}回目）
+                  </span>
+                );
+              })()}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            {/* 同じ催事の他の回 (複数回入金催事のときだけ表示) */}
+            {(() => {
+              if (!editingId) return null;
+              const cur = payments.find((p) => p.id === editingId);
+              if (!cur || cur.installment_total <= 1) return null;
+              const siblings = payments
+                .filter((p) => p.event_id === cur.event_id)
+                .sort((a, b) => (a.installment_no || 1) - (b.installment_no || 1));
+              return (
+                <div className="rounded-lg border-2 border-blue-300 bg-blue-50/40 p-2.5 space-y-1.5">
+                  <p className="text-[11px] font-semibold text-blue-900">
+                    この催事は {cur.installment_total} 回に分かれて入金されます。クリックで切替:
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {siblings.map((s) => {
+                      const isActive = s.id === editingId;
+                      const isPaid = s.status === "入金済";
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          disabled={isActive}
+                          onClick={() => openEdit(s)}
+                          className={`text-xs px-2 py-1 rounded border transition-colors ${
+                            isActive
+                              ? "bg-blue-600 text-white border-blue-700 font-bold cursor-default"
+                              : isPaid
+                                ? "bg-green-100 text-green-800 border-green-300 hover:bg-green-200"
+                                : "bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200"
+                          }`}
+                          title={isActive ? "現在編集中" : "クリックでこの回の編集に切替"}
+                        >
+                          <span className="font-bold mr-1">{s.installment_no}/{s.installment_total}回目</span>
+                          <span>{s.status}</span>
+                          {s.planned_date && <span className="ml-1 opacity-80">{s.planned_date.slice(5)}</span>}
+                          {s.planned_amount != null && (
+                            <span className="ml-1 opacity-80">¥{toIncludedAmt(s.planned_amount, s.planned_tax_type).toLocaleString()}</span>
+                          )}
+                          {s.period_start_date && s.period_end_date && (
+                            <span className="ml-1 opacity-70 text-[10px]">[{s.period_start_date.slice(5)}〜{s.period_end_date.slice(5)}]</span>
+                          )}
+                          {isActive && <span className="ml-1 text-[10px]">← 編集中</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    ※ 編集中の内容を保存せず他の回に切り替えると、未保存の変更は失われます。
+                  </p>
+                </div>
+              );
+            })()}
+
             {/* 催事選択 */}
             <div className="space-y-2">
               <Label className="text-xs">催事<span className="text-rose-500 ml-0.5">*</span></Label>
@@ -1499,8 +1564,13 @@ function PaymentsPageInner() {
                 <div>
                   <Label className="text-xs">予定日</Label>
                   <div className="flex gap-1">
-                    <Input type="date" value={form.planned_date} onChange={(e) => setForm({ ...form, planned_date: e.target.value })} />
-                    <Button type="button" variant="outline" size="sm" onClick={calcPlannedDate} title="振込サイクルから自動計算">
+                    <Input
+                      type="date"
+                      value={form.planned_date}
+                      onChange={(e) => setForm({ ...form, planned_date: e.target.value })}
+                      className="flex-1 min-w-0"
+                    />
+                    <Button type="button" variant="outline" size="sm" onClick={calcPlannedDate} title="振込サイクルから自動計算" className="shrink-0">
                       <Calculator className="h-3.5 w-3.5" />
                     </Button>
                   </div>
@@ -1549,7 +1619,12 @@ function PaymentsPageInner() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs">実入金日</Label>
-                  <Input type="date" value={form.actual_date} onChange={(e) => setForm({ ...form, actual_date: e.target.value })} />
+                  <Input
+                    type="date"
+                    value={form.actual_date}
+                    onChange={(e) => setForm({ ...form, actual_date: e.target.value })}
+                    className="w-full"
+                  />
                 </div>
                 <div>
                   <Label className="text-xs">実入金額（円・手数料引き後）</Label>
