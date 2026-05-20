@@ -197,6 +197,85 @@ export function resolvePaymentSource(
   };
 }
 
+// 締日跨ぎの催事を、締日ごとに期間分割する
+// 例: closing_day=20、催事 4/18〜4/25 → [{4/18-4/20}, {4/21-4/25}]
+// closing_day が 0 (月末) の場合は各月の末日が締日
+export type PaymentSplit = {
+  periodStart: string;   // この入金がカバーする催事期間の開始日
+  periodEnd: string;     // 同 終了日
+  closingDate: string;   // この期間が締まる日 (catering this split's payment date計算用)
+  plannedDate: string | null; // 入金予定日 (cycle が揃っていれば計算される)
+};
+
+/**
+ * 催事期間と振込サイクルから、入金分割の期間配列を返す。
+ * 締日を跨がない催事は length=1。跨ぐ場合は2以上。
+ */
+export function computePaymentSplits(
+  eventStart: string,
+  eventEnd: string,
+  cycle: PaymentCycle,
+): PaymentSplit[] {
+  const start = parseYmd(eventStart);
+  const end = parseYmd(eventEnd);
+  if (!start || !end || start > end) return [];
+  const { closing_day } = cycle;
+  // closing_day が null の場合は分割不能、催事全体を1区間として返す
+  if (closing_day == null) {
+    return [{
+      periodStart: eventStart,
+      periodEnd: eventEnd,
+      closingDate: eventEnd,
+      plannedDate: null,
+    }];
+  }
+
+  // 催事期間内にある締日リスト (催事終了日より前のもの)
+  const closingDates: Date[] = [];
+  let cursorYear = start.getFullYear();
+  let cursorMonth = start.getMonth() + 1; // 1-12
+  // 催事開始日以降の最初の締日からスタート
+  let closing = dayInMonth(cursorYear, cursorMonth, closing_day);
+  if (closing < start) {
+    // 次月の締日へ
+    cursorMonth += 1;
+    if (cursorMonth > 12) { cursorMonth -= 12; cursorYear += 1; }
+    closing = dayInMonth(cursorYear, cursorMonth, closing_day);
+  }
+  while (closing <= end) {
+    closingDates.push(closing);
+    cursorMonth += 1;
+    if (cursorMonth > 12) { cursorMonth -= 12; cursorYear += 1; }
+    closing = dayInMonth(cursorYear, cursorMonth, closing_day);
+  }
+
+  // 各分割を組み立て
+  const splits: PaymentSplit[] = [];
+  let periodStart = new Date(start);
+  for (const c of closingDates) {
+    if (c >= end) break; // 催事最終日と同じならまだ最後の区間
+    splits.push({
+      periodStart: fmtYmd(periodStart),
+      periodEnd: fmtYmd(c),
+      closingDate: fmtYmd(c),
+      plannedDate: computePlannedPaymentDate(fmtYmd(c), cycle),
+    });
+    // 次の期間は締日の翌日から
+    periodStart = new Date(c);
+    periodStart.setDate(periodStart.getDate() + 1);
+  }
+  // 残り (最後の締日翌日〜催事終了日)
+  if (periodStart <= end) {
+    splits.push({
+      periodStart: fmtYmd(periodStart),
+      periodEnd: fmtYmd(end),
+      closingDate: fmtYmd(end),
+      plannedDate: computePlannedPaymentDate(fmtYmd(end), cycle),
+    });
+  }
+  return splits;
+}
+
 // サイクル情報を人間可読な文字列にフォーマット（マスター画面表示用）
 export function formatPaymentCycle(cycle: PaymentCycle): string {
   const { closing_day, pay_month_offset, pay_day } = cycle;
