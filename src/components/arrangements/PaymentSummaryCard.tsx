@@ -68,8 +68,9 @@ export function PaymentSummaryCard({ eventId }: { eventId: string }) {
             )}
           </div>
           <Link
-            href={`/payments?event=${eventId}`}
+            href={`/payments?event=${eventId}&edit=auto`}
             className="text-xs text-primary hover:underline inline-flex items-center gap-1"
+            title="入金管理ページに移動して編集ダイアログを自動で開く"
           >
             入金管理ページで編集 <ArrowUpRight className="h-3 w-3" />
           </Link>

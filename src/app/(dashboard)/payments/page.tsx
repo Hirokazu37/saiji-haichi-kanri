@@ -129,6 +129,7 @@ function PaymentsPageInner() {
   const { canEdit, canViewPayments, loading: permLoading } = usePermission();
   const searchParams = useSearchParams();
   const eventFilter = searchParams?.get("event") || "";
+  const autoEditFlag = searchParams?.get("edit") || "";
 
   const [payments, setPayments] = useState<PaymentRow[]>([]);
   const [events, setEvents] = useState<EventLite[]>([]);
@@ -181,6 +182,33 @@ function PaymentsPageInner() {
   }, [supabase]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // クエリ ?edit=auto&event=<id> で来た場合、データ取得後に該当催事の編集ダイアログを自動で開く
+  // (催事詳細「入金管理ページで編集」リンクからの遷移時の「堂巡り」を防ぐため)
+  const [autoEditTried, setAutoEditTried] = useState(false);
+  useEffect(() => {
+    if (loading || autoEditTried) return;
+    if (autoEditFlag !== "auto" || !eventFilter) return;
+    setAutoEditTried(true);
+    // 該当催事の event_payments を探す (installment_no 順で最初の1件)
+    const target = payments
+      .filter((p) => p.event_id === eventFilter)
+      .sort((a, b) => (a.installment_no || 1) - (b.installment_no || 1))[0];
+    if (target) {
+      // 既存の payment を編集
+      openEdit(target);
+    } else {
+      // payment 未作成 → 新規作成ダイアログ（催事プリフィル）
+      openCreate(eventFilter);
+    }
+    // URL から ?edit=auto を取り除き、戻るボタンで再オープンを防ぐ
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("edit");
+      window.history.replaceState({}, "", url.toString());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, autoEditFlag, eventFilter, payments]);
 
   // 自動バックフィル: planned_amount=null かつ event_daily_revenue がある event_payments を補完
   // 1時間に1回まで（負荷制限）。ユーザー操作なしで未補完の入金額が埋まる。
