@@ -15,6 +15,10 @@ type PaymentRow = {
   actual_date: string | null;
   actual_amount: number | null;
   status: "予定" | "入金済" | "保留" | "キャンセル";
+  period_start_date: string | null;
+  period_end_date: string | null;
+  installment_no: number;
+  installment_total: number;
 };
 
 const STATUS_COLOR: Record<string, string> = {
@@ -35,9 +39,9 @@ export function PaymentSummaryCard({ eventId }: { eventId: string }) {
     (async () => {
       const { data } = await supabase
         .from("event_payments")
-        .select("id, planned_date, planned_amount, actual_date, actual_amount, status")
+        .select("id, planned_date, planned_amount, actual_date, actual_amount, status, period_start_date, period_end_date, installment_no, installment_total")
         .eq("event_id", eventId)
-        .order("planned_date", { ascending: true, nullsFirst: false });
+        .order("installment_no", { ascending: true });
       setRows((data || []) as PaymentRow[]);
       setFetched(true);
     })();
@@ -74,9 +78,15 @@ export function PaymentSummaryCard({ eventId }: { eventId: string }) {
           <div className="flex flex-wrap gap-1.5">
             {rows.map((r) => (
               <Badge key={r.id} variant="outline" className={`text-xs ${STATUS_COLOR[r.status]}`}>
+                {r.installment_total > 1 && (
+                  <span className="mr-1 px-1 rounded bg-blue-100 text-blue-800 font-bold text-[10px]">{r.installment_no}/{r.installment_total}回目</span>
+                )}
                 {r.status}
                 {r.planned_date && <span className="ml-1 opacity-70">{r.planned_date}</span>}
                 {r.planned_amount != null && <span className="ml-1 opacity-70">¥{r.planned_amount.toLocaleString()}</span>}
+                {r.installment_total > 1 && r.period_start_date && r.period_end_date && (
+                  <span className="ml-1 opacity-60 text-[10px]">[{r.period_start_date.slice(5)}〜{r.period_end_date.slice(5)}]</span>
+                )}
               </Badge>
             ))}
           </div>

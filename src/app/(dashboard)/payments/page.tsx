@@ -72,7 +72,18 @@ type PaymentRow = {
   status: "予定" | "入金済" | "保留" | "キャンセル";
   notes: string | null;
   applied_rate: number | null;
+  // 締日跨ぎ催事の分割管理
+  period_start_date: string | null;
+  period_end_date: string | null;
+  installment_no: number;
+  installment_total: number;
   events: EventLite | null;
+};
+
+// 「1回目/2回目」ラベル (installment_total が 1 ならラベル無し)
+const installmentLabel = (no: number, total: number): string => {
+  if (!total || total <= 1) return "";
+  return ` (${no}/${total}回目)`;
 };
 
 const STATUS_OPTIONS = ["予定", "入金済", "保留", "キャンセル"] as const;
@@ -645,7 +656,7 @@ function PaymentsPageInner() {
   // CSV エクスポート（Excel互換 UTF-8 BOM）
   const exportCsv = () => {
     const headers = [
-      "催事名", "会場", "開催期間", "入金元", "予定日", "予定額(税込)",
+      "催事名", "会場", "開催期間", "入金元", "回数", "対象期間", "予定日", "予定額(税込)",
       "実入金日", "実入金額", "方法", "ステータス", "備考"
     ];
     const rows = filtered.map((p) => {
@@ -655,6 +666,8 @@ function PaymentsPageInner() {
         eventLabel(ev),
         ev ? `${ev.start_date}〜${ev.end_date}` : "",
         paymentDisplayPayer(p),
+        p.installment_total > 1 ? `${p.installment_no}/${p.installment_total}回目` : "",
+        p.installment_total > 1 && p.period_start_date && p.period_end_date ? `${p.period_start_date}〜${p.period_end_date}` : "",
         p.planned_date || "",
         p.planned_amount != null ? String(toIncludedAmt(p.planned_amount, p.planned_tax_type)) : "",
         p.actual_date || "",
@@ -883,10 +896,13 @@ function PaymentsPageInner() {
                                     width: `${width}%`,
                                     height: 60,
                                   }}
-                                  title={`${entry.venueLabelStr} (${entry.eventStart}〜${entry.eventEnd}) ${entry.payment.status}`}
+                                  title={`${entry.venueLabelStr}${installmentLabel(entry.payment.installment_no, entry.payment.installment_total)} (${entry.eventStart}〜${entry.eventEnd}) ${entry.payment.status}`}
                                 >
                                   <div className="truncate font-semibold leading-tight text-[11px]">
                                     {entry.venueLabelStr}
+                                    {entry.payment.installment_total > 1 && (
+                                      <span className="ml-0.5 text-[9px] text-blue-700">[{entry.payment.installment_no}/{entry.payment.installment_total}]</span>
+                                    )}
                                     {isPaid && <span className="ml-0.5 text-[10px]">✓</span>}
                                   </div>
                                   <div className="truncate text-[10px] leading-tight">
@@ -1009,9 +1025,15 @@ function PaymentsPageInner() {
                               <div className="min-w-0 flex-1">
                                 <Link href={`/events/${p.event_id}`} className="font-semibold text-sm hover:underline block truncate print:no-underline print:text-inherit">
                                   {eventLabel(p.events)}
+                                  {p.installment_total > 1 && (
+                                    <span className="ml-1 text-[10px] px-1 py-0.5 rounded bg-blue-100 text-blue-800 font-bold">{p.installment_no}/{p.installment_total}回目</span>
+                                  )}
                                 </Link>
                                 <p className="text-[11px] text-muted-foreground">
                                   催事 {p.events?.start_date}〜{p.events?.end_date}
+                                  {p.installment_total > 1 && p.period_start_date && p.period_end_date && (
+                                    <span className="block text-blue-700">対象期間: {p.period_start_date}〜{p.period_end_date}</span>
+                                  )}
                                   {eventRevenue && (
                                     <> ・売上 <span className="font-medium">¥{eventRevenue.toLocaleString()}</span>(税込)</>
                                   )}
@@ -1049,11 +1071,34 @@ function PaymentsPageInner() {
                                 ✓ {p.actual_date} に ¥{(p.actual_amount ?? 0).toLocaleString()} 入金{p.method ? ` (${METHOD_LABEL[p.method]})` : ""}
                               </div>
                             )}
-                            {canEdit && !isPaid && (
+                            {canEdit && (
                               <div className="border-t pt-1.5 flex items-center gap-1 print:hidden">
-                                <Button size="sm" variant="outline" className="h-6 text-[10px] px-2" onClick={() => markPaid(p)}>
-                                  ✓ 入金済にする
-                                </Button>
+                                {!isPaid ? (
+                                  <Button size="sm" variant="outline" className="h-6 text-[10px] px-2" onClick={() => markPaid(p)}>
+                                    ✓ 入金済にする
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-6 text-[10px] px-2"
+                                    onClick={async () => {
+                                      if (!confirm("この入金を「予定」状態に戻しますか？\n実入金日・実入金額もクリアされます。")) return;
+                                      const { error } = await supabase
+                                        .from("event_payments")
+                                        .update({ status: "予定", actual_date: null, actual_amount: null })
+                                        .eq("id", p.id);
+                                      if (error) {
+                                        alert(`戻すのに失敗しました: ${error.message}`);
+                                      } else {
+                                        fetchData();
+                                      }
+                                    }}
+                                    title="間違えて入金済にした場合に「予定」に戻す"
+                                  >
+                                    ↶ 予定に戻す
+                                  </Button>
+                                )}
                                 <Button variant="ghost" size="sm" className="h-6 text-[10px] px-2 ml-auto" onClick={() => openEdit(p)}>
                                   編集
                                 </Button>
@@ -1235,10 +1280,18 @@ function PaymentsPageInner() {
                     {p.events && (
                       <Link href={`/events/${p.event_id}`} className="hover:underline inline-flex items-center gap-1">
                         {eventLabel(p.events)}
+                        {p.installment_total > 1 && (
+                          <span className="text-[9px] px-1 rounded bg-blue-100 text-blue-800 font-bold">{p.installment_no}/{p.installment_total}回目</span>
+                        )}
                         <ArrowUpRight className="h-3 w-3" />
                       </Link>
                     )}
-                    <div className="text-[10px] text-muted-foreground">{p.events?.start_date}〜{p.events?.end_date}</div>
+                    <div className="text-[10px] text-muted-foreground">
+                      {p.events?.start_date}〜{p.events?.end_date}
+                      {p.installment_total > 1 && p.period_start_date && p.period_end_date && (
+                        <span className="ml-1 text-blue-700">[{p.period_start_date.slice(5)}〜{p.period_end_date.slice(5)}]</span>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className="text-sm">{paymentDisplayPayer(p)}</TableCell>
                   <TableCell className="text-sm">{p.planned_date || "—"}</TableCell>
@@ -1255,9 +1308,27 @@ function PaymentsPageInner() {
                   {canEdit && (
                     <TableCell>
                       <div className="flex gap-1">
-                        {p.status !== "入金済" && (
+                        {p.status !== "入金済" ? (
                           <Button size="sm" variant="outline" className="h-7 text-[10px] px-2" onClick={() => markPaid(p)} title="入金済にする">
                             ✓
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-[10px] px-2"
+                            title="間違えて入金済にした場合「予定」に戻す"
+                            onClick={async () => {
+                              if (!confirm("この入金を「予定」状態に戻しますか？\n実入金日・実入金額もクリアされます。")) return;
+                              const { error } = await supabase
+                                .from("event_payments")
+                                .update({ status: "予定", actual_date: null, actual_amount: null })
+                                .eq("id", p.id);
+                              if (error) alert(`戻すのに失敗しました: ${error.message}`);
+                              else fetchData();
+                            }}
+                          >
+                            ↶
                           </Button>
                         )}
                         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(p)}>
