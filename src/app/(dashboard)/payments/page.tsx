@@ -163,6 +163,8 @@ function PaymentsPageInner() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
 
+  // 初回 fetchData が完了したことを示すフラグ (auto-edit が早すぎないようにするため)
+  const [fetched, setFetched] = useState(false);
   const fetchData = useCallback(async () => {
     setLoading(true);
     const [paymentsRes, evtRes, vmRes, pyRes] = await Promise.all([
@@ -179,15 +181,18 @@ function PaymentsPageInner() {
     setVenues((vmRes.data || []) as VenueMasterLite[]);
     setPayers((pyRes.data || []) as PayerLite[]);
     setLoading(false);
+    setFetched(true);
   }, [supabase]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   // クエリ ?edit=auto&event=<id> で来た場合、データ取得後に該当催事の編集ダイアログを自動で開く
   // (催事詳細「入金管理ページで編集」リンクからの遷移時の「堂巡り」を防ぐため)
+  // ※ fetched=true を確認することで、payments の取得が完了する前に
+  //   誤って openCreate が走って空レコードが作られるのを防ぐ
   const [autoEditTried, setAutoEditTried] = useState(false);
   useEffect(() => {
-    if (loading || autoEditTried) return;
+    if (!fetched || autoEditTried) return; // データ取得が完了するまで待つ
     if (autoEditFlag !== "auto" || !eventFilter) return;
     setAutoEditTried(true);
     // 該当催事の event_payments を探す (installment_no 順で最初の1件)
@@ -195,12 +200,11 @@ function PaymentsPageInner() {
       .filter((p) => p.event_id === eventFilter)
       .sort((a, b) => (a.installment_no || 1) - (b.installment_no || 1))[0];
     if (target) {
-      // 既存の payment を編集
+      // 既存の payment を編集 (UPDATE)
       openEdit(target);
-    } else {
-      // payment 未作成 → 新規作成ダイアログ（催事プリフィル）
-      openCreate(eventFilter);
     }
+    // 既存無しの場合は dialog を開かない (新規作成は誤操作リスクが高いため、
+    // ユーザーが明示的に「+入金を追加」ボタンから開く運用にする)
     // URL から ?edit=auto を取り除き、戻るボタンで再オープンを防ぐ
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
@@ -208,7 +212,7 @@ function PaymentsPageInner() {
       window.history.replaceState({}, "", url.toString());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, autoEditFlag, eventFilter, payments]);
+  }, [fetched, autoEditFlag, eventFilter, payments]);
 
   // 自動バックフィル: planned_amount=null かつ event_daily_revenue がある event_payments を補完
   // 1時間に1回まで（負荷制限）。ユーザー操作なしで未補完の入金額が埋まる。
