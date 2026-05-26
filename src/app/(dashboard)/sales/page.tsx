@@ -10,7 +10,8 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, Calendar as CalendarIcon, BarChart3, Store, LineChart, Download, Upload, FileText } from "lucide-react";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { TrendingUp, Calendar as CalendarIcon, BarChart3, Store, LineChart, Download, Upload, FileText, ChevronDown, ChevronLeft, ChevronRight, Copy, Check, Wallet, Hash, Coins } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
 
 type EventLite = {
@@ -166,11 +167,10 @@ export default function SalesPage() {
     return months;
   }, [events, salesByEvent, calendarYear]);
 
-  // ===== 月次サマリ (前年比較) =====
-  // 今年と昨年の月別合計 (税込) を計算
+  // ===== 月次サマリ (選択年 vs 前年) =====
+  // calendarYear と calendarYear - 1 の月別合計 (税込) を計算
   const monthlySummary = useMemo(() => {
-    const today = new Date();
-    const thisYear = today.getFullYear();
+    const thisYear = calendarYear;
     const lastYear = thisYear - 1;
     // 各年の月別売上 (税込)
     const yearMonthTotals: Record<number, number[]> = { [thisYear]: Array(12).fill(0), [lastYear]: Array(12).fill(0) };
@@ -183,9 +183,9 @@ export default function SalesPage() {
       }
     }
     return { thisYear, lastYear, totals: yearMonthTotals };
-  }, [events, salesByEvent]);
+  }, [events, salesByEvent, calendarYear]);
 
-  // ===== 会場別 前年比較 =====
+  // ===== 会場別 (選択年 vs 前年) =====
   const venueSummary = useMemo(() => {
     type VenueRow = {
       label: string;
@@ -194,8 +194,7 @@ export default function SalesPage() {
       thisYearEvents: number;
       lastYearEvents: number;
     };
-    const today = new Date();
-    const thisYear = today.getFullYear();
+    const thisYear = calendarYear;
     const lastYear = thisYear - 1;
     const byVenue = new Map<string, VenueRow>();
     for (const e of events) {
@@ -216,7 +215,64 @@ export default function SalesPage() {
     return Array.from(byVenue.values())
       .filter((r) => r.thisYearTotal > 0 || r.lastYearTotal > 0)
       .sort((a, b) => b.thisYearTotal - a.thisYearTotal);
-  }, [events, salesByEvent]);
+  }, [events, salesByEvent, calendarYear]);
+
+  // ===== KPI サマリ (選択年 vs 前年) =====
+  const kpi = useMemo(() => {
+    const thisYear = calendarYear;
+    const lastYear = thisYear - 1;
+    let thisSales = 0, lastSales = 0;
+    let thisCount = 0, lastCount = 0;
+    for (const e of events) {
+      const sales = salesByEvent.get(e.id);
+      const [y] = e.start_date.split("-").map(Number);
+      if (y === thisYear) {
+        thisCount += 1;
+        if (sales?.hasData) thisSales += sales.included;
+      } else if (y === lastYear) {
+        lastCount += 1;
+        if (sales?.hasData) lastSales += sales.included;
+      }
+    }
+    const salesRatio = lastSales > 0 ? ((thisSales - lastSales) / lastSales) * 100 : null;
+    const countRatio = lastCount > 0 ? ((thisCount - lastCount) / lastCount) * 100 : null;
+    const thisAvg = thisCount > 0 ? Math.round(thisSales / thisCount) : 0;
+    const lastAvg = lastCount > 0 ? Math.round(lastSales / lastCount) : 0;
+    const avgRatio = lastAvg > 0 ? ((thisAvg - lastAvg) / lastAvg) * 100 : null;
+    return {
+      thisYear, lastYear,
+      thisSales, lastSales, salesRatio,
+      thisCount, lastCount, countRatio,
+      thisAvg, lastAvg, avgRatio,
+    };
+  }, [events, salesByEvent, calendarYear]);
+
+  // 年セレクタ ポップオーバー
+  const [yearPickerOpen, setYearPickerOpen] = useState(false);
+  // 表コピー フィードバック
+  const [copied, setCopied] = useState(false);
+  const copyTable = async () => {
+    const rows: string[] = [];
+    rows.push(["催事", "会場", "開始日", "終了日", "売上(税込)", "売上(税抜)"].join("\t"));
+    for (const e of filteredEvents) {
+      const sales = salesByEvent.get(e.id);
+      rows.push([
+        e.name || "",
+        e.store_name ? `${e.venue} ${e.store_name}` : e.venue,
+        e.start_date,
+        e.end_date,
+        sales?.included ? String(sales.included) : "",
+        sales?.excluded ? String(sales.excluded) : "",
+      ].join("\t"));
+    }
+    try {
+      await navigator.clipboard.writeText(rows.join("\n"));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      alert("クリップボードへのコピーに失敗しました");
+    }
+  };
 
   // ===== CSV インポート =====
   // ヘッダ: 会場名, 店舗名, 開始日(YYYY-MM-DD), 売上(税込)
@@ -355,6 +411,28 @@ export default function SalesPage() {
     URL.revokeObjectURL(url);
   };
 
+  const todayYear = new Date().getFullYear();
+  // ポップオーバー内で表示する年候補 (データ年 + 前後2年)
+  const pickerYears = useMemo(() => {
+    const minY = dataYears.length > 0 ? dataYears[0] : todayYear;
+    const maxY = dataYears.length > 0 ? dataYears[dataYears.length - 1] : todayYear;
+    const ys = new Set<number>(dataYears);
+    // 比較目的で前年も追加
+    for (let y = minY - 1; y <= maxY + 1; y++) ys.add(y);
+    return Array.from(ys).sort((a, b) => b - a); // 新→旧
+  }, [dataYears, todayYear]);
+
+  const fmtRatio = (r: number | null) => {
+    if (r === null) return "—";
+    const sign = r >= 0 ? "+" : "";
+    return `${sign}${r.toFixed(1)}%`;
+  };
+  const ratioColor = (r: number | null) => {
+    if (r === null) return "text-muted-foreground";
+    if (r >= 0) return "text-emerald-700";
+    return "text-rose-700";
+  };
+
   if (permLoading) return <p className="text-muted-foreground">読み込み中...</p>;
   if (!canViewPayments) {
     return (
@@ -382,7 +460,91 @@ export default function SalesPage() {
             催事ごとの売上を可視化し、前年同期との比較ができます。
           </p>
         </div>
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap items-center">
+          {/* 年セレクタ (ポップオーバー型) */}
+          <Popover open={yearPickerOpen} onOpenChange={setYearPickerOpen}>
+            <PopoverTrigger
+              render={
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-input bg-white hover:bg-muted text-sm font-bold shadow-sm transition-colors"
+                  title="集計対象の年を変更"
+                />
+              }
+            >
+              <CalendarIcon className="h-4 w-4 text-emerald-700" />
+              {calendarYear}年
+              {calendarYear === todayYear && <span className="text-[10px] text-amber-700 font-semibold">今年</span>}
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-64 p-3 space-y-3">
+              {/* 上段: 前/次 ナビ */}
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  className="h-7 w-7 rounded inline-flex items-center justify-center hover:bg-muted text-muted-foreground"
+                  onClick={() => setCalendarYear((y) => y - 1)}
+                  title="前年"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <span className="text-base font-bold">{calendarYear}年</span>
+                <button
+                  type="button"
+                  className="h-7 w-7 rounded inline-flex items-center justify-center hover:bg-muted text-muted-foreground"
+                  onClick={() => setCalendarYear((y) => y + 1)}
+                  title="翌年"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+              {/* クイックリンク */}
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => { setCalendarYear(todayYear); setYearPickerOpen(false); }}
+                  className={`flex-1 h-7 rounded text-xs font-semibold border transition-colors ${
+                    calendarYear === todayYear ? "bg-emerald-600 text-white border-emerald-600" : "bg-white hover:bg-emerald-50 border-emerald-200 text-emerald-700"
+                  }`}
+                >今年</button>
+                <button
+                  type="button"
+                  onClick={() => { setCalendarYear(todayYear - 1); setYearPickerOpen(false); }}
+                  className={`flex-1 h-7 rounded text-xs font-semibold border transition-colors ${
+                    calendarYear === todayYear - 1 ? "bg-emerald-600 text-white border-emerald-600" : "bg-white hover:bg-emerald-50 border-emerald-200 text-emerald-700"
+                  }`}
+                >昨年</button>
+              </div>
+              {/* 年グリッド */}
+              <div className="grid grid-cols-3 gap-1.5">
+                {pickerYears.map((y) => {
+                  const isSel = y === calendarYear;
+                  const hasData = dataYears.includes(y);
+                  return (
+                    <button
+                      key={y}
+                      type="button"
+                      onClick={() => { setCalendarYear(y); setYearPickerOpen(false); }}
+                      className={`h-8 rounded text-xs font-bold border transition-colors ${
+                        isSel
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : hasData
+                            ? "bg-white hover:bg-muted border-input text-foreground"
+                            : "bg-muted/30 hover:bg-muted border-transparent text-muted-foreground"
+                      }`}
+                      title={hasData ? "データあり" : "データなし"}
+                    >
+                      {y}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                ※ 選択した年と前年を比較表示します
+              </p>
+            </PopoverContent>
+          </Popover>
+
           <Button variant="outline" size="sm" onClick={downloadCsvTemplate} title="売上一括取込用のテンプレートCSVを取得">
             <FileText className="h-4 w-4 mr-1" />テンプレ
           </Button>
@@ -404,6 +566,60 @@ export default function SalesPage() {
           </Button>
         </div>
       </div>
+
+      {/* KPI カード (選択年 vs 前年) */}
+      {!loading && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 print:hidden">
+          {/* 売上合計 */}
+          <Card className="border-l-4 border-l-emerald-500">
+            <CardContent className="p-3 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                  <Wallet className="h-3.5 w-3.5 text-emerald-600" />
+                  {kpi.thisYear}年 売上合計（税込）
+                </span>
+                <span className={`text-xs font-bold ${ratioColor(kpi.salesRatio)}`}>{fmtRatio(kpi.salesRatio)}</span>
+              </div>
+              <div className="text-xl font-black tabular-nums">¥{kpi.thisSales.toLocaleString()}</div>
+              <div className="text-[10px] text-muted-foreground tabular-nums">
+                前年: ¥{kpi.lastSales.toLocaleString()}
+              </div>
+            </CardContent>
+          </Card>
+          {/* 催事件数 */}
+          <Card className="border-l-4 border-l-blue-500">
+            <CardContent className="p-3 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                  <Hash className="h-3.5 w-3.5 text-blue-600" />
+                  {kpi.thisYear}年 催事件数
+                </span>
+                <span className={`text-xs font-bold ${ratioColor(kpi.countRatio)}`}>{fmtRatio(kpi.countRatio)}</span>
+              </div>
+              <div className="text-xl font-black tabular-nums">{kpi.thisCount}<span className="text-sm font-normal text-muted-foreground ml-1">件</span></div>
+              <div className="text-[10px] text-muted-foreground tabular-nums">
+                前年: {kpi.lastCount}件
+              </div>
+            </CardContent>
+          </Card>
+          {/* 平均売上/催事 */}
+          <Card className="border-l-4 border-l-purple-500">
+            <CardContent className="p-3 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                  <Coins className="h-3.5 w-3.5 text-purple-600" />
+                  平均売上/催事
+                </span>
+                <span className={`text-xs font-bold ${ratioColor(kpi.avgRatio)}`}>{fmtRatio(kpi.avgRatio)}</span>
+              </div>
+              <div className="text-xl font-black tabular-nums">¥{kpi.thisAvg.toLocaleString()}</div>
+              <div className="text-[10px] text-muted-foreground tabular-nums">
+                前年: ¥{kpi.lastAvg.toLocaleString()}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
       {/* CSV インポート結果 */}
       {importResult && (
         <Card className="border-l-4 border-l-blue-500 bg-blue-50/50">
@@ -440,32 +656,13 @@ export default function SalesPage() {
             <div className="flex items-center justify-between flex-wrap gap-2 print:hidden">
               <div className="flex items-center gap-2">
                 <CalendarIcon className="h-4 w-4 text-emerald-700" />
-                <h2 className="text-sm font-bold">催事カレンダー（売上付き）</h2>
+                <h2 className="text-sm font-bold">{calendarYear}年 催事カレンダー（売上付き）</h2>
               </div>
-              <div className="flex items-center gap-3 flex-wrap">
-                {/* 年切替: データがある年を順に表示 */}
-                <div className="inline-flex rounded-md border overflow-hidden text-xs">
-                  {dataYears.map((y) => (
-                    <button
-                      key={y}
-                      type="button"
-                      onClick={() => setCalendarYear(y)}
-                      className={`px-2 h-7 transition-colors ${
-                        calendarYear === y
-                          ? "bg-primary text-primary-foreground font-bold"
-                          : "bg-white text-muted-foreground hover:bg-muted"
-                      } ${y > dataYears[0] ? "border-l" : ""}`}
-                    >
-                      {y}年
-                    </button>
-                  ))}
-                </div>
-                <span className="inline-flex items-center gap-2 text-[10px] flex-wrap">
-                  <span className="inline-flex items-center gap-0.5"><span className="inline-block w-3 h-3 bg-emerald-100 border-2 border-emerald-500 rounded-sm"></span>売上入力済</span>
-                  <span className="inline-flex items-center gap-0.5"><span className="inline-block w-3 h-3 bg-yellow-100 border-2 border-yellow-500 rounded-sm"></span>売上未入力(終了済)</span>
-                  <span className="inline-flex items-center gap-0.5"><span className="inline-block w-3 h-3 bg-gray-100 border-2 border-gray-400 rounded-sm"></span>未開催</span>
-                </span>
-              </div>
+              <span className="inline-flex items-center gap-2 text-[10px] flex-wrap">
+                <span className="inline-flex items-center gap-0.5"><span className="inline-block w-3 h-3 bg-emerald-100 border-2 border-emerald-500 rounded-sm"></span>売上入力済</span>
+                <span className="inline-flex items-center gap-0.5"><span className="inline-block w-3 h-3 bg-yellow-100 border-2 border-yellow-500 rounded-sm"></span>売上未入力(終了済)</span>
+                <span className="inline-flex items-center gap-0.5"><span className="inline-block w-3 h-3 bg-gray-100 border-2 border-gray-400 rounded-sm"></span>未開催</span>
+              </span>
             </div>
             {calendarMonths.map((m) => {
               const todayStr = new Date().toISOString().slice(0, 10);
@@ -675,75 +872,150 @@ export default function SalesPage() {
             </Card>
           </TabsContent>
 
-          {/* タブ: 推移グラフ */}
+          {/* タブ: 推移グラフ (棒グラフ + 前年比折れ線 のコンボ) */}
           <TabsContent value="chart" keepMounted className="space-y-4 print:!block">
             <Card>
               <CardContent className="p-3 space-y-3">
                 <div className="flex items-center gap-2">
                   <LineChart className="h-4 w-4 text-purple-700" />
-                  <h2 className="text-sm font-bold">月次売上 推移グラフ（前年比較・税込）</h2>
+                  <h2 className="text-sm font-bold">月次売上 推移グラフ（{monthlySummary.thisYear}年実績 + 前年比）</h2>
                 </div>
-                <div className="flex items-center gap-3 text-xs">
-                  <span className="inline-flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-emerald-600"></span>{monthlySummary.thisYear}年</span>
-                  <span className="inline-flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-gray-400"></span>{monthlySummary.lastYear}年</span>
+                <div className="flex items-center gap-4 text-xs flex-wrap">
+                  <span className="inline-flex items-center gap-1"><span className="inline-block w-3 h-3 bg-emerald-500 rounded-sm"></span>{monthlySummary.thisYear}年 売上（税込）</span>
+                  <span className="inline-flex items-center gap-1"><span className="inline-block w-3 h-3 bg-gray-300 rounded-sm"></span>{monthlySummary.lastYear}年 売上（税込）</span>
+                  <span className="inline-flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-orange-500"></span>前年比 (%)</span>
                 </div>
                 {(() => {
                   const thisData = monthlySummary.totals[monthlySummary.thisYear];
                   const lastData = monthlySummary.totals[monthlySummary.lastYear];
                   const allValues = [...thisData, ...lastData].filter((v) => v > 0);
-                  const max = allValues.length > 0 ? Math.max(...allValues) : 1;
+                  const maxSales = allValues.length > 0 ? Math.max(...allValues) : 1;
+                  // 前年比 (%) — 前年実績がない月は null
+                  const ratios: (number | null)[] = thisData.map((v, i) => {
+                    const l = lastData[i];
+                    if (l <= 0) return null;
+                    return ((v - l) / l) * 100;
+                  });
+                  const ratioValues = ratios.filter((r): r is number => r !== null);
+                  // 前年比の上限: ±200% に丸める (見やすさ優先)
+                  const rawMaxRatio = ratioValues.length > 0 ? Math.max(...ratioValues.map(Math.abs)) : 100;
+                  const maxRatio = Math.min(Math.max(Math.ceil(rawMaxRatio / 50) * 50, 50), 300);
+
                   // SVG dims
-                  const W = 720, H = 280;
-                  const padL = 60, padR = 20, padT = 20, padB = 40;
+                  const W = 760, H = 320;
+                  const padL = 64, padR = 64, padT = 24, padB = 44;
                   const innerW = W - padL - padR;
                   const innerH = H - padT - padB;
-                  const xAt = (m: number) => padL + (m / 11) * innerW; // m = 0-11
-                  const yAt = (v: number) => padT + innerH - (v / max) * innerH;
-                  const buildPath = (data: number[]) => {
-                    const points: string[] = [];
-                    for (let i = 0; i < 12; i++) {
-                      if (data[i] > 0) points.push(`${xAt(i)},${yAt(data[i])}`);
-                    }
-                    if (points.length === 0) return "";
-                    return "M " + points.join(" L ");
-                  };
-                  // Y軸ラベル (5本)
+                  // 棒は2本/月 (今年, 前年) → 12月 × 2本
+                  const bandW = innerW / 12;
+                  const barGap = 2;
+                  const barW = (bandW - barGap * 3) / 2;
+
+                  const xBandCenter = (i: number) => padL + bandW * i + bandW / 2;
+                  const yAtSales = (v: number) => padT + innerH - (v / maxSales) * innerH;
+                  const yAtRatio = (r: number) => padT + innerH / 2 - (r / maxRatio) * (innerH / 2);
+
+                  // Y軸ラベル (5本) — 左側=売上
                   const yTicks: number[] = [];
-                  for (let i = 0; i <= 4; i++) yTicks.push((max / 4) * i);
+                  for (let i = 0; i <= 4; i++) yTicks.push((maxSales / 4) * i);
+                  // 右側=前年比 (5本)
+                  const rTicks: number[] = [-maxRatio, -maxRatio / 2, 0, maxRatio / 2, maxRatio];
+
                   const formatY = (v: number) => {
-                    if (v >= 10000000) return `${(v / 10000000).toFixed(1)}千万`;
+                    if (v >= 100000000) return `${(v / 100000000).toFixed(1)}億`;
                     if (v >= 10000) return `${(v / 10000).toFixed(0)}万`;
                     return v.toFixed(0);
                   };
+
+                  // 折れ線パス — 前年実績が存在する月のみ
+                  const linePoints: { x: number; y: number; idx: number; r: number }[] = [];
+                  ratios.forEach((r, i) => {
+                    if (r !== null) linePoints.push({ x: xBandCenter(i), y: yAtRatio(r), idx: i, r });
+                  });
+                  const linePath = linePoints.length > 0
+                    ? "M " + linePoints.map((p) => `${p.x},${p.y}`).join(" L ")
+                    : "";
+
                   return (
                     <div className="overflow-x-auto">
-                      <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-full" style={{ minWidth: 600 }}>
-                        {/* グリッド */}
+                      <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-full" style={{ minWidth: 640 }}>
+                        {/* 横グリッド (売上軸ベース) */}
                         {yTicks.map((v, idx) => (
-                          <g key={idx}>
-                            <line x1={padL} y1={yAt(v)} x2={W - padR} y2={yAt(v)} stroke="#e5e7eb" strokeWidth={1} strokeDasharray={idx === 0 ? "0" : "2,2"} />
-                            <text x={padL - 6} y={yAt(v)} textAnchor="end" dominantBaseline="middle" fontSize={10} fill="#6b7280">{formatY(v)}</text>
-                          </g>
+                          <line key={idx} x1={padL} y1={yAtSales(v)} x2={W - padR} y2={yAtSales(v)} stroke="#e5e7eb" strokeWidth={1} strokeDasharray={idx === 0 ? "0" : "2,2"} />
                         ))}
+                        {/* 0%ライン (折れ線軸) */}
+                        <line x1={padL} y1={yAtRatio(0)} x2={W - padR} y2={yAtRatio(0)} stroke="#fdba74" strokeWidth={1} strokeDasharray="4,3" opacity={0.6} />
+
+                        {/* Y軸ラベル: 左=売上 */}
+                        {yTicks.map((v, idx) => (
+                          <text key={idx} x={padL - 6} y={yAtSales(v)} textAnchor="end" dominantBaseline="middle" fontSize={10} fill="#059669">{formatY(v)}</text>
+                        ))}
+                        {/* Y軸ラベル: 右=前年比% */}
+                        {rTicks.map((r, idx) => (
+                          <text key={idx} x={W - padR + 6} y={yAtRatio(r)} textAnchor="start" dominantBaseline="middle" fontSize={10} fill="#ea580c">{r > 0 ? "+" : ""}{r}%</text>
+                        ))}
+
                         {/* X軸ラベル */}
                         {Array.from({ length: 12 }, (_, i) => (
-                          <text key={i} x={xAt(i)} y={H - padB + 15} textAnchor="middle" fontSize={10} fill="#374151">{i + 1}月</text>
+                          <text key={i} x={xBandCenter(i)} y={H - padB + 16} textAnchor="middle" fontSize={11} fill="#374151" fontWeight={600}>{i + 1}月</text>
                         ))}
-                        {/* 去年の線 */}
-                        <path d={buildPath(lastData)} fill="none" stroke="#9ca3af" strokeWidth={2} strokeDasharray="4,2" />
-                        {lastData.map((v, i) => v > 0 && (
-                          <circle key={`l-${i}`} cx={xAt(i)} cy={yAt(v)} r={3} fill="#9ca3af" />
+
+                        {/* 棒グラフ */}
+                        {Array.from({ length: 12 }, (_, i) => {
+                          const tv = thisData[i];
+                          const lv = lastData[i];
+                          const bx = padL + bandW * i + barGap;
+                          return (
+                            <g key={i}>
+                              {/* 前年 (グレー) */}
+                              {lv > 0 && (
+                                <rect
+                                  x={bx}
+                                  y={yAtSales(lv)}
+                                  width={barW}
+                                  height={padT + innerH - yAtSales(lv)}
+                                  fill="#d1d5db"
+                                  rx={2}
+                                />
+                              )}
+                              {/* 今年 (緑) */}
+                              {tv > 0 && (
+                                <rect
+                                  x={bx + barW + barGap}
+                                  y={yAtSales(tv)}
+                                  width={barW}
+                                  height={padT + innerH - yAtSales(tv)}
+                                  fill="#10b981"
+                                  rx={2}
+                                />
+                              )}
+                            </g>
+                          );
+                        })}
+
+                        {/* 前年比 折れ線 */}
+                        {linePath && (
+                          <path d={linePath} fill="none" stroke="#f97316" strokeWidth={2.5} />
+                        )}
+                        {linePoints.map((p) => (
+                          <g key={`pt-${p.idx}`}>
+                            <circle cx={p.x} cy={p.y} r={4} fill="#fff" stroke="#f97316" strokeWidth={2} />
+                            <text x={p.x} y={p.y - 8} textAnchor="middle" fontSize={9} fill="#ea580c" fontWeight={700}>
+                              {p.r >= 0 ? "+" : ""}{p.r.toFixed(0)}%
+                            </text>
+                          </g>
                         ))}
-                        {/* 今年の線 */}
-                        <path d={buildPath(thisData)} fill="none" stroke="#059669" strokeWidth={2.5} />
-                        {thisData.map((v, i) => v > 0 && (
-                          <circle key={`t-${i}`} cx={xAt(i)} cy={yAt(v)} r={4} fill="#059669" />
-                        ))}
+
+                        {/* 軸タイトル */}
+                        <text x={padL - 50} y={padT + innerH / 2} textAnchor="middle" fontSize={10} fill="#059669" transform={`rotate(-90 ${padL - 50} ${padT + innerH / 2})`}>売上 (¥)</text>
+                        <text x={W - padR + 50} y={padT + innerH / 2} textAnchor="middle" fontSize={10} fill="#ea580c" transform={`rotate(90 ${W - padR + 50} ${padT + innerH / 2})`}>前年比 (%)</text>
                       </svg>
                     </div>
                   );
                 })()}
-                <p className="text-[10px] text-muted-foreground">※ 日別売上(税込)の月別合計。売上未入力の月はプロット無し。</p>
+                <p className="text-[10px] text-muted-foreground">
+                  ※ 棒グラフ=月別売上(税込) 緑:{monthlySummary.thisYear}年 / グレー:{monthlySummary.lastYear}年 ／ オレンジ折れ線=前年比 (前年実績がある月のみ)
+                </p>
               </CardContent>
             </Card>
           </TabsContent>
@@ -755,13 +1027,25 @@ export default function SalesPage() {
         <CardContent className="p-3 space-y-2">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <h2 className="text-sm font-bold">催事一覧（売上付き・絞り込み可）</h2>
-            <Input
-              type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="催事名・会場で検索"
-              className="w-60 h-8 text-xs"
-            />
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={copyTable}
+                title="表のデータをタブ区切り (TSV) でクリップボードへコピー。Excel/スプレッドシートにそのまま貼り付け可"
+                className={copied ? "border-emerald-500 text-emerald-700" : ""}
+              >
+                {copied ? <Check className="h-4 w-4 mr-1 text-emerald-600" /> : <Copy className="h-4 w-4 mr-1" />}
+                {copied ? "コピー済" : "表をコピー"}
+              </Button>
+              <Input
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="催事名・会場で検索"
+                className="w-60 h-8 text-xs"
+              />
+            </div>
           </div>
           <div className="overflow-x-auto">
             <Table>
