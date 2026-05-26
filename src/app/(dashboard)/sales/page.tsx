@@ -10,8 +10,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
-import { TrendingUp, Calendar as CalendarIcon, BarChart3, Store, LineChart, Download, Upload, FileText, ChevronDown, ChevronLeft, ChevronRight, Copy, Check, Wallet, Hash, Coins } from "lucide-react";
+import { TrendingUp, Calendar as CalendarIcon, BarChart3, Store, LineChart, Download, Upload, FileText, Copy, Check, Wallet, Hash, Coins, CalendarDays } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
 
 type EventLite = {
@@ -217,21 +216,33 @@ export default function SalesPage() {
       .sort((a, b) => b.thisYearTotal - a.thisYearTotal);
   }, [events, salesByEvent, calendarYear]);
 
-  // ===== KPI サマリ (選択年 vs 前年) =====
+  // ===== KPI サマリ (選択年 vs 前年 / 今月 vs 前年同月) =====
   const kpi = useMemo(() => {
     const thisYear = calendarYear;
     const lastYear = thisYear - 1;
+    const today = new Date();
+    const todayMonth = today.getMonth() + 1; // 1-12
     let thisSales = 0, lastSales = 0;
     let thisCount = 0, lastCount = 0;
+    let thisMonthSales = 0, lastMonthSales = 0;
+    let thisMonthCount = 0, lastMonthCount = 0;
     for (const e of events) {
       const sales = salesByEvent.get(e.id);
-      const [y] = e.start_date.split("-").map(Number);
+      const [y, m] = e.start_date.split("-").map(Number);
       if (y === thisYear) {
         thisCount += 1;
         if (sales?.hasData) thisSales += sales.included;
+        if (m === todayMonth) {
+          thisMonthCount += 1;
+          if (sales?.hasData) thisMonthSales += sales.included;
+        }
       } else if (y === lastYear) {
         lastCount += 1;
         if (sales?.hasData) lastSales += sales.included;
+        if (m === todayMonth) {
+          lastMonthCount += 1;
+          if (sales?.hasData) lastMonthSales += sales.included;
+        }
       }
     }
     const salesRatio = lastSales > 0 ? ((thisSales - lastSales) / lastSales) * 100 : null;
@@ -239,16 +250,24 @@ export default function SalesPage() {
     const thisAvg = thisCount > 0 ? Math.round(thisSales / thisCount) : 0;
     const lastAvg = lastCount > 0 ? Math.round(lastSales / lastCount) : 0;
     const avgRatio = lastAvg > 0 ? ((thisAvg - lastAvg) / lastAvg) * 100 : null;
+
+    // 前年同月比
+    const monthSalesRatio = lastMonthSales > 0 ? ((thisMonthSales - lastMonthSales) / lastMonthSales) * 100 : null;
+    const monthCountRatio = lastMonthCount > 0 ? ((thisMonthCount - lastMonthCount) / lastMonthCount) * 100 : null;
+    const thisMonthAvg = thisMonthCount > 0 ? Math.round(thisMonthSales / thisMonthCount) : 0;
+    const lastMonthAvg = lastMonthCount > 0 ? Math.round(lastMonthSales / lastMonthCount) : 0;
+    const monthAvgRatio = lastMonthAvg > 0 ? ((thisMonthAvg - lastMonthAvg) / lastMonthAvg) * 100 : null;
+
     return {
-      thisYear, lastYear,
+      thisYear, lastYear, todayMonth,
       thisSales, lastSales, salesRatio,
       thisCount, lastCount, countRatio,
       thisAvg, lastAvg, avgRatio,
+      thisMonthSales, lastMonthSales, monthSalesRatio,
+      thisMonthCount, lastMonthCount, monthCountRatio,
+      thisMonthAvg, lastMonthAvg, monthAvgRatio,
     };
   }, [events, salesByEvent, calendarYear]);
-
-  // 年セレクタ ポップオーバー
-  const [yearPickerOpen, setYearPickerOpen] = useState(false);
   // 表コピー フィードバック
   const [copied, setCopied] = useState(false);
   const copyTable = async () => {
@@ -412,15 +431,6 @@ export default function SalesPage() {
   };
 
   const todayYear = new Date().getFullYear();
-  // ポップオーバー内で表示する年候補 (データ年 + 前後2年)
-  const pickerYears = useMemo(() => {
-    const minY = dataYears.length > 0 ? dataYears[0] : todayYear;
-    const maxY = dataYears.length > 0 ? dataYears[dataYears.length - 1] : todayYear;
-    const ys = new Set<number>(dataYears);
-    // 比較目的で前年も追加
-    for (let y = minY - 1; y <= maxY + 1; y++) ys.add(y);
-    return Array.from(ys).sort((a, b) => b - a); // 新→旧
-  }, [dataYears, todayYear]);
 
   const fmtRatio = (r: number | null) => {
     if (r === null) return "—";
@@ -461,90 +471,6 @@ export default function SalesPage() {
           </p>
         </div>
         <div className="flex gap-2 flex-wrap items-center">
-          {/* 年セレクタ (ポップオーバー型) */}
-          <Popover open={yearPickerOpen} onOpenChange={setYearPickerOpen}>
-            <PopoverTrigger
-              render={
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-input bg-white hover:bg-muted text-sm font-bold shadow-sm transition-colors"
-                  title="集計対象の年を変更"
-                />
-              }
-            >
-              <CalendarIcon className="h-4 w-4 text-emerald-700" />
-              {calendarYear}年
-              {calendarYear === todayYear && <span className="text-[10px] text-amber-700 font-semibold">今年</span>}
-              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-64 p-3 space-y-3">
-              {/* 上段: 前/次 ナビ */}
-              <div className="flex items-center justify-between">
-                <button
-                  type="button"
-                  className="h-7 w-7 rounded inline-flex items-center justify-center hover:bg-muted text-muted-foreground"
-                  onClick={() => setCalendarYear((y) => y - 1)}
-                  title="前年"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <span className="text-base font-bold">{calendarYear}年</span>
-                <button
-                  type="button"
-                  className="h-7 w-7 rounded inline-flex items-center justify-center hover:bg-muted text-muted-foreground"
-                  onClick={() => setCalendarYear((y) => y + 1)}
-                  title="翌年"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
-              {/* クイックリンク */}
-              <div className="flex gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => { setCalendarYear(todayYear); setYearPickerOpen(false); }}
-                  className={`flex-1 h-7 rounded text-xs font-semibold border transition-colors ${
-                    calendarYear === todayYear ? "bg-emerald-600 text-white border-emerald-600" : "bg-white hover:bg-emerald-50 border-emerald-200 text-emerald-700"
-                  }`}
-                >今年</button>
-                <button
-                  type="button"
-                  onClick={() => { setCalendarYear(todayYear - 1); setYearPickerOpen(false); }}
-                  className={`flex-1 h-7 rounded text-xs font-semibold border transition-colors ${
-                    calendarYear === todayYear - 1 ? "bg-emerald-600 text-white border-emerald-600" : "bg-white hover:bg-emerald-50 border-emerald-200 text-emerald-700"
-                  }`}
-                >昨年</button>
-              </div>
-              {/* 年グリッド */}
-              <div className="grid grid-cols-3 gap-1.5">
-                {pickerYears.map((y) => {
-                  const isSel = y === calendarYear;
-                  const hasData = dataYears.includes(y);
-                  return (
-                    <button
-                      key={y}
-                      type="button"
-                      onClick={() => { setCalendarYear(y); setYearPickerOpen(false); }}
-                      className={`h-8 rounded text-xs font-bold border transition-colors ${
-                        isSel
-                          ? "bg-primary text-primary-foreground border-primary"
-                          : hasData
-                            ? "bg-white hover:bg-muted border-input text-foreground"
-                            : "bg-muted/30 hover:bg-muted border-transparent text-muted-foreground"
-                      }`}
-                      title={hasData ? "データあり" : "データなし"}
-                    >
-                      {y}
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="text-[10px] text-muted-foreground">
-                ※ 選択した年と前年を比較表示します
-              </p>
-            </PopoverContent>
-          </Popover>
-
           <Button variant="outline" size="sm" onClick={downloadCsvTemplate} title="売上一括取込用のテンプレートCSVを取得">
             <FileText className="h-4 w-4 mr-1" />テンプレ
           </Button>
@@ -567,57 +493,152 @@ export default function SalesPage() {
         </div>
       </div>
 
-      {/* KPI カード (選択年 vs 前年) */}
+      {/* 年セレクタ (横並びチップ) */}
+      {!loading && dataYears.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap print:hidden">
+          <span className="text-xs font-bold text-muted-foreground inline-flex items-center gap-1">
+            <CalendarIcon className="h-3.5 w-3.5" />対象年:
+          </span>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {dataYears.map((y) => {
+              const isSel = y === calendarYear;
+              const isCurrent = y === todayYear;
+              return (
+                <button
+                  key={y}
+                  type="button"
+                  onClick={() => setCalendarYear(y)}
+                  className={`inline-flex items-center gap-1 h-8 px-3 rounded-full border text-xs font-bold transition-all ${
+                    isSel
+                      ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                      : "bg-white text-foreground border-input hover:bg-emerald-50 hover:border-emerald-300"
+                  }`}
+                  aria-pressed={isSel}
+                >
+                  {y}年
+                  {isCurrent && (
+                    <span className={`text-[10px] font-semibold px-1 rounded ${isSel ? "bg-white/25 text-white" : "bg-amber-100 text-amber-700"}`}>今年</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* KPI カード (2行構成: 年合計 + 今月) */}
       {!loading && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 print:hidden">
-          {/* 売上合計 */}
-          <Card className="border-l-4 border-l-emerald-500">
-            <CardContent className="p-3 space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
-                  <Wallet className="h-3.5 w-3.5 text-emerald-600" />
-                  {kpi.thisYear}年 売上合計（税込）
-                </span>
-                <span className={`text-xs font-bold ${ratioColor(kpi.salesRatio)}`}>{fmtRatio(kpi.salesRatio)}</span>
-              </div>
-              <div className="text-xl font-black tabular-nums">¥{kpi.thisSales.toLocaleString()}</div>
-              <div className="text-[10px] text-muted-foreground tabular-nums">
-                前年: ¥{kpi.lastSales.toLocaleString()}
-              </div>
-            </CardContent>
-          </Card>
-          {/* 催事件数 */}
-          <Card className="border-l-4 border-l-blue-500">
-            <CardContent className="p-3 space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
-                  <Hash className="h-3.5 w-3.5 text-blue-600" />
-                  {kpi.thisYear}年 催事件数
-                </span>
-                <span className={`text-xs font-bold ${ratioColor(kpi.countRatio)}`}>{fmtRatio(kpi.countRatio)}</span>
-              </div>
-              <div className="text-xl font-black tabular-nums">{kpi.thisCount}<span className="text-sm font-normal text-muted-foreground ml-1">件</span></div>
-              <div className="text-[10px] text-muted-foreground tabular-nums">
-                前年: {kpi.lastCount}件
-              </div>
-            </CardContent>
-          </Card>
-          {/* 平均売上/催事 */}
-          <Card className="border-l-4 border-l-purple-500">
-            <CardContent className="p-3 space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
-                  <Coins className="h-3.5 w-3.5 text-purple-600" />
-                  平均売上/催事
-                </span>
-                <span className={`text-xs font-bold ${ratioColor(kpi.avgRatio)}`}>{fmtRatio(kpi.avgRatio)}</span>
-              </div>
-              <div className="text-xl font-black tabular-nums">¥{kpi.thisAvg.toLocaleString()}</div>
-              <div className="text-[10px] text-muted-foreground tabular-nums">
-                前年: ¥{kpi.lastAvg.toLocaleString()}
-              </div>
-            </CardContent>
-          </Card>
+        <div className="space-y-3 print:hidden">
+          {/* 1行目: 選択年 vs 前年 (年合計) */}
+          <div>
+            <div className="flex items-center gap-1.5 mb-1.5 text-xs font-bold text-emerald-700">
+              <CalendarIcon className="h-3.5 w-3.5" />
+              {kpi.thisYear}年 vs {kpi.lastYear}年（年合計）
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* 売上合計 */}
+              <Card className="border-l-4 border-l-emerald-500">
+                <CardContent className="p-3 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                      <Wallet className="h-3.5 w-3.5 text-emerald-600" />売上合計（税込）
+                    </span>
+                    <span className={`text-xs font-bold ${ratioColor(kpi.salesRatio)}`}>{fmtRatio(kpi.salesRatio)}</span>
+                  </div>
+                  <div className="text-xl font-black tabular-nums">¥{kpi.thisSales.toLocaleString()}</div>
+                  <div className="text-[10px] text-muted-foreground tabular-nums">
+                    前年: ¥{kpi.lastSales.toLocaleString()}
+                  </div>
+                </CardContent>
+              </Card>
+              {/* 催事件数 */}
+              <Card className="border-l-4 border-l-blue-500">
+                <CardContent className="p-3 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                      <Hash className="h-3.5 w-3.5 text-blue-600" />催事件数
+                    </span>
+                    <span className={`text-xs font-bold ${ratioColor(kpi.countRatio)}`}>{fmtRatio(kpi.countRatio)}</span>
+                  </div>
+                  <div className="text-xl font-black tabular-nums">{kpi.thisCount}<span className="text-sm font-normal text-muted-foreground ml-1">件</span></div>
+                  <div className="text-[10px] text-muted-foreground tabular-nums">
+                    前年: {kpi.lastCount}件
+                  </div>
+                </CardContent>
+              </Card>
+              {/* 平均売上/催事 */}
+              <Card className="border-l-4 border-l-purple-500">
+                <CardContent className="p-3 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                      <Coins className="h-3.5 w-3.5 text-purple-600" />平均売上/催事
+                    </span>
+                    <span className={`text-xs font-bold ${ratioColor(kpi.avgRatio)}`}>{fmtRatio(kpi.avgRatio)}</span>
+                  </div>
+                  <div className="text-xl font-black tabular-nums">¥{kpi.thisAvg.toLocaleString()}</div>
+                  <div className="text-[10px] text-muted-foreground tabular-nums">
+                    前年: ¥{kpi.lastAvg.toLocaleString()}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+
+          {/* 2行目: 今月 vs 前年同月 */}
+          <div>
+            <div className="flex items-center gap-1.5 mb-1.5 text-xs font-bold text-amber-700">
+              <CalendarDays className="h-3.5 w-3.5" />
+              {kpi.thisYear}年{kpi.todayMonth}月 vs {kpi.lastYear}年{kpi.todayMonth}月（前年同月比）
+              {kpi.thisYear === todayYear && <span className="text-[10px] font-semibold px-1 rounded bg-amber-100 text-amber-700">今月</span>}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* 月売上 */}
+              <Card className="border-l-4 border-l-amber-500 bg-amber-50/20">
+                <CardContent className="p-3 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                      <Wallet className="h-3.5 w-3.5 text-amber-600" />{kpi.todayMonth}月 売上（税込）
+                    </span>
+                    <span className={`text-xs font-bold ${ratioColor(kpi.monthSalesRatio)}`}>{fmtRatio(kpi.monthSalesRatio)}</span>
+                  </div>
+                  <div className="text-xl font-black tabular-nums">¥{kpi.thisMonthSales.toLocaleString()}</div>
+                  <div className="text-[10px] text-muted-foreground tabular-nums">
+                    前年同月: ¥{kpi.lastMonthSales.toLocaleString()}
+                  </div>
+                </CardContent>
+              </Card>
+              {/* 月催事件数 */}
+              <Card className="border-l-4 border-l-amber-500 bg-amber-50/20">
+                <CardContent className="p-3 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                      <Hash className="h-3.5 w-3.5 text-amber-600" />{kpi.todayMonth}月 催事件数
+                    </span>
+                    <span className={`text-xs font-bold ${ratioColor(kpi.monthCountRatio)}`}>{fmtRatio(kpi.monthCountRatio)}</span>
+                  </div>
+                  <div className="text-xl font-black tabular-nums">{kpi.thisMonthCount}<span className="text-sm font-normal text-muted-foreground ml-1">件</span></div>
+                  <div className="text-[10px] text-muted-foreground tabular-nums">
+                    前年同月: {kpi.lastMonthCount}件
+                  </div>
+                </CardContent>
+              </Card>
+              {/* 月平均売上 */}
+              <Card className="border-l-4 border-l-amber-500 bg-amber-50/20">
+                <CardContent className="p-3 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                      <Coins className="h-3.5 w-3.5 text-amber-600" />{kpi.todayMonth}月 平均/催事
+                    </span>
+                    <span className={`text-xs font-bold ${ratioColor(kpi.monthAvgRatio)}`}>{fmtRatio(kpi.monthAvgRatio)}</span>
+                  </div>
+                  <div className="text-xl font-black tabular-nums">¥{kpi.thisMonthAvg.toLocaleString()}</div>
+                  <div className="text-[10px] text-muted-foreground tabular-nums">
+                    前年同月: ¥{kpi.lastMonthAvg.toLocaleString()}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         </div>
       )}
       {/* CSV インポート結果 */}
