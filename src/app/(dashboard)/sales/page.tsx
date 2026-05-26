@@ -216,7 +216,7 @@ export default function SalesPage() {
       .sort((a, b) => b.thisYearTotal - a.thisYearTotal);
   }, [events, salesByEvent, calendarYear]);
 
-  // ===== KPI サマリ (選択年 vs 前年 / 今月 vs 前年同月) =====
+  // ===== KPI サマリ (選択年 vs 前年 / YTD累計 / 今月 vs 前年同月) =====
   const kpi = useMemo(() => {
     const thisYear = calendarYear;
     const lastYear = thisYear - 1;
@@ -226,12 +226,18 @@ export default function SalesPage() {
     let thisCount = 0, lastCount = 0;
     let thisMonthSales = 0, lastMonthSales = 0;
     let thisMonthCount = 0, lastMonthCount = 0;
+    let thisYtdSales = 0, lastYtdSales = 0;
+    let thisYtdCount = 0, lastYtdCount = 0;
     for (const e of events) {
       const sales = salesByEvent.get(e.id);
       const [y, m] = e.start_date.split("-").map(Number);
       if (y === thisYear) {
         thisCount += 1;
         if (sales?.hasData) thisSales += sales.included;
+        if (m <= todayMonth) {
+          thisYtdCount += 1;
+          if (sales?.hasData) thisYtdSales += sales.included;
+        }
         if (m === todayMonth) {
           thisMonthCount += 1;
           if (sales?.hasData) thisMonthSales += sales.included;
@@ -239,6 +245,10 @@ export default function SalesPage() {
       } else if (y === lastYear) {
         lastCount += 1;
         if (sales?.hasData) lastSales += sales.included;
+        if (m <= todayMonth) {
+          lastYtdCount += 1;
+          if (sales?.hasData) lastYtdSales += sales.included;
+        }
         if (m === todayMonth) {
           lastMonthCount += 1;
           if (sales?.hasData) lastMonthSales += sales.included;
@@ -250,6 +260,13 @@ export default function SalesPage() {
     const thisAvg = thisCount > 0 ? Math.round(thisSales / thisCount) : 0;
     const lastAvg = lastCount > 0 ? Math.round(lastSales / lastCount) : 0;
     const avgRatio = lastAvg > 0 ? ((thisAvg - lastAvg) / lastAvg) * 100 : null;
+
+    // YTD (1月〜当月累計)
+    const ytdSalesRatio = lastYtdSales > 0 ? ((thisYtdSales - lastYtdSales) / lastYtdSales) * 100 : null;
+    const ytdCountRatio = lastYtdCount > 0 ? ((thisYtdCount - lastYtdCount) / lastYtdCount) * 100 : null;
+    const thisYtdAvg = thisYtdCount > 0 ? Math.round(thisYtdSales / thisYtdCount) : 0;
+    const lastYtdAvg = lastYtdCount > 0 ? Math.round(lastYtdSales / lastYtdCount) : 0;
+    const ytdAvgRatio = lastYtdAvg > 0 ? ((thisYtdAvg - lastYtdAvg) / lastYtdAvg) * 100 : null;
 
     // 前年同月比
     const monthSalesRatio = lastMonthSales > 0 ? ((thisMonthSales - lastMonthSales) / lastMonthSales) * 100 : null;
@@ -263,6 +280,9 @@ export default function SalesPage() {
       thisSales, lastSales, salesRatio,
       thisCount, lastCount, countRatio,
       thisAvg, lastAvg, avgRatio,
+      thisYtdSales, lastYtdSales, ytdSalesRatio,
+      thisYtdCount, lastYtdCount, ytdCountRatio,
+      thisYtdAvg, lastYtdAvg, ytdAvgRatio,
       thisMonthSales, lastMonthSales, monthSalesRatio,
       thisMonthCount, lastMonthCount, monthCountRatio,
       thisMonthAvg, lastMonthAvg, monthAvgRatio,
@@ -584,7 +604,63 @@ export default function SalesPage() {
             </div>
           </div>
 
-          {/* 2行目: 今月 vs 前年同月 */}
+          {/* 2行目: YTD累計 (1月〜当月) vs 前年同期累計 */}
+          <div>
+            <div className="flex items-center gap-1.5 mb-1.5 text-xs font-bold text-cyan-700">
+              <TrendingUp className="h-3.5 w-3.5" />
+              {kpi.thisYear}年1月〜{kpi.todayMonth}月 vs {kpi.lastYear}年1月〜{kpi.todayMonth}月（累計）
+              <span className="text-[10px] font-semibold px-1 rounded bg-cyan-100 text-cyan-700">YTD</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* YTD 売上累計 */}
+              <Card className="border-l-4 border-l-cyan-500 bg-cyan-50/20">
+                <CardContent className="p-3 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                      <Wallet className="h-3.5 w-3.5 text-cyan-600" />売上累計（税込）
+                    </span>
+                    <span className={`text-xs font-bold ${ratioColor(kpi.ytdSalesRatio)}`}>{fmtRatio(kpi.ytdSalesRatio)}</span>
+                  </div>
+                  <div className="text-xl font-black tabular-nums">¥{kpi.thisYtdSales.toLocaleString()}</div>
+                  <div className="text-[10px] text-muted-foreground tabular-nums">
+                    前年同期: ¥{kpi.lastYtdSales.toLocaleString()}
+                  </div>
+                </CardContent>
+              </Card>
+              {/* YTD 催事件数累計 */}
+              <Card className="border-l-4 border-l-cyan-500 bg-cyan-50/20">
+                <CardContent className="p-3 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                      <Hash className="h-3.5 w-3.5 text-cyan-600" />催事件数 累計
+                    </span>
+                    <span className={`text-xs font-bold ${ratioColor(kpi.ytdCountRatio)}`}>{fmtRatio(kpi.ytdCountRatio)}</span>
+                  </div>
+                  <div className="text-xl font-black tabular-nums">{kpi.thisYtdCount}<span className="text-sm font-normal text-muted-foreground ml-1">件</span></div>
+                  <div className="text-[10px] text-muted-foreground tabular-nums">
+                    前年同期: {kpi.lastYtdCount}件
+                  </div>
+                </CardContent>
+              </Card>
+              {/* YTD 平均売上 */}
+              <Card className="border-l-4 border-l-cyan-500 bg-cyan-50/20">
+                <CardContent className="p-3 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                      <Coins className="h-3.5 w-3.5 text-cyan-600" />平均/催事
+                    </span>
+                    <span className={`text-xs font-bold ${ratioColor(kpi.ytdAvgRatio)}`}>{fmtRatio(kpi.ytdAvgRatio)}</span>
+                  </div>
+                  <div className="text-xl font-black tabular-nums">¥{kpi.thisYtdAvg.toLocaleString()}</div>
+                  <div className="text-[10px] text-muted-foreground tabular-nums">
+                    前年同期: ¥{kpi.lastYtdAvg.toLocaleString()}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+
+          {/* 3行目: 今月 vs 前年同月 */}
           <div>
             <div className="flex items-center gap-1.5 mb-1.5 text-xs font-bold text-amber-700">
               <CalendarDays className="h-3.5 w-3.5" />
