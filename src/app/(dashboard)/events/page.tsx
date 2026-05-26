@@ -252,6 +252,21 @@ export default function EventsPage() {
     monthsPerPage: 4,
   });
 
+  // データに存在する年 + 今年 + 来年 をチップ候補として用意
+  const dataYears = useMemo(() => {
+    const ys = new Set<number>();
+    for (const e of events) {
+      const y = parseInt(e.start_date.slice(0, 4), 10);
+      if (!isNaN(y)) ys.add(y);
+    }
+    const ty = new Date().getFullYear();
+    ys.add(ty);
+    ys.add(ty + 1); // 翌年も切替できるように
+    return Array.from(ys).sort();
+  }, [events]);
+
+  const todayYear = today.getFullYear();
+
   const calMonths = useMemo(() => {
     const months: { year: number; month: number }[] = [];
     for (let i = 0; i < calSpan; i++) {
@@ -682,6 +697,37 @@ export default function EventsPage() {
       ) : viewMode === "gantt" ? (
         /* ===== ガントチャート日程表 ===== */
         <>
+        {/* 年セレクタ (横並びチップ) — 1クリックで対象年に飛ぶ */}
+        <div className="flex items-center gap-2 flex-wrap print:hidden mb-2">
+          <span className="text-xs font-bold text-muted-foreground inline-flex items-center gap-1">
+            <Calendar className="h-3.5 w-3.5" />対象年:
+          </span>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {dataYears.map((y) => {
+              const isSel = y === calYear;
+              const isCurrent = y === todayYear;
+              return (
+                <button
+                  key={y}
+                  type="button"
+                  onClick={() => { setCalYear(y); setCalMonth(1); }}
+                  className={`inline-flex items-center gap-1 h-8 px-3 rounded-full border text-xs font-bold transition-all ${
+                    isSel
+                      ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                      : "bg-white text-foreground border-input hover:bg-muted hover:border-primary/40"
+                  }`}
+                  aria-pressed={isSel}
+                  title={`${y}年1月にジャンプ`}
+                >
+                  {y}年
+                  {isCurrent && (
+                    <span className={`text-[10px] font-semibold px-1 rounded ${isSel ? "bg-white/25 text-white" : "bg-amber-100 text-amber-700"}`}>今年</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
         <div className="flex items-center gap-2 sm:gap-3 mb-4 flex-wrap print:hidden">
           <Button variant="outline" size="icon" onClick={prevMonth}><ChevronLeft className="h-4 w-4" /></Button>
           <span className="text-base sm:text-lg font-semibold min-w-[180px] sm:min-w-[240px] text-center">{ganttSpanLabel}</span>
@@ -995,6 +1041,37 @@ export default function EventsPage() {
       ) : viewMode === "calendar" ? (
         /* ===== カレンダービュー（月グリッド・日曜始まり） ===== */
         <>
+        {/* 年セレクタ (横並びチップ) */}
+        <div className="flex items-center gap-2 flex-wrap print:hidden mb-2">
+          <span className="text-xs font-bold text-muted-foreground inline-flex items-center gap-1">
+            <Calendar className="h-3.5 w-3.5" />対象年:
+          </span>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {dataYears.map((y) => {
+              const isSel = y === calYear;
+              const isCurrent = y === todayYear;
+              return (
+                <button
+                  key={y}
+                  type="button"
+                  onClick={() => { setCalYear(y); setCalMonth(1); }}
+                  className={`inline-flex items-center gap-1 h-8 px-3 rounded-full border text-xs font-bold transition-all ${
+                    isSel
+                      ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                      : "bg-white text-foreground border-input hover:bg-muted hover:border-primary/40"
+                  }`}
+                  aria-pressed={isSel}
+                  title={`${y}年1月にジャンプ`}
+                >
+                  {y}年
+                  {isCurrent && (
+                    <span className={`text-[10px] font-semibold px-1 rounded ${isSel ? "bg-white/25 text-white" : "bg-amber-100 text-amber-700"}`}>今年</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
         <div className="flex items-center gap-3 mb-4 print:hidden">
           <Button variant="outline" size="icon" onClick={prevMonth}><ChevronLeft className="h-4 w-4" /></Button>
           <span className="text-lg font-semibold min-w-[200px] text-center">{spanLabel}</span>
