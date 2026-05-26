@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,7 +10,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, Calendar as CalendarIcon, BarChart3, Store, LineChart, Download } from "lucide-react";
+import { TrendingUp, Calendar as CalendarIcon, BarChart3, Store, LineChart, Download, Upload, FileText } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
 
 type EventLite = {
@@ -65,17 +65,30 @@ export default function SalesPage() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   // 催事ID → 売上(税込・税抜) の Map
+  // 1. event_daily_revenue があればそれを優先
+  // 2. 無ければ events.revenue (税込合計) をフォールバック (税抜は 8% 概算で割戻し)
   const salesByEvent = useMemo(() => {
-    const map = new Map<string, { excluded: number; included: number; hasData: boolean }>();
+    const map = new Map<string, { excluded: number; included: number; hasData: boolean; source: "daily" | "revenue" }>();
+    // STEP 1: 日別売上から集計
     for (const d of dailyRows) {
-      const cur = map.get(d.event_id) ?? { excluded: 0, included: 0, hasData: false };
+      const cur = map.get(d.event_id) ?? { excluded: 0, included: 0, hasData: false, source: "daily" as const };
       cur.excluded += toExcluded(d.amount, d.tax_type, d.tax_rate);
       cur.included += toIncluded(d.amount, d.tax_type, d.tax_rate);
       cur.hasData = true;
+      cur.source = "daily";
       map.set(d.event_id, cur);
     }
+    // STEP 2: events.revenue のみある催事 (日別なし) をフォールバックで取り込む
+    for (const e of events) {
+      if (map.has(e.id)) continue; // 日別あり→そっち優先
+      if (e.revenue == null || e.revenue === 0) continue;
+      // events.revenue は税込合計 (events/[id]/page.tsx で 税込で保存)
+      const included = e.revenue;
+      const excluded = Math.round(included / 1.08); // 軽減税率 8% で概算
+      map.set(e.id, { excluded, included, hasData: true, source: "revenue" });
+    }
     return map;
-  }, [dailyRows]);
+  }, [dailyRows, events]);
 
   // 検索フィルタ
   const filteredEvents = useMemo(() => {
@@ -87,8 +100,20 @@ export default function SalesPage() {
     });
   }, [events, search]);
 
-  // ===== カレンダー: 今年1月～未来6ヶ月 =====
-  type CalEntry = { event: EventLite; sales: { excluded: number; included: number; hasData: boolean } };
+  // ===== カレンダー: 選択した年の1月〜12月を表示 =====
+  // ユーザーが年を切り替えて過去の実績(2024,2025,2026,...)を見られる
+  const dataYears = useMemo(() => {
+    const ys = new Set<number>();
+    for (const e of events) {
+      const y = parseInt(e.start_date.slice(0, 4), 10);
+      if (!isNaN(y)) ys.add(y);
+    }
+    const today = new Date();
+    ys.add(today.getFullYear()); // 今年は必ず含める
+    return Array.from(ys).sort();
+  }, [events]);
+  const [calendarYear, setCalendarYear] = useState<number>(() => new Date().getFullYear());
+  type CalEntry = { event: EventLite; sales: { excluded: number; included: number; hasData: boolean; source?: "daily" | "revenue" } };
   const calendarMonths = useMemo(() => {
     type MonthData = {
       ym: string;
@@ -104,10 +129,9 @@ export default function SalesPage() {
     const today = new Date();
     const currentYm = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
     const months: MonthData[] = [];
-    const startOffset = -today.getMonth();
-    const endOffset = 6;
-    for (let i = startOffset; i <= endOffset; i++) {
-      const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
+    // 選択された年の1月〜12月
+    for (let m = 1; m <= 12; m++) {
+      const d = new Date(calendarYear, m - 1, 1);
       const year = d.getFullYear();
       const month = d.getMonth() + 1;
       const ym = `${year}-${String(month).padStart(2, "0")}`;
@@ -140,7 +164,7 @@ export default function SalesPage() {
       months.push({ ym, year, month, label, isCurrent: ym === currentYm, daysInMonth, trackMap, trackCount: Math.max(trackEnds.length, 1), entries });
     }
     return months;
-  }, [events, salesByEvent]);
+  }, [events, salesByEvent, calendarYear]);
 
   // ===== 月次サマリ (前年比較) =====
   // 今年と昨年の月別合計 (税込) を計算
@@ -193,6 +217,118 @@ export default function SalesPage() {
       .filter((r) => r.thisYearTotal > 0 || r.lastYearTotal > 0)
       .sort((a, b) => b.thisYearTotal - a.thisYearTotal);
   }, [events, salesByEvent]);
+
+  // ===== CSV インポート =====
+  // ヘッダ: 会場名, 店舗名, 開始日(YYYY-MM-DD), 売上(税込)
+  // events を venue+store_name+start_date でマッチして events.revenue を更新
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ matched: number; updated: number; skipped: string[] } | null>(null);
+  const importFileRef = useRef<HTMLInputElement>(null);
+
+  const downloadCsvTemplate = () => {
+    const headers = ["会場名", "店舗名", "開始日", "売上(税込)"];
+    const samples = [
+      ["京王", "新宿店", "2025-01-06", "6437882"],
+      ["近鉄", "阿倍野店", "2025-01-14", "3923009"],
+    ];
+    const esc = (s: string) => `"${s.replace(/"/g, '""')}"`;
+    const csv = [headers, ...samples].map((r) => r.map(esc).join(",")).join("\r\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `売上インポート_テンプレート.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImport = async (file: File) => {
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const text = await file.text();
+      // BOM 除去
+      const clean = text.replace(/^﻿/, "");
+      const lines = clean.split(/\r?\n/).filter((l) => l.trim());
+      if (lines.length < 2) {
+        alert("CSV にデータがありません (ヘッダ行 + 1行以上必要)");
+        return;
+      }
+      // 簡易CSVパース (ダブルクォート対応)
+      const parseLine = (line: string): string[] => {
+        const cells: string[] = [];
+        let cur = "";
+        let inQ = false;
+        for (let i = 0; i < line.length; i++) {
+          const c = line[i];
+          if (inQ) {
+            if (c === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+            else if (c === '"') { inQ = false; }
+            else cur += c;
+          } else {
+            if (c === ",") { cells.push(cur); cur = ""; }
+            else if (c === '"') { inQ = true; }
+            else cur += c;
+          }
+        }
+        cells.push(cur);
+        return cells.map((s) => s.trim());
+      };
+      const header = parseLine(lines[0]);
+      const idxVenue = header.findIndex((h) => h.includes("会場"));
+      const idxStore = header.findIndex((h) => h.includes("店舗"));
+      const idxStart = header.findIndex((h) => h.includes("開始") || h.includes("日付"));
+      const idxRev = header.findIndex((h) => h.includes("売上"));
+      if (idxVenue < 0 || idxStart < 0 || idxRev < 0) {
+        alert("CSVヘッダに「会場名」「開始日」「売上」が必要です");
+        return;
+      }
+
+      let matched = 0;
+      let updated = 0;
+      const skipped: string[] = [];
+      for (let li = 1; li < lines.length; li++) {
+        const cells = parseLine(lines[li]);
+        const venueName = (cells[idxVenue] || "").trim();
+        const storeName = idxStore >= 0 ? (cells[idxStore] || "").trim() : "";
+        const startDate = (cells[idxStart] || "").trim();
+        const revStr = (cells[idxRev] || "").replace(/[,¥]/g, "").trim();
+        if (!venueName || !startDate || !revStr) {
+          skipped.push(`行${li + 1}: 必須項目が空 (${venueName}/${startDate}/${revStr})`);
+          continue;
+        }
+        const revenue = parseInt(revStr, 10);
+        if (isNaN(revenue) || revenue <= 0) {
+          skipped.push(`行${li + 1}: 売上が数値でない (${revStr})`);
+          continue;
+        }
+        // マッチング: venue + store_name + start_date
+        const target = events.find((e) =>
+          e.venue === venueName &&
+          (e.store_name ?? "") === storeName &&
+          e.start_date === startDate
+        );
+        if (!target) {
+          skipped.push(`行${li + 1}: ${venueName} ${storeName} ${startDate} に一致する催事なし`);
+          continue;
+        }
+        matched++;
+        const { error } = await supabase.from("events").update({ revenue }).eq("id", target.id);
+        if (error) {
+          skipped.push(`行${li + 1}: 更新失敗 (${error.message})`);
+        } else {
+          updated++;
+        }
+      }
+      setImportResult({ matched, updated, skipped });
+      await fetchData();
+    } catch (e) {
+      alert(`インポート中にエラー: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setImporting(false);
+      if (importFileRef.current) importFileRef.current.value = "";
+    }
+  };
 
   // ===== CSV エクスポート =====
   const exportCsv = () => {
@@ -247,11 +383,46 @@ export default function SalesPage() {
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" size="sm" onClick={downloadCsvTemplate} title="売上一括取込用のテンプレートCSVを取得">
+            <FileText className="h-4 w-4 mr-1" />テンプレ
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => importFileRef.current?.click()} disabled={importing} title="CSVから売上を一括取込 (events.revenue を更新)">
+            <Upload className="h-4 w-4 mr-1" />{importing ? "取込中..." : "CSV取込"}
+          </Button>
+          <input
+            ref={importFileRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) handleImport(f);
+            }}
+          />
           <Button variant="outline" size="sm" onClick={exportCsv}>
             <Download className="h-4 w-4 mr-1" />CSV出力
           </Button>
         </div>
       </div>
+      {/* CSV インポート結果 */}
+      {importResult && (
+        <Card className="border-l-4 border-l-blue-500 bg-blue-50/50">
+          <CardContent className="p-3 space-y-1 text-xs">
+            <div className="font-bold">CSV取込結果</div>
+            <div>催事マッチ: {importResult.matched}件 / 更新成功: {importResult.updated}件 / スキップ: {importResult.skipped.length}件</div>
+            {importResult.skipped.length > 0 && (
+              <details className="mt-1">
+                <summary className="cursor-pointer text-muted-foreground">スキップ詳細 ({importResult.skipped.length}件)</summary>
+                <ul className="mt-1 pl-4 list-disc text-muted-foreground space-y-0.5">
+                  {importResult.skipped.slice(0, 30).map((s, i) => (<li key={i}>{s}</li>))}
+                  {importResult.skipped.length > 30 && <li>...他 {importResult.skipped.length - 30}件</li>}
+                </ul>
+              </details>
+            )}
+            <Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => setImportResult(null)}>閉じる</Button>
+          </CardContent>
+        </Card>
+      )}
 
       {loading ? (
         <p className="text-muted-foreground">読み込み中...</p>
@@ -272,7 +443,23 @@ export default function SalesPage() {
                 <h2 className="text-sm font-bold">催事カレンダー（売上付き）</h2>
               </div>
               <div className="flex items-center gap-3 flex-wrap">
-                <span className="text-[11px] text-muted-foreground">今年1月 〜 未来6ヶ月</span>
+                {/* 年切替: データがある年を順に表示 */}
+                <div className="inline-flex rounded-md border overflow-hidden text-xs">
+                  {dataYears.map((y) => (
+                    <button
+                      key={y}
+                      type="button"
+                      onClick={() => setCalendarYear(y)}
+                      className={`px-2 h-7 transition-colors ${
+                        calendarYear === y
+                          ? "bg-primary text-primary-foreground font-bold"
+                          : "bg-white text-muted-foreground hover:bg-muted"
+                      } ${y > dataYears[0] ? "border-l" : ""}`}
+                    >
+                      {y}年
+                    </button>
+                  ))}
+                </div>
                 <span className="inline-flex items-center gap-2 text-[10px] flex-wrap">
                   <span className="inline-flex items-center gap-0.5"><span className="inline-block w-3 h-3 bg-emerald-100 border-2 border-emerald-500 rounded-sm"></span>売上入力済</span>
                   <span className="inline-flex items-center gap-0.5"><span className="inline-block w-3 h-3 bg-yellow-100 border-2 border-yellow-500 rounded-sm"></span>売上未入力(終了済)</span>
