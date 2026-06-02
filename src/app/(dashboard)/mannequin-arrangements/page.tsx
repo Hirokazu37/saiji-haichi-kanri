@@ -7,11 +7,15 @@
  * 催事ごとに 1 行で マネキン手配ステータスを管理する。
  *
  * ステータス: NULL / 未手配 / 確定 / 完了
- *  - NULL          → トラッキング対象外 (デフォルト)
+ *  - NULL          → 未設定
  *  - 未手配/確定   → 未完了扱い
  *  - 完了          → 完了扱い
  *
  * 割当済みマネキン数は event_staff (person_type='mannequin') の件数で表示。
+ *
+ * 表示条件:
+ *   - 会期終了済 (end_date < today) はデフォルト非表示。「過去も見る」で切替。
+ *   - status が設定済 もしくは event_staff にマネキン1名以上 = 表示対象。
  */
 
 import { useEffect, useState, useCallback } from "react";
@@ -44,12 +48,22 @@ type EventMannequin = {
 
 const STATUS_OPTIONS = ["未手配", "確定", "完了"] as const;
 
+/** YYYY-MM-DD の今日の文字列 (タイムゾーンはローカル) */
+function todayStr(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export default function MannequinArrangementsPage() {
   const { canEdit } = usePermission();
   const supabase = createClient();
   const [events, setEvents] = useState<EventMannequin[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "notDone">("all");
+  const [includePast, setIncludePast] = useState(false);
   const [savedId, setSavedId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -84,26 +98,6 @@ export default function MannequinArrangementsPage() {
     fetchData();
   }, [fetchData]);
 
-  const toggleDone = (evtId: string, current: string | null) => {
-    const next = current === "完了" ? "未手配" : "完了";
-    setEvents((prev) =>
-      prev.map((e) =>
-        e.id === evtId ? { ...e, mannequin_arrangement_status: next } : e
-      )
-    );
-    supabase
-      .from("events")
-      .update({ mannequin_arrangement_status: next })
-      .eq("id", evtId)
-      .then(() => {
-        setSavedId(evtId);
-        setTimeout(
-          () => setSavedId((prev) => (prev === evtId ? null : prev)),
-          1500
-        );
-      });
-  };
-
   const updateStatus = (evtId: string, value: string | null) => {
     setEvents((prev) =>
       prev.map((e) =>
@@ -123,17 +117,21 @@ export default function MannequinArrangementsPage() {
       });
   };
 
-  // 一覧に表示する条件:
-  //   1. mannequin_arrangement_status が明示的に設定されている (NULL以外)、または
-  //   2. event_staff にマネキンが1名以上割当てられている (assignedCount > 0)
-  // → 日程表でマネキンを既に手配済みの催事は、status 未設定でも自動的に一覧に出る
+  const today = todayStr();
+
+  // 表示対象の判定:
+  //   - 「トラッキング対象」= status 設定済 もしくは マネキン割当て1名以上
+  //   - 「未来 or 今日まで」= end_date が today 以降 (会期が今日以降に終わる)
+  //   - includePast=true なら past も含める
   const isTracked = (e: EventMannequin) =>
     e.mannequin_arrangement_status !== null || e.assignedCount > 0;
+  const isUpcoming = (e: EventMannequin) => e.end_date >= today;
 
-  const tracked = events.filter(isTracked);
+  const tracked = events.filter((e) => isTracked(e) && (includePast || isUpcoming(e)));
   const notDoneCount = events.filter(
     (e) =>
       isTracked(e) &&
+      (includePast || isUpcoming(e)) &&
       e.mannequin_arrangement_status !== "完了" &&
       e.status !== "終了"
   ).length;
@@ -142,6 +140,7 @@ export default function MannequinArrangementsPage() {
       ? events.filter(
           (e) =>
             isTracked(e) &&
+            (includePast || isUpcoming(e)) &&
             e.mannequin_arrangement_status !== "完了" &&
             e.status !== "終了"
         )
@@ -157,9 +156,13 @@ export default function MannequinArrangementsPage() {
         催事ごとのマネキン手配状況を一覧で管理します。
         <strong>日程表でマネキンを割り当て済みの催事は自動的に表示</strong>されます。
         ステータスを「未手配 → 確定 → 完了」の順で切り替えて進捗を管理してください。
+        <br />
+        <span className="text-xs">
+          ※ 会期終了済の催事はデフォルトで非表示。確認したいときは「過去も見る」を ON にしてください。
+        </span>
       </p>
 
-      <div className="flex gap-2 flex-wrap print:hidden">
+      <div className="flex gap-2 flex-wrap items-center print:hidden">
         <Button
           variant={filter === "all" ? "default" : "outline"}
           size="sm"
@@ -174,6 +177,15 @@ export default function MannequinArrangementsPage() {
         >
           未完了のみ ({notDoneCount})
         </Button>
+        <label className="ml-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={includePast}
+            onChange={(e) => setIncludePast(e.target.checked)}
+            className="h-3.5 w-3.5"
+          />
+          過去も見る（会期終了済）
+        </label>
       </div>
 
       <Card>
@@ -184,16 +196,18 @@ export default function MannequinArrangementsPage() {
                 <TableHead>催事</TableHead>
                 <TableHead>催事名</TableHead>
                 <TableHead className="hidden md:table-cell">会期</TableHead>
-                <TableHead>完了</TableHead>
                 <TableHead>ステータス</TableHead>
                 <TableHead className="whitespace-nowrap">割当マネキン</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.map((e) => {
-                const isDone = e.mannequin_arrangement_status === "完了";
+                const isPast = e.end_date < today;
                 return (
-                  <TableRow key={e.id}>
+                  <TableRow
+                    key={e.id}
+                    className={isPast ? "opacity-60" : ""}
+                  >
                     <TableCell>
                       <Link
                         href={`/events/${e.id}`}
@@ -208,40 +222,9 @@ export default function MannequinArrangementsPage() {
                     </TableCell>
                     <TableCell className="text-sm hidden md:table-cell">
                       {e.start_date} 〜 {e.end_date}
-                    </TableCell>
-                    <TableCell>
-                      {canEdit ? (
-                        <button
-                          type="button"
-                          className={`relative inline-flex h-6 w-24 items-center rounded-full transition-colors ${
-                            isDone ? "bg-green-700" : "bg-gray-300"
-                          }`}
-                          onClick={() =>
-                            toggleDone(e.id, e.mannequin_arrangement_status)
-                          }
-                        >
-                          <span
-                            className={`absolute text-[10px] font-medium ${
-                              isDone
-                                ? "left-2 text-white"
-                                : "right-2 text-gray-600"
-                            }`}
-                          >
-                            {isDone ? "完了" : "未完了"}
-                          </span>
-                          <span
-                            className={`inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${
-                              isDone ? "translate-x-[72px]" : "translate-x-0.5"
-                            }`}
-                          />
-                        </button>
-                      ) : (
-                        <span
-                          className={`text-xs font-medium ${
-                            isDone ? "text-green-700" : "text-gray-500"
-                          }`}
-                        >
-                          {isDone ? "完了" : "未完了"}
+                      {isPast && (
+                        <span className="ml-1 text-[10px] text-muted-foreground">
+                          （終了）
                         </span>
                       )}
                     </TableCell>
@@ -295,11 +278,13 @@ export default function MannequinArrangementsPage() {
               {filtered.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={6}
+                    colSpan={5}
                     className="text-center text-muted-foreground py-8"
                   >
                     {filter === "all"
-                      ? "対象の催事がありません。日程表でマネキンを割り当てるか、催事詳細でマネキン手配ステータスを設定すると、ここに表示されます。"
+                      ? includePast
+                        ? "対象の催事がありません。日程表でマネキンを割り当てるか、催事詳細でマネキン手配ステータスを設定すると、ここに表示されます。"
+                        : "今日以降に会期が残っている催事がありません。過去も含めて見たい場合は「過去も見る」を ON にしてください。"
                       : "該当する催事がありません"}
                   </TableCell>
                 </TableRow>
