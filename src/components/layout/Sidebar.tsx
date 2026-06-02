@@ -18,6 +18,7 @@ import {
   Archive,
   Wallet,
   TrendingUp,
+  UserCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePermission, type UserRole } from "@/hooks/usePermission";
@@ -43,12 +44,13 @@ const navItems: NavItem[] = [
   { label: "備品の流れ", href: "/shipments", icon: Package, roles: ["admin", "viewer"] },
   { label: "出店申込書", href: "/applications", icon: FileText, roles: ["admin", "viewer"] },
   { label: "DMハガキ", href: "/dm", icon: Mail, roles: ["admin", "viewer"] },
+  { label: "マネキンの手配", href: "/mannequin-arrangements", icon: UserCheck, roles: ["admin", "viewer"] },
   { label: "百貨店マスター", href: "/venue-master", icon: Store, roles: ["admin", "viewer"] },
   { label: "帳合先マスター", href: "/payer-master", icon: Store, roles: ["admin", "viewer"], requiresPayments: true },
   { label: "エリアマスター", href: "/area-master", icon: MapPin, roles: ["admin", "viewer"] },
   { label: "ホテルマスター", href: "/hotel-master", icon: Hotel, roles: ["admin", "viewer"] },
   { label: "社員マスター", href: "/employees", icon: Users, roles: ["admin", "viewer"] },
-  { label: "マネキン", href: "/agencies", icon: Building2, roles: ["admin", "viewer"] },
+  { label: "マネキンマスター", href: "/agencies", icon: Building2, roles: ["admin", "viewer"] },
   { label: "ユーザー管理", href: "/users", icon: UserCog, roles: ["admin"] },
 ];
 
