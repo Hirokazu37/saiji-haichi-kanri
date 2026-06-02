@@ -120,18 +120,16 @@ export default function MannequinArrangementsPage() {
   const today = todayStr();
 
   // 表示対象の判定:
-  //   - 「トラッキング対象」= status 設定済 もしくは マネキン割当て1名以上
-  //   - 「未来 or 今日まで」= end_date が today 以降 (会期が今日以降に終わる)
-  //   - includePast=true なら past も含める
-  const isTracked = (e: EventMannequin) =>
-    e.mannequin_arrangement_status !== null || e.assignedCount > 0;
+  //   - 今日以降の会期 (end_date >= today) の催事は ステータス未設定 / マネキン未割当 でも表示
+  //     (=「これから手配が必要な催事」のチェックリストとして使えるように)
+  //   - includePast=true なら過去会期も含める
   const isUpcoming = (e: EventMannequin) => e.end_date >= today;
+  const inScope = (e: EventMannequin) => includePast || isUpcoming(e);
 
-  const tracked = events.filter((e) => isTracked(e) && (includePast || isUpcoming(e)));
+  const tracked = events.filter(inScope);
   const notDoneCount = events.filter(
     (e) =>
-      isTracked(e) &&
-      (includePast || isUpcoming(e)) &&
+      inScope(e) &&
       e.mannequin_arrangement_status !== "完了" &&
       e.status !== "終了"
   ).length;
@@ -139,8 +137,7 @@ export default function MannequinArrangementsPage() {
     filter === "notDone"
       ? events.filter(
           (e) =>
-            isTracked(e) &&
-            (includePast || isUpcoming(e)) &&
+            inScope(e) &&
             e.mannequin_arrangement_status !== "完了" &&
             e.status !== "終了"
         )
@@ -153,9 +150,9 @@ export default function MannequinArrangementsPage() {
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">マネキンの手配 一覧</h1>
       <p className="text-sm text-muted-foreground">
-        催事ごとのマネキン手配状況を一覧で管理します。
-        <strong>日程表でマネキンを割り当て済みの催事は自動的に表示</strong>されます。
-        ステータスを「未手配 → 確定 → 完了」の順で切り替えて進捗を管理してください。
+        <strong>今日以降に会期がある催事をすべて一覧表示</strong>します。
+        マネキン手配の抜け漏れチェックリストとして使ってください。
+        ステータスを「未手配 → 確定 → 完了」の順で切り替えて進捗を管理します。
         <br />
         <span className="text-xs">
           ※ 会期終了済の催事はデフォルトで非表示。確認したいときは「過去も見る」を ON にしてください。
@@ -283,9 +280,9 @@ export default function MannequinArrangementsPage() {
                   >
                     {filter === "all"
                       ? includePast
-                        ? "対象の催事がありません。日程表でマネキンを割り当てるか、催事詳細でマネキン手配ステータスを設定すると、ここに表示されます。"
+                        ? "催事が登録されていません。"
                         : "今日以降に会期が残っている催事がありません。過去も含めて見たい場合は「過去も見る」を ON にしてください。"
-                      : "該当する催事がありません"}
+                      : "未完了の催事はありません"}
                   </TableCell>
                 </TableRow>
               )}
