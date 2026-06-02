@@ -123,21 +123,26 @@ export default function MannequinArrangementsPage() {
       });
   };
 
-  // 一覧に表示するのは「トラッキング対象（status が non-null）」のみ。
-  // DMハガキ画面と同じ流儀: null = まだ追跡対象になっていない。
-  const tracked = events.filter((e) => e.mannequin_arrangement_status !== null);
+  // 一覧に表示する条件:
+  //   1. mannequin_arrangement_status が明示的に設定されている (NULL以外)、または
+  //   2. event_staff にマネキンが1名以上割当てられている (assignedCount > 0)
+  // → 日程表でマネキンを既に手配済みの催事は、status 未設定でも自動的に一覧に出る
+  const isTracked = (e: EventMannequin) =>
+    e.mannequin_arrangement_status !== null || e.assignedCount > 0;
+
+  const tracked = events.filter(isTracked);
   const notDoneCount = events.filter(
     (e) =>
+      isTracked(e) &&
       e.mannequin_arrangement_status !== "完了" &&
-      e.mannequin_arrangement_status !== null &&
       e.status !== "終了"
   ).length;
   const filtered =
     filter === "notDone"
       ? events.filter(
           (e) =>
+            isTracked(e) &&
             e.mannequin_arrangement_status !== "完了" &&
-            e.mannequin_arrangement_status !== null &&
             e.status !== "終了"
         )
       : tracked;
@@ -150,8 +155,8 @@ export default function MannequinArrangementsPage() {
       <h1 className="text-2xl font-bold">マネキンの手配 一覧</h1>
       <p className="text-sm text-muted-foreground">
         催事ごとのマネキン手配状況を一覧で管理します。
-        催事詳細でステータスを設定するとここに表示されます。
-        「未手配 → 確定 → 完了」の順で進捗を切り替えてください。
+        <strong>日程表でマネキンを割り当て済みの催事は自動的に表示</strong>されます。
+        ステータスを「未手配 → 確定 → 完了」の順で切り替えて進捗を管理してください。
       </p>
 
       <div className="flex gap-2 flex-wrap print:hidden">
@@ -294,7 +299,7 @@ export default function MannequinArrangementsPage() {
                     className="text-center text-muted-foreground py-8"
                   >
                     {filter === "all"
-                      ? "マネキン手配ステータスが登録された催事がありません。催事詳細でステータスを設定してください。"
+                      ? "対象の催事がありません。日程表でマネキンを割り当てるか、催事詳細でマネキン手配ステータスを設定すると、ここに表示されます。"
                       : "該当する催事がありません"}
                   </TableCell>
                 </TableRow>
