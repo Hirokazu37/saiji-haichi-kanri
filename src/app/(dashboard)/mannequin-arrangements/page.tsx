@@ -18,7 +18,7 @@
  *   - status が設定済 もしくは event_staff にマネキン1名以上 = 表示対象。
  */
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, Fragment } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -46,7 +46,11 @@ type EventMannequin = {
   assignedCount: number;
 };
 
-const STATUS_OPTIONS = ["未手配", "確定", "完了"] as const;
+// 手配不要 は「社員だけで行く催事」用のオプトアウト状態。
+// 完了と同様、未完了リストからは除外する。
+const STATUS_OPTIONS = ["未手配", "確定", "完了", "手配不要"] as const;
+/** 未完了として扱わない (TODOリストから外す) ステータス */
+const DONE_STATUSES = new Set<string>(["完了", "手配不要"]);
 
 /** YYYY-MM-DD の今日の文字列 (タイムゾーンはローカル) */
 function todayStr(): string {
@@ -138,21 +142,14 @@ export default function MannequinArrangementsPage() {
   const isUpcoming = (e: EventMannequin) => e.end_date >= today;
   const inScope = (e: EventMannequin) => includePast || isUpcoming(e);
 
+  const isPending = (e: EventMannequin) =>
+    !DONE_STATUSES.has(e.mannequin_arrangement_status ?? "") && e.status !== "終了";
+
   const tracked = events.filter(inScope);
-  const notDoneCount = events.filter(
-    (e) =>
-      inScope(e) &&
-      e.mannequin_arrangement_status !== "完了" &&
-      e.status !== "終了"
-  ).length;
+  const notDoneCount = events.filter((e) => inScope(e) && isPending(e)).length;
   const filtered =
     filter === "notDone"
-      ? events.filter(
-          (e) =>
-            inScope(e) &&
-            e.mannequin_arrangement_status !== "完了" &&
-            e.status !== "終了"
-        )
+      ? events.filter((e) => inScope(e) && isPending(e))
       : tracked;
 
   if (loading)
@@ -239,26 +236,46 @@ export default function MannequinArrangementsPage() {
                     </TableCell>
                     <TableCell>
                       {canEdit ? (
-                        <div className="flex gap-1">
-                          {STATUS_OPTIONS.map((s) => (
-                            <button
-                              key={s}
-                              type="button"
-                              className={`px-2 py-1 text-xs rounded border transition-colors ${
-                                e.mannequin_arrangement_status === s
-                                  ? "bg-green-700 text-white border-green-700 font-bold"
-                                  : "bg-white text-gray-500 border-gray-300 hover:bg-green-50 hover:text-green-700"
-                              }`}
-                              onClick={() =>
-                                updateStatus(
-                                  e.id,
-                                  e.mannequin_arrangement_status === s ? null : s
-                                )
-                              }
-                            >
-                              {s}
-                            </button>
-                          ))}
+                        <div className="flex gap-1 items-center">
+                          {STATUS_OPTIONS.map((s, i) => {
+                            const isSelected = e.mannequin_arrangement_status === s;
+                            const isOptOut = s === "手配不要";
+                            // 進捗フロー (未手配/確定/完了) は緑、オプトアウト (手配不要) はグレー
+                            const activeClass = isOptOut
+                              ? "bg-gray-500 text-white border-gray-500 font-bold"
+                              : "bg-green-700 text-white border-green-700 font-bold";
+                            const inactiveClass = isOptOut
+                              ? "bg-white text-gray-400 border-gray-300 hover:bg-gray-100 hover:text-gray-700"
+                              : "bg-white text-gray-500 border-gray-300 hover:bg-green-50 hover:text-green-700";
+                            // 進捗3ボタンとオプトアウト (手配不要) の間に縦線で区切り
+                            const showDivider = i === STATUS_OPTIONS.length - 1;
+                            return (
+                              <Fragment key={s}>
+                                {showDivider && (
+                                  <span className="mx-1 text-gray-300">|</span>
+                                )}
+                                <button
+                                  type="button"
+                                  className={`px-2 py-1 text-xs rounded border transition-colors ${
+                                    isSelected ? activeClass : inactiveClass
+                                  }`}
+                                  onClick={() =>
+                                    updateStatus(
+                                      e.id,
+                                      isSelected ? null : s
+                                    )
+                                  }
+                                  title={
+                                    isOptOut
+                                      ? "社員のみで対応する催事 (マネキン不要)"
+                                      : undefined
+                                  }
+                                >
+                                  {s}
+                                </button>
+                              </Fragment>
+                            );
+                          })}
                         </div>
                       ) : (
                         <span className="text-sm">
