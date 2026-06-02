@@ -23,12 +23,22 @@ type EventDM = {
   dm_count: number | null;
 };
 
+/** YYYY-MM-DD の今日の文字列 (タイムゾーンはローカル) */
+function todayStr(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export default function DMListPage() {
   const { canEdit } = usePermission();
   const supabase = createClient();
   const [events, setEvents] = useState<EventDM[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "notDone">("all");
+  const [includePast, setIncludePast] = useState(false);
   const [savedId, setSavedId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -59,22 +69,52 @@ export default function DMListPage() {
     });
   };
 
+  const today = todayStr();
+  // 会期終了済 (end_date < today) はデフォルトで除外。includePast=true で含める。
+  const isUpcoming = (e: EventDM) => e.end_date >= today;
+
   const filtered = filter === "notDone"
-    ? events.filter((e) => e.dm_status !== "印刷済み" && e.dm_status !== null && e.status !== "終了")
-    : events.filter((e) => e.dm_status !== null);
+    ? events.filter(
+        (e) =>
+          e.dm_status !== "印刷済み" &&
+          e.dm_status !== null &&
+          e.status !== "終了" &&
+          (includePast || isUpcoming(e))
+      )
+    : events.filter((e) => e.dm_status !== null && (includePast || isUpcoming(e)));
 
   if (loading) return <p className="text-muted-foreground">読み込み中...</p>;
 
-  const allDmEvents = events.filter((e) => e.dm_status !== null);
-  const notDoneCount = events.filter((e) => e.dm_status !== "印刷済み" && e.dm_status !== null && e.status !== "終了").length;
+  const allDmEvents = events.filter(
+    (e) => e.dm_status !== null && (includePast || isUpcoming(e))
+  );
+  const notDoneCount = events.filter(
+    (e) =>
+      e.dm_status !== "印刷済み" &&
+      e.dm_status !== null &&
+      e.status !== "終了" &&
+      (includePast || isUpcoming(e))
+  ).length;
 
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">DMハガキ一覧</h1>
+      <p className="text-xs text-muted-foreground">
+        ※ 会期終了済の催事はデフォルトで非表示。確認したいときは「過去も見る」を ON にしてください。
+      </p>
 
-      <div className="flex gap-2 flex-wrap print:hidden">
+      <div className="flex gap-2 flex-wrap items-center print:hidden">
         <Button variant={filter === "all" ? "default" : "outline"} size="sm" onClick={() => setFilter("all")}>すべて ({allDmEvents.length})</Button>
         <Button variant={filter === "notDone" ? "default" : "outline"} size="sm" onClick={() => setFilter("notDone")}>未完了のみ ({notDoneCount})</Button>
+        <label className="ml-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={includePast}
+            onChange={(e) => setIncludePast(e.target.checked)}
+            className="h-3.5 w-3.5"
+          />
+          過去も見る（会期終了済）
+        </label>
       </div>
 
       <Card>
@@ -93,15 +133,21 @@ export default function DMListPage() {
             <TableBody>
               {filtered.map((e) => {
                 const isDone = e.dm_status === "印刷済み";
+                const isPast = e.end_date < today;
                 return (
-                  <TableRow key={e.id}>
+                  <TableRow key={e.id} className={isPast ? "opacity-60" : ""}>
                     <TableCell>
                       <Link href={`/events/${e.id}`} className="text-primary hover:underline text-sm font-medium">
                         {e.venue}{e.store_name ? ` ${e.store_name}` : ""}
                       </Link>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{e.name || "—"}</TableCell>
-                    <TableCell className="text-sm hidden md:table-cell">{e.start_date} 〜 {e.end_date}</TableCell>
+                    <TableCell className="text-sm hidden md:table-cell">
+                      {e.start_date} 〜 {e.end_date}
+                      {isPast && (
+                        <span className="ml-1 text-[10px] text-muted-foreground">（終了）</span>
+                      )}
+                    </TableCell>
                     <TableCell>
                       {canEdit ? (
                         <button
@@ -162,7 +208,11 @@ export default function DMListPage() {
               })}
               {filtered.length === 0 && (
                 <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                  {filter === "all" ? "DMハガキが登録された催事がありません" : "該当する催事がありません"}
+                  {filter === "all"
+                    ? includePast
+                      ? "DMハガキが登録された催事がありません"
+                      : "今日以降に会期が残っている催事がありません。過去も含めて見たい場合は「過去も見る」を ON にしてください。"
+                    : "該当する催事がありません"}
                 </TableCell></TableRow>
               )}
             </TableBody>
