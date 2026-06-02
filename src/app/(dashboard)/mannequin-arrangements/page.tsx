@@ -67,8 +67,11 @@ export default function MannequinArrangementsPage() {
   const [savedId, setSavedId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
-    // 催事 + event_staff(マネキン分のみ) を取得して件数を集計
-    const [evtRes, staffRes] = await Promise.all([
+    // マネキン割当を 2 つのテーブルから合算する:
+    //   - event_staff: 個人マネキン (person_type='mannequin' で 1 行 = 1 名)
+    //   - mannequins:  会社+人数枠の手配 (headcount に人数が入る)
+    //                  ※ こちらが旧来からの手配データの本流
+    const [evtRes, staffRes, mannRes] = await Promise.all([
       supabase
         .from("events")
         .select(
@@ -79,12 +82,21 @@ export default function MannequinArrangementsPage() {
         .from("event_staff")
         .select("event_id")
         .eq("person_type", "mannequin"),
+      supabase.from("mannequins").select("event_id, headcount"),
     ]);
 
     const countByEvent = new Map<string, number>();
+    // event_staff: 1 行 = 1 名
     (staffRes.data ?? []).forEach((row: { event_id: string }) => {
       countByEvent.set(row.event_id, (countByEvent.get(row.event_id) ?? 0) + 1);
     });
+    // mannequins: headcount を加算 (会社+人数枠を含む)
+    (mannRes.data ?? []).forEach(
+      (row: { event_id: string; headcount: number | null }) => {
+        const n = row.headcount ?? 1;
+        countByEvent.set(row.event_id, (countByEvent.get(row.event_id) ?? 0) + n);
+      }
+    );
 
     const rows: EventMannequin[] = (evtRes.data ?? []).map((e) => ({
       ...e,
