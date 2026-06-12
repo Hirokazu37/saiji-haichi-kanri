@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef, Fragment } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -105,6 +106,8 @@ export default function VenueMasterPage() {
   const [mannequinLinks, setMannequinLinks] = useState<VenueMannequinLink[]>([]);
   const [payers, setPayers] = useState<PayerMasterItem[]>([]);
   const [dmSegments, setDmSegments] = useState<DmSegmentItem[]>([]);
+  const [selectedSegmentIds, setSelectedSegmentIds] = useState<Set<string>>(new Set());
+  const [segmentSearch, setSegmentSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
@@ -203,7 +206,7 @@ export default function VenueMasterPage() {
       supabase.from("mannequin_agencies").select("id, name").order("name"),
       supabase.from("venue_mannequin_links").select("*"),
       supabase.from("payer_master").select("id, name, is_active"),
-      supabase.from("sanchoku_segments").select("id, kbn_no, code, segment_name, venue_id").not("venue_id", "is", null).order("kbn_no").order("code"),
+      supabase.from("sanchoku_segments").select("id, kbn_no, code, segment_name, venue_id").order("kbn_no").order("code"),
     ]);
     setVenues(venueRes.data || []);
     setAreas((areaRes.data || []) as AreaItem[]);
@@ -378,9 +381,11 @@ export default function VenueMasterPage() {
     setSelectedHotelIds(new Set());
     setSelectedMannequinIds(new Set());
     setSelectedMannequinAgencyIds(new Set());
+    setSelectedSegmentIds(new Set());
     setHotelSearch("");
     setMannequinSearch("");
     setAgencySearch("");
+    setSegmentSearch("");
     resetAreaForm();
     resetHotelForm();
     resetMannequinForm();
@@ -417,9 +422,11 @@ export default function VenueMasterPage() {
     setSelectedMannequinIds(pids);
     const aids = new Set(mannequinLinks.filter((l) => l.venue_id === v.id).map((l) => l.mannequin_agency_id).filter(Boolean) as string[]);
     setSelectedMannequinAgencyIds(aids);
+    setSelectedSegmentIds(new Set(dmSegments.filter((s) => s.venue_id === v.id).map((s) => s.id)));
     setHotelSearch("");
     setMannequinSearch("");
     setAgencySearch("");
+    setSegmentSearch("");
     setDialogOpen(true);
   };
 
@@ -477,6 +484,19 @@ export default function VenueMasterPage() {
       if (linkRows.length > 0) {
         await supabase.from("venue_mannequin_links").insert(linkRows);
       }
+
+      // 汎用マスター区分(DM区分)の紐づけ更新: 差分だけ venue_id を付け替える
+      const toLink = Array.from(selectedSegmentIds).filter((sid) => {
+        const s = dmSegments.find((x) => x.id === sid);
+        return s && s.venue_id !== venueId;
+      });
+      const toUnlink = dmSegments
+        .filter((s) => s.venue_id === venueId && !selectedSegmentIds.has(s.id))
+        .map((s) => s.id);
+      await Promise.all([
+        ...toLink.map((sid) => supabase.from("sanchoku_segments").update({ venue_id: venueId, updated_at: new Date().toISOString() }).eq("id", sid)),
+        ...toUnlink.map((sid) => supabase.from("sanchoku_segments").update({ venue_id: null, updated_at: new Date().toISOString() }).eq("id", sid)),
+      ]);
     }
 
     setSaving(false);
@@ -1095,6 +1115,82 @@ export default function VenueMasterPage() {
                   );
                 })}
               </div>
+            </div>
+
+            {/* ②-2 汎用マスター区分 (DM区分) */}
+            <div className="rounded-lg border-2 border-amber-300 dark:border-amber-700 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">汎用マスター区分（DM区分）</p>
+                <Link href="/dm/segments" target="_blank" className="text-[10px] text-amber-600 hover:underline">
+                  DM区分マスターを開く
+                </Link>
+              </div>
+              {/* 選択中の区分 */}
+              <div className="flex flex-wrap gap-1">
+                {Array.from(selectedSegmentIds).map((sid) => {
+                  const s = dmSegments.find((x) => x.id === sid);
+                  if (!s) return null;
+                  return (
+                    <span key={sid} className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] rounded bg-amber-50 border border-amber-200 text-amber-800">
+                      <span className="font-mono">区{s.kbn_no}-{s.code}</span>
+                      <span>{s.segment_name}</span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSegmentIds((prev) => { const next = new Set(prev); next.delete(sid); return next; })}
+                        className="text-amber-500 hover:text-amber-800"
+                        aria-label="区分を外す"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  );
+                })}
+                {selectedSegmentIds.size === 0 && <span className="text-xs text-muted-foreground">未紐付け</span>}
+              </div>
+              {/* 区分の検索・追加 */}
+              <Input
+                value={segmentSearch}
+                onChange={(e) => setSegmentSearch(e.target.value)}
+                placeholder="区分を検索して追加（名称・コード）"
+                className="h-7 text-xs"
+              />
+              {segmentSearch.trim() && (
+                <div className="space-y-0.5 max-h-36 overflow-y-auto">
+                  {dmSegments
+                    .filter((s) => !selectedSegmentIds.has(s.id))
+                    .filter((s) => {
+                      const q = segmentSearch.trim();
+                      return s.segment_name.includes(q) || String(s.code).includes(q) || `区${s.kbn_no}`.includes(q) || `区分${s.kbn_no}`.includes(q);
+                    })
+                    .slice(0, 20)
+                    .map((s) => {
+                      const linkedOther = s.venue_id && s.venue_id !== editingId;
+                      const otherVenue = linkedOther ? venues.find((v) => v.id === s.venue_id) : null;
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedSegmentIds((prev) => new Set(prev).add(s.id));
+                            setSegmentSearch("");
+                          }}
+                          className="w-full text-left text-xs px-1.5 py-1 rounded hover:bg-amber-100 dark:hover:bg-amber-900/30 flex items-center gap-2"
+                        >
+                          <span className="font-mono text-amber-700">区{s.kbn_no}-{s.code}</span>
+                          <span>{s.segment_name}</span>
+                          {otherVenue && (
+                            <span className="ml-auto text-[10px] text-orange-500">
+                              現在: {otherVenue.store_name ? `${otherVenue.venue_name} ${otherVenue.store_name}` : otherVenue.venue_name}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                </div>
+              )}
+              <p className="text-[10px] text-muted-foreground">
+                他の百貨店に紐付いている区分を追加すると、保存時にこの百貨店へ付け替わります。
+              </p>
             </div>
 
             {/* ③ ホテル紐づけ */}
