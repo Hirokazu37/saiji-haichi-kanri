@@ -121,9 +121,13 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   onImported: () => void;
   segments: SegmentMaster[];
+  /** 指定すると「この催事のDM名簿」として取込（名簿が催事にひも付く） */
+  event?: { id: string; label: string } | null;
+  /** 催事モード時に最初から選んでおく区分キー ("kbn-code") */
+  defaultSegKey?: string;
 };
 
-export function CustomerImportDialog({ open, onOpenChange, onImported, segments }: Props) {
+export function CustomerImportDialog({ open, onOpenChange, onImported, segments, event = null, defaultSegKey }: Props) {
   const supabase = createClient();
   const { displayName } = usePermission();
   const [fileName, setFileName] = useState("");
@@ -135,7 +139,16 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments 
   const [fixedSeg, setFixedSeg] = useState("");
   const [suggestNote, setSuggestNote] = useState("");
   const [recentLogs, setRecentLogs] = useState<ImportLog[]>([]);
+  // 催事モード: 取込人数でDM枚数を更新するか
+  const [updateDmCount, setUpdateDmCount] = useState(true);
   const [importing, setImporting] = useState(false);
+
+  // 開いたとき、催事にひも付いた区分があれば最初から選んでおく
+  const [prevOpen, setPrevOpen] = useState(false);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (open && defaultSegKey) setFixedSeg(defaultSegKey);
+  }
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
   const [result, setResult] = useState("");
@@ -147,6 +160,7 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments 
     setSegMode("fixed");
     setFixedSeg("");
     setSuggestNote("");
+    setUpdateDmCount(true);
   };
 
   // ダイアログを開いたら直近の取込履歴を読む
@@ -271,14 +285,13 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments 
         if (upErr) throw new Error(upErr.message);
       }
 
-      // 2. 区分の紐付け
+      // 2. 区分の紐付け / 催事名簿の登録に使う 顧客番号 → id を取得
       //    - 列モード: CSVの区分列を正として、取込顧客の区分を全入れ替え
       //    - 指定モード: 選んだ区分だけを追加・更新（他の区分は保持）
       const hasSegCols = SEGMENT_KBNS.some((k) => segMapping[k] !== undefined && segMapping[k] !== NONE);
       const writeSegs = (segMode === "columns" && hasSegCols) || fixedSegMaster !== null;
-      if (writeSegs) {
-        // 顧客番号 → id を取得
-        const idByNo = new Map<string, string>();
+      const idByNo = new Map<string, string>();
+      if (writeSegs || event) {
         const noChunks = chunk(Array.from(byNo.keys()), 300);
         for (let i = 0; i < noChunks.length; i++) {
           setProgress(`顧客IDを照合中… ${Math.round(((i + 1) / noChunks.length) * 100)}%`);
@@ -289,6 +302,8 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments 
           if (selErr) throw new Error(selErr.message);
           for (const r of data || []) idByNo.set(r.customer_no, r.id);
         }
+      }
+      if (writeSegs) {
         // 列モードのみ: 既存区分を削除してから入れ直す
         if (segMode === "columns") {
           const allIds = Array.from(idByNo.values());
@@ -318,6 +333,25 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments 
         }
       }
 
+      // 3. 催事モード: 名簿を催事にひも付け、必要ならDM枚数も更新
+      if (event) {
+        const recipientRows = Array.from(byNo.keys())
+          .map((no) => idByNo.get(no))
+          .filter((id): id is string => !!id)
+          .map((customer_id) => ({ event_id: event.id, customer_id }));
+        const recChunks2 = chunk(recipientRows, 500);
+        for (let i = 0; i < recChunks2.length; i++) {
+          setProgress(`名簿を催事にひも付け中… ${Math.round(((i + 1) / recChunks2.length) * 100)}%`);
+          const { error: rcErr } = await supabase
+            .from("event_dm_recipients")
+            .upsert(recChunks2[i], { onConflict: "event_id,customer_id", ignoreDuplicates: true });
+          if (rcErr) throw new Error(rcErr.message);
+        }
+        if (updateDmCount) {
+          await supabase.from("events").update({ dm_count: records.length }).eq("id", event.id);
+        }
+      }
+
       setProgress("");
       // 取込履歴を記録（取り違えに後から気付けるように）
       await supabase.from("customer_import_logs").insert({
@@ -327,13 +361,18 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments 
         skipped_count: skipped,
         kbn_no: fixedSegMaster?.kbn_no ?? null,
         code: fixedSegMaster?.code ?? null,
-        segment_label: fixedSegMaster
+        segment_label: event
+          ? `名簿: ${event.label}${fixedSegMaster ? ` / ${fixedSegMaster.segment_name}` : ""}`
+          : fixedSegMaster
           ? `${fixedSegMaster.kbn_no}-${fixedSegMaster.code} ${fixedSegMaster.segment_name}`
           : segMode === "columns" && hasSegCols ? "CSVの区分列から読取" : "区分紐付けなし",
         mode: segMode,
         imported_by: displayName || null,
+        event_id: event?.id ?? null,
       });
-      const segNote = fixedSegMaster ? `「${fixedSegMaster.segment_name}」に紐付けて` : "";
+      const segNote = event
+        ? `「${event.label}」の名簿として`
+        : fixedSegMaster ? `「${fixedSegMaster.segment_name}」に紐付けて` : "";
       setResult(`${records.length.toLocaleString()}件を${segNote}取り込みました${skipped > 0 ? `（番号または氏名が空の ${skipped} 行はスキップ）` : ""}`);
       onImported();
       // 履歴表示を更新
@@ -370,13 +409,14 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments 
     <Dialog open={open} onOpenChange={(o) => { if (!importing) { onOpenChange(o); if (!o) reset(); } }}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>産直くんCSVの取込</DialogTitle>
+          <DialogTitle>{event ? `DM名簿CSVの取込 — ${event.label}` : "産直くんCSVの取込"}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="text-sm text-muted-foreground">
-            産直くん11からエクスポートした得意先のCSVを選んでください（Shift_JIS / UTF-8 どちらでも可）。
-            同じ顧客番号は上書き更新されるので、何度でも取り込み直せます。
+            {event
+              ? "この催事のDMに使った名簿CSV（産直くんで区分抽出したもの）を選んでください。名簿のお客様がこの催事にひも付き、来場登録時の照合や反応率に使われます。"
+              : "産直くん11からエクスポートした得意先のCSVを選んでください（Shift_JIS / UTF-8 どちらでも可）。同じ顧客番号は上書き更新されるので、何度でも取り込み直せます。"}
           </div>
 
           <label className="flex items-center justify-center gap-2 border-2 border-dashed rounded-lg p-6 cursor-pointer hover:bg-muted/50 transition-colors">
@@ -450,6 +490,18 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments 
                   </div>
                 )}
               </div>
+
+              {event && (
+                <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={updateDmCount}
+                    onChange={(e) => setUpdateDmCount(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  この催事のDM枚数を名簿の人数（{rows.length.toLocaleString()}件）で更新する
+                </label>
+              )}
 
               <div className="space-y-1">
                 <div className="text-sm font-medium">プレビュー（先頭3行）</div>

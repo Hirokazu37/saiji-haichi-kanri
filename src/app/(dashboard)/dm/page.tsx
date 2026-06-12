@@ -9,7 +9,10 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import Link from "next/link";
+import { Upload } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
+import { CustomerImportDialog } from "@/components/customers/CustomerImportDialog";
+import { segKey, type SegmentMaster } from "@/components/customers/types";
 
 type EventDM = {
   id: string;
@@ -36,7 +39,9 @@ function todayStr(): string {
 }
 
 export default function DMListPage() {
-  const { canEdit } = usePermission();
+  const { canEdit, role } = usePermission();
+  // 名簿CSV取込は社員（viewer）も行う
+  const canImport = role === "admin" || role === "viewer";
   const supabase = createClient();
   const [events, setEvents] = useState<EventDM[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,6 +51,9 @@ export default function DMListPage() {
   const [segmentsByVenueKey, setSegmentsByVenueKey] = useState<Map<string, SegmentRow[]>>(new Map());
   // 催事ID → 選択中のDM区分キー("kbn-code")の集合
   const [eventSegSel, setEventSegSel] = useState<Map<string, Set<string>>>(new Map());
+  // 名簿CSV取込ダイアログ（対象の催事と、最初から選んでおく区分）
+  const [importTarget, setImportTarget] = useState<{ id: string; label: string; segKey?: string } | null>(null);
+  const [allSegments, setAllSegments] = useState<SegmentMaster[]>([]);
 
   const fetchData = useCallback(async () => {
     const [evRes, segRes, venRes, linkRes] = await Promise.all([
@@ -53,11 +61,12 @@ export default function DMListPage() {
         .from("events")
         .select("id, name, venue, store_name, start_date, end_date, status, dm_status, dm_count")
         .order("start_date"),
-      supabase.from("sanchoku_segments").select("kbn_no, code, segment_name, venue_id").not("venue_id", "is", null).order("kbn_no").order("code"),
+      supabase.from("sanchoku_segments").select("kbn_no, code, segment_name, venue_id").order("kbn_no").order("code"),
       supabase.from("venue_master").select("id, venue_name, store_name"),
       supabase.from("event_dm_segments").select("event_id, kbn_no, code"),
     ]);
     setEvents(evRes.data || []);
+    setAllSegments((segRes.data as SegmentMaster[]) || []);
     // 催事ごとの選択済みDM区分
     const selMap = new Map<string, Set<string>>();
     for (const l of (linkRes.data as { event_id: string; kbn_no: number; code: number }[]) || []) {
@@ -109,6 +118,20 @@ export default function DMListPage() {
     }
     setSavedId(evtId);
     setTimeout(() => setSavedId((prev) => prev === evtId ? null : prev), 1500);
+  };
+
+  /** 名簿CSV取込ダイアログを開く（催事に紐付け済みの区分があれば最初から選んでおく） */
+  const openRosterImport = (e: EventDM) => {
+    const label = `${e.venue}${e.store_name ? ` ${e.store_name}` : ""}`;
+    const selKeys = Array.from(eventSegSel.get(e.id) || []);
+    let key: string | undefined;
+    if (selKeys.length === 1) {
+      key = selKeys[0];
+    } else {
+      const vsegs = segmentsByVenueKey.get(`${e.venue}|${e.store_name || ""}`) || [];
+      if (vsegs.length === 1) key = segKey(vsegs[0].kbn_no, vsegs[0].code);
+    }
+    setImportTarget({ id: e.id, label, segKey: key });
   };
 
   const updateField = (evtId: string, field: string, value: string | number | null) => {
@@ -185,6 +208,7 @@ export default function DMListPage() {
                 <TableHead>印刷済み</TableHead>
                 <TableHead>ステータス</TableHead>
                 <TableHead>枚数</TableHead>
+                <TableHead>名簿CSV</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -286,11 +310,25 @@ export default function DMListPage() {
                         <span className="text-sm">{e.dm_count ?? "—"}</span>
                       )}
                     </TableCell>
+                    <TableCell>
+                      {canImport && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openRosterImport(e)}
+                          title="この催事のDM名簿CSVを取り込む"
+                          className="whitespace-nowrap"
+                        >
+                          <Upload className="h-3.5 w-3.5 mr-1" />
+                          名簿
+                        </Button>
+                      )}
+                    </TableCell>
                   </TableRow>
                 );
               })}
               {filtered.length === 0 && (
-                <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                   {filter === "all"
                     ? includePast
                       ? "DMハガキが登録された催事がありません"
@@ -302,6 +340,16 @@ export default function DMListPage() {
           </Table>
         </CardContent>
       </Card>
+
+      {/* 催事ごとのDM名簿CSV取込 */}
+      <CustomerImportDialog
+        open={importTarget !== null}
+        onOpenChange={(o) => { if (!o) setImportTarget(null); }}
+        onImported={fetchData}
+        segments={allSegments}
+        event={importTarget ? { id: importTarget.id, label: importTarget.label } : null}
+        defaultSegKey={importTarget?.segKey}
+      />
     </div>
   );
 }

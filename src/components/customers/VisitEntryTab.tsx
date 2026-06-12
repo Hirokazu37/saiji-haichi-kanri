@@ -53,6 +53,10 @@ export function VisitEntryTab({ segments }: Props) {
   const [busy, setBusy] = useState(false);
   // 選択中の催事にひも付いたDM区分名（DMハガキ画面で設定したもの）
   const [eventSegNames, setEventSegNames] = useState<string[]>([]);
+  // この催事のDM名簿の人数（名簿CSVをDMハガキ画面で取込済みの場合）
+  const [rosterCount, setRosterCount] = useState(0);
+  // 確認待ちの顧客が名簿に載っているか（null = 名簿未取込で照合不可）
+  const [pendingInRoster, setPendingInRoster] = useState<boolean | null>(null);
   const numberRef = useRef<HTMLInputElement>(null);
 
   // 催事一覧（新しい順）
@@ -108,9 +112,9 @@ export function VisitEntryTab({ segments }: Props) {
 
   useEffect(() => { fetchVisits(eventId); }, [eventId, fetchVisits]);
 
-  // 催事にひも付いたDM区分名を取得
+  // 催事にひも付いたDM区分名と名簿人数を取得
   useEffect(() => {
-    if (!eventId) { setEventSegNames([]); return; }
+    if (!eventId) { setEventSegNames([]); setRosterCount(0); return; }
     supabase
       .from("event_dm_segments")
       .select("kbn_no, code")
@@ -122,6 +126,11 @@ export function VisitEntryTab({ segments }: Props) {
         });
         setEventSegNames(names);
       });
+    supabase
+      .from("event_dm_recipients")
+      .select("*", { count: "exact", head: true })
+      .eq("event_id", eventId)
+      .then(({ count }) => setRosterCount(count ?? 0));
   }, [eventId, supabase, segments]);
 
   /** 催事を選んで入力画面へ */
@@ -161,6 +170,7 @@ export function VisitEntryTab({ segments }: Props) {
       fetchVisits(eventId);
     }
     setPending(null);
+    setPendingInRoster(null);
     setCandidates([]);
     setNameResults([]);
     setNameQuery("");
@@ -200,6 +210,18 @@ export function VisitEntryTab({ segments }: Props) {
         setFeedback({ kind: "notfound", input: raw });
         setNumberInput("");
       } else if (found.length === 1) {
+        // 名簿CSVを取込済みなら「この催事の名簿に載っているか」を照合
+        let inRoster: boolean | null = null;
+        if (rosterCount > 0) {
+          const { data: r } = await supabase
+            .from("event_dm_recipients")
+            .select("id")
+            .eq("event_id", eventId)
+            .eq("customer_id", found[0].id)
+            .limit(1);
+          inRoster = ((r as { id: string }[]) || []).length > 0;
+        }
+        setPendingInRoster(inRoster);
         // 確認待ちへ（Enterで登録 / Escでやり直し）
         setPending(found[0]);
       } else {
@@ -210,7 +232,7 @@ export function VisitEntryTab({ segments }: Props) {
       setBusy(false);
       numberRef.current?.focus();
     }
-  }, [numberInput, eventId, busy, supabase]);
+  }, [numberInput, eventId, busy, supabase, rosterCount]);
 
   /** 名前・カナで検索（ハガキ忘れの方の調査用） */
   useEffect(() => {
@@ -297,11 +319,19 @@ export function VisitEntryTab({ segments }: Props) {
                       {n}
                     </span>
                   ))}
+                  {rosterCount > 0 && (
+                    <span className="text-xs font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5">
+                      名簿 {rosterCount.toLocaleString()}人
+                    </span>
+                  )}
                 </div>
                 <div className="text-xs text-muted-foreground">
                   {selectedEvent.start_date}〜{selectedEvent.end_date}
                   ／ 登録済みの来場: {visits.length}人
-                  {selectedEvent.dm_count ? `（反応率 ${((visits.length / selectedEvent.dm_count) * 100).toFixed(1)}%）` : ""}
+                  {(() => {
+                    const base = selectedEvent.dm_count || rosterCount;
+                    return base ? `（反応率 ${((visits.length / base) * 100).toFixed(1)}%）` : "";
+                  })()}
                 </div>
               </div>
             )}
@@ -348,6 +378,12 @@ export function VisitEntryTab({ segments }: Props) {
                     </div>
                     {pending.address && (
                       <div className="text-xs text-blue-800/80 truncate">{pending.address}</div>
+                    )}
+                    {pendingInRoster === false && (
+                      <div className="mt-1 flex items-center gap-1 text-xs font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                        この催事のDM名簿には見つかりません。番号やハガキの催事名を確認してください（このまま登録もできます）
+                      </div>
                     )}
                     <div className="mt-2 flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-blue-900">この方を来場登録しますか？</span>
