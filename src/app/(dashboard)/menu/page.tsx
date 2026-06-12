@@ -14,6 +14,8 @@ import {
   Archive,
   ChevronRight,
   LogOut,
+  Wallet,
+  TrendingUp,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
@@ -25,6 +27,7 @@ type Item = {
   icon: React.ComponentType<{ className?: string }>;
   desc?: string;
   roles: UserRole[];
+  requiresPayments?: boolean; // can_view_payments フラグが必要な項目
 };
 
 type Section = { title: string; items: Item[] };
@@ -37,6 +40,14 @@ const sections: Section[] = [
       { label: "出店申込書", href: "/applications", icon: FileText, desc: "提出状況の一覧管理", roles: ["admin", "viewer"] },
       { label: "DMハガキ", href: "/dm", icon: Mail, desc: "制作ステータスと枚数", roles: ["admin", "viewer"] },
       { label: "顧客・来場管理", href: "/customers", icon: UsersRound, desc: "DM持参のお客様の記録と抽出", roles: ["admin", "viewer"] },
+    ],
+  },
+  {
+    title: "経理・分析",
+    items: [
+      { label: "入金管理", href: "/payments", icon: Wallet, desc: "入金予定と消込の管理", roles: ["admin", "viewer"], requiresPayments: true },
+      { label: "売上分析", href: "/sales", icon: TrendingUp, desc: "催事ごとの売上と推移", roles: ["admin", "viewer"], requiresPayments: true },
+      { label: "帳合先マスター", href: "/payer-master", icon: Store, roles: ["admin", "viewer"], requiresPayments: true },
     ],
   },
   {
@@ -61,7 +72,7 @@ const sections: Section[] = [
 export default function MenuPage() {
   const router = useRouter();
   const supabase = createClient();
-  const { displayName, role, loading } = usePermission();
+  const { displayName, role, canViewPayments, loading } = usePermission();
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -72,7 +83,12 @@ export default function MenuPage() {
   const visibleSections = loading
     ? []
     : sections
-        .map((s) => ({ ...s, items: s.items.filter((i) => i.roles.includes(role)) }))
+        .map((s) => ({
+          ...s,
+          items: s.items.filter(
+            (i) => i.roles.includes(role) && (!i.requiresPayments || canViewPayments)
+          ),
+        }))
         .filter((s) => s.items.length > 0);
 
   return (
