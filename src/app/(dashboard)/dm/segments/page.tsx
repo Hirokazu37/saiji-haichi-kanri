@@ -43,17 +43,18 @@ type Venue = {
 const emptyForm = { kbn_no: "3", code: "", segment_name: "", venue_id: "", notes: "" };
 
 // 区分ごとのテーマカラー (タブ・見出しで共通)
-const KBN_COLORS: Record<number, { dot: string; active: string; header: string }> = {
-  3:  { dot: "bg-rose-500",    active: "data-active:bg-rose-100 data-active:text-rose-900 dark:data-active:bg-rose-900/40 dark:data-active:text-rose-200",       header: "bg-rose-50 dark:bg-rose-950/30" },
-  4:  { dot: "bg-orange-500",  active: "data-active:bg-orange-100 data-active:text-orange-900 dark:data-active:bg-orange-900/40 dark:data-active:text-orange-200", header: "bg-orange-50 dark:bg-orange-950/30" },
-  5:  { dot: "bg-amber-500",   active: "data-active:bg-amber-100 data-active:text-amber-900 dark:data-active:bg-amber-900/40 dark:data-active:text-amber-200",    header: "bg-amber-50 dark:bg-amber-950/30" },
-  6:  { dot: "bg-lime-600",    active: "data-active:bg-lime-100 data-active:text-lime-900 dark:data-active:bg-lime-900/40 dark:data-active:text-lime-200",        header: "bg-lime-50 dark:bg-lime-950/30" },
-  7:  { dot: "bg-emerald-500", active: "data-active:bg-emerald-100 data-active:text-emerald-900 dark:data-active:bg-emerald-900/40 dark:data-active:text-emerald-200", header: "bg-emerald-50 dark:bg-emerald-950/30" },
-  8:  { dot: "bg-sky-500",     active: "data-active:bg-sky-100 data-active:text-sky-900 dark:data-active:bg-sky-900/40 dark:data-active:text-sky-200",            header: "bg-sky-50 dark:bg-sky-950/30" },
-  9:  { dot: "bg-violet-500",  active: "data-active:bg-violet-100 data-active:text-violet-900 dark:data-active:bg-violet-900/40 dark:data-active:text-violet-200", header: "bg-violet-50 dark:bg-violet-950/30" },
-  10: { dot: "bg-fuchsia-500", active: "data-active:bg-fuchsia-100 data-active:text-fuchsia-900 dark:data-active:bg-fuchsia-900/40 dark:data-active:text-fuchsia-200", header: "bg-fuchsia-50 dark:bg-fuchsia-950/30" },
+// tab: 非選択時は薄い色、選択時 (data-active) は濃い色+白文字
+const KBN_COLORS: Record<number, { dot: string; tab: string; header: string }> = {
+  3:  { dot: "bg-rose-500",    tab: "bg-rose-100 text-rose-700 hover:bg-rose-200 hover:text-rose-800 dark:bg-rose-900/30 dark:text-rose-300 data-active:bg-rose-500 data-active:text-white dark:data-active:bg-rose-600 dark:data-active:text-white",                         header: "bg-rose-50 dark:bg-rose-950/30" },
+  4:  { dot: "bg-orange-500",  tab: "bg-orange-100 text-orange-700 hover:bg-orange-200 hover:text-orange-800 dark:bg-orange-900/30 dark:text-orange-300 data-active:bg-orange-500 data-active:text-white dark:data-active:bg-orange-600 dark:data-active:text-white",           header: "bg-orange-50 dark:bg-orange-950/30" },
+  5:  { dot: "bg-amber-500",   tab: "bg-amber-100 text-amber-700 hover:bg-amber-200 hover:text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 data-active:bg-amber-500 data-active:text-white dark:data-active:bg-amber-600 dark:data-active:text-white",                  header: "bg-amber-50 dark:bg-amber-950/30" },
+  6:  { dot: "bg-lime-600",    tab: "bg-lime-100 text-lime-700 hover:bg-lime-200 hover:text-lime-800 dark:bg-lime-900/30 dark:text-lime-300 data-active:bg-lime-600 data-active:text-white dark:data-active:bg-lime-600 dark:data-active:text-white",                          header: "bg-lime-50 dark:bg-lime-950/30" },
+  7:  { dot: "bg-emerald-500", tab: "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 hover:text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 data-active:bg-emerald-500 data-active:text-white dark:data-active:bg-emerald-600 dark:data-active:text-white",  header: "bg-emerald-50 dark:bg-emerald-950/30" },
+  8:  { dot: "bg-sky-500",     tab: "bg-sky-100 text-sky-700 hover:bg-sky-200 hover:text-sky-800 dark:bg-sky-900/30 dark:text-sky-300 data-active:bg-sky-500 data-active:text-white dark:data-active:bg-sky-600 dark:data-active:text-white",                                  header: "bg-sky-50 dark:bg-sky-950/30" },
+  9:  { dot: "bg-violet-500",  tab: "bg-violet-100 text-violet-700 hover:bg-violet-200 hover:text-violet-800 dark:bg-violet-900/30 dark:text-violet-300 data-active:bg-violet-500 data-active:text-white dark:data-active:bg-violet-600 dark:data-active:text-white",          header: "bg-violet-50 dark:bg-violet-950/30" },
+  10: { dot: "bg-fuchsia-500", tab: "bg-fuchsia-100 text-fuchsia-700 hover:bg-fuchsia-200 hover:text-fuchsia-800 dark:bg-fuchsia-900/30 dark:text-fuchsia-300 data-active:bg-fuchsia-500 data-active:text-white dark:data-active:bg-fuchsia-600 dark:data-active:text-white",  header: "bg-fuchsia-50 dark:bg-fuchsia-950/30" },
 };
-const kbnColor = (k: number) => KBN_COLORS[k] ?? { dot: "bg-gray-400", active: "", header: "bg-muted/50" };
+const kbnColor = (k: number) => KBN_COLORS[k] ?? { dot: "bg-gray-400", tab: "", header: "bg-muted/50" };
 
 export default function DmSegmentsPage() {
   const { canEdit } = usePermission();
@@ -221,19 +222,18 @@ export default function DmSegmentsPage() {
       </div>
 
       <Tabs value={activeKbn} onValueChange={(v) => setActiveKbn(String(v))} className="w-full">
-        <TabsList className="w-full justify-start flex-wrap h-auto">
-          <TabsTrigger value="all">
+        <TabsList className="w-full justify-start flex-wrap h-auto gap-1">
+          <TabsTrigger value="all" className="data-active:bg-foreground data-active:text-background dark:data-active:bg-foreground dark:data-active:text-background">
             すべて
-            <span className="ml-1 text-[10px] text-muted-foreground">{baseFiltered.length}</span>
+            <span className="ml-1 text-[10px] opacity-70">{baseFiltered.length}</span>
           </TabsTrigger>
           {allKbns.map((k) => {
             const count = baseFiltered.filter((s) => s.kbn_no === k).length;
             const c = kbnColor(k);
             return (
-              <TabsTrigger key={k} value={String(k)} className={c.active}>
-                <span className={`inline-block h-2 w-2 rounded-full shrink-0 ${c.dot}`} />
+              <TabsTrigger key={k} value={String(k)} className={c.tab}>
                 区分{k}
-                <span className="ml-0.5 text-[10px] text-muted-foreground">{count}</span>
+                <span className="ml-0.5 text-[10px] opacity-70">{count}</span>
               </TabsTrigger>
             );
           })}
