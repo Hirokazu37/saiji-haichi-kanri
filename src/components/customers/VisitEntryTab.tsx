@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Combobox, type ComboboxItem } from "@/components/ui/combobox";
 import {
-  CheckCircle2, AlertTriangle, XCircle, Undo2, UserSearch, ArrowLeft, UserCheck,
+  CheckCircle2, AlertTriangle, XCircle, Undo2, UserSearch, ArrowLeft, UserCheck, StickyNote,
 } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
 import { EventCalendar } from "./EventCalendar";
@@ -21,6 +21,7 @@ type Visit = {
   id: string;
   customer_id: string;
   created_at: string;
+  notes: string | null;
   customers: Pick<Customer, "id" | "customer_no" | "name" | "kana" | "address"> | null;
 };
 
@@ -57,6 +58,9 @@ export function VisitEntryTab({ segments }: Props) {
   const [rosterCount, setRosterCount] = useState(0);
   // 確認待ちの顧客が名簿に載っているか（null = 名簿未取込で照合不可）
   const [pendingInRoster, setPendingInRoster] = useState<boolean | null>(null);
+  // 来場メモの編集中の行とテキスト
+  const [memoVisitId, setMemoVisitId] = useState<string | null>(null);
+  const [memoText, setMemoText] = useState("");
   const numberRef = useRef<HTMLInputElement>(null);
 
   // 催事一覧（新しい順）
@@ -103,7 +107,7 @@ export function VisitEntryTab({ segments }: Props) {
     if (!evtId) { setVisits([]); return; }
     const { data } = await supabase
       .from("event_visits")
-      .select("id, customer_id, created_at, customers(id, customer_no, name, kana, address)")
+      .select("id, customer_id, created_at, notes, customers(id, customer_no, name, kana, address)")
       .eq("event_id", evtId)
       .order("created_at", { ascending: false })
       .limit(1000);
@@ -276,6 +280,18 @@ export function VisitEntryTab({ segments }: Props) {
     fetchVisits(eventId);
   };
 
+  /** 来場メモ（「今回5箱購入・発送依頼」など、その回だけの記録）を保存 */
+  const saveMemo = async () => {
+    if (!memoVisitId) return;
+    await supabase
+      .from("event_visits")
+      .update({ notes: memoText.trim() || null })
+      .eq("id", memoVisitId);
+    setMemoVisitId(null);
+    setMemoText("");
+    fetchVisits(eventId);
+  };
+
   const customerRow = (c: Customer, action: React.ReactNode) => (
     <div key={c.id} className="flex items-center gap-3 px-3 py-2 border rounded-md">
       <span className="font-mono text-xs text-muted-foreground shrink-0">#{c.customer_no}</span>
@@ -402,6 +418,11 @@ export function VisitEntryTab({ segments }: Props) {
                     {pending.address && (
                       <div className="text-xs text-blue-800/80 truncate">{pending.address}</div>
                     )}
+                    {pending.notes && (
+                      <div className="mt-1 text-sm font-medium text-amber-900 bg-amber-100 border border-amber-300 rounded px-2 py-1">
+                        📌 顧客メモ: {pending.notes}
+                      </div>
+                    )}
                     {pendingInRoster === false && (
                       <div className="mt-1 flex items-center gap-1 text-xs font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1">
                         <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
@@ -511,15 +532,58 @@ export function VisitEntryTab({ segments }: Props) {
             <div className="font-medium">この催事の来場記録（新しい順）</div>
             <div className="space-y-1.5 max-h-96 overflow-y-auto">
               {visits.map((v) => (
-                <div key={v.id} className="flex items-center gap-3 px-3 py-1.5 border rounded-md">
-                  <span className="font-mono text-xs text-muted-foreground shrink-0">
-                    #{v.customers?.customer_no ?? "?"}
-                  </span>
-                  <span className="flex-1 truncate font-medium">{v.customers?.name ?? "（削除された顧客）"}</span>
-                  {canRegister && (
-                    <Button variant="ghost" size="sm" onClick={() => undoVisit(v.id)} title="取消">
-                      <Undo2 className="h-4 w-4 text-muted-foreground" />
-                    </Button>
+                <div key={v.id} className="px-3 py-1.5 border rounded-md">
+                  <div className="flex items-center gap-3">
+                    <span className="font-mono text-xs text-muted-foreground shrink-0">
+                      #{v.customers?.customer_no ?? "?"}
+                    </span>
+                    <span className="flex-1 truncate font-medium">{v.customers?.name ?? "（削除された顧客）"}</span>
+                    {canRegister && (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setPending(null); // 確認カードと同時編集でEnterが衝突しないように
+                            if (memoVisitId === v.id) {
+                              setMemoVisitId(null);
+                            } else {
+                              setMemoVisitId(v.id);
+                              setMemoText(v.notes || "");
+                            }
+                          }}
+                          title="この来場のメモ（購入内容・発送依頼など）"
+                        >
+                          <StickyNote className={`h-4 w-4 ${v.notes ? "text-amber-600" : "text-muted-foreground"}`} />
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => undoVisit(v.id)} title="取消">
+                          <Undo2 className="h-4 w-4 text-muted-foreground" />
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                  {v.notes && memoVisitId !== v.id && (
+                    <div className="mt-1 ml-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                      {v.notes}
+                    </div>
+                  )}
+                  {memoVisitId === v.id && (
+                    <div className="mt-1.5 flex gap-2">
+                      <Input
+                        value={memoText}
+                        onChange={(e) => setMemoText(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.nativeEvent.isComposing) return;
+                          if (e.key === "Enter") { e.preventDefault(); saveMemo(); }
+                          if (e.key === "Escape") { e.preventDefault(); setMemoVisitId(null); }
+                        }}
+                        placeholder="例: 5箱購入・東京へ発送依頼"
+                        autoFocus
+                        className="h-8 text-sm"
+                      />
+                      <Button size="sm" onClick={saveMemo}>保存</Button>
+                      <Button size="sm" variant="outline" onClick={() => setMemoVisitId(null)}>やめる</Button>
+                    </div>
                   )}
                 </div>
               ))}

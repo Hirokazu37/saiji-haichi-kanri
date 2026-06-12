@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -21,6 +22,7 @@ type VisitWithEvent = {
   customer_id: string;
   visited_on: string | null;
   created_at: string;
+  notes: string | null;
   events: { id: string; name: string | null; venue: string; store_name: string | null; start_date: string } | null;
 };
 
@@ -39,6 +41,9 @@ export function CustomerListTab({ segments }: Props) {
   const [loading, setLoading] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [detail, setDetail] = useState<Customer | null>(null);
+  // 顧客メモ（「大量に買ってくださる」「送り常連」などの特記事項）の編集
+  const [detailNotes, setDetailNotes] = useState("");
+  const [notesSaved, setNotesSaved] = useState(false);
 
   const segNameMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -75,7 +80,7 @@ export function CustomerListTab({ segments }: Props) {
         supabase.from("customer_segments").select("customer_id, kbn_no, code").in("customer_id", ids),
         supabase
           .from("event_visits")
-          .select("customer_id, visited_on, created_at, events(id, name, venue, store_name, start_date)")
+          .select("customer_id, visited_on, created_at, notes, events(id, name, venue, store_name, start_date)")
           .in("customer_id", ids),
       ]);
       const sm = new Map<string, CustomerSegment[]>();
@@ -107,6 +112,25 @@ export function CustomerListTab({ segments }: Props) {
     }, 300);
     return () => clearTimeout(timer);
   }, [query, search, fetchTotal]);
+
+  const openDetail = (c: Customer) => {
+    setDetail(c);
+    setDetailNotes(c.notes || "");
+    setNotesSaved(false);
+  };
+
+  /** 顧客メモを保存（大量購入・送り常連などの特記事項。来場登録の確認画面に毎回表示される） */
+  const saveCustomerNotes = async () => {
+    if (!detail) return;
+    const notes = detailNotes.trim() || null;
+    const { error } = await supabase.from("customers").update({ notes }).eq("id", detail.id);
+    if (!error) {
+      setCustomers((prev) => prev.map((c) => (c.id === detail.id ? { ...c, notes } : c)));
+      setDetail((prev) => (prev ? { ...prev, notes } : prev));
+      setNotesSaved(true);
+      setTimeout(() => setNotesSaved(false), 2000);
+    }
+  };
 
   const lastVisitOf = (c: Customer): string | null => {
     const vs = visits.get(c.id);
@@ -187,7 +211,7 @@ export function CustomerListTab({ segments }: Props) {
                   const last = lastVisitOf(c);
                   const count = visits.get(c.id)?.length ?? 0;
                   return (
-                    <TableRow key={c.id} className="cursor-pointer" onClick={() => setDetail(c)}>
+                    <TableRow key={c.id} className="cursor-pointer" onClick={() => openDetail(c)}>
                       <TableCell className="font-mono text-xs">{c.customer_no}</TableCell>
                       <TableCell className="font-medium">{c.name}</TableCell>
                       <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{c.kana || "—"}</TableCell>
@@ -235,19 +259,47 @@ export function CustomerListTab({ segments }: Props) {
                   </div>
                 </div>
                 <div>
+                  <div className="text-muted-foreground mb-1">
+                    顧客メモ（大量購入・送り依頼などの特記事項。来場登録のときに毎回表示されます）
+                  </div>
+                  {canImport ? (
+                    <div className="space-y-1.5">
+                      <Textarea
+                        value={detailNotes}
+                        onChange={(e) => setDetailNotes(e.target.value)}
+                        placeholder="例: 毎回大量に購入してくださる／ご自宅への発送を頼まれることが多い"
+                        rows={2}
+                      />
+                      <div className="flex items-center gap-2">
+                        <Button size="sm" onClick={saveCustomerNotes}>メモを保存</Button>
+                        {notesSaved && <span className="text-xs text-green-600 font-medium">✓ 保存しました</span>}
+                      </div>
+                    </div>
+                  ) : (
+                    <div>{detail.notes || <span className="text-muted-foreground">—</span>}</div>
+                  )}
+                </div>
+                <div>
                   <div className="text-muted-foreground mb-1">来場履歴（DM持参の記録）</div>
                   {(visits.get(detail.id) || []).length === 0 ? (
                     <div className="text-muted-foreground">来場記録はまだありません</div>
                   ) : (
                     <ul className="space-y-1">
                       {(visits.get(detail.id) || []).map((v, i) => (
-                        <li key={i} className="flex items-baseline gap-2">
-                          <span className="font-mono text-xs text-muted-foreground shrink-0">
-                            {v.visited_on || v.events?.start_date || "—"}
-                          </span>
-                          <span>
-                            {v.events ? `${v.events.venue}${v.events.store_name ? ` ${v.events.store_name}` : ""}` : "（削除された催事）"}
-                          </span>
+                        <li key={i}>
+                          <div className="flex items-baseline gap-2">
+                            <span className="font-mono text-xs text-muted-foreground shrink-0">
+                              {v.visited_on || v.events?.start_date || "—"}
+                            </span>
+                            <span>
+                              {v.events ? `${v.events.venue}${v.events.store_name ? ` ${v.events.store_name}` : ""}` : "（削除された催事）"}
+                            </span>
+                          </div>
+                          {v.notes && (
+                            <div className="ml-6 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-0.5 mt-0.5 inline-block">
+                              {v.notes}
+                            </div>
+                          )}
                         </li>
                       ))}
                     </ul>
