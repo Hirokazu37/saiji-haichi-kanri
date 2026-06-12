@@ -226,17 +226,37 @@ export default function SalesPage() {
     setAiLoading(true);
     setAiError(null);
     try {
+      const today = new Date();
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+      const thisYear = monthlySummary.thisYear;
+      const lastYear = monthlySummary.lastYear;
+      // 前年の「同時期まで」の会場別売上 (対象年が進行中のとき、通年比較の不公平を補正するため)
+      const lastYearCutoff = `${lastYear}${todayStr.slice(4)}`; // 前年の同月同日
+      const lastYearSamePeriod = new Map<string, number>();
+      for (const e of events) {
+        const sales = salesByEvent.get(e.id);
+        if (!sales || !sales.hasData) continue;
+        const [year] = e.start_date.split("-").map(Number);
+        if (year !== lastYear || e.start_date > lastYearCutoff) continue;
+        const label = e.store_name ? `${e.venue} ${e.store_name}` : e.venue;
+        lastYearSamePeriod.set(label, (lastYearSamePeriod.get(label) || 0) + sales.included);
+      }
       const payload = {
-        対象年: monthlySummary.thisYear,
-        前年: monthlySummary.lastYear,
+        本日: todayStr,
+        対象年: thisYear,
+        前年: lastYear,
+        注意: thisYear >= today.getFullYear()
+          ? "対象年は進行中。対象年の売上は本日までの途中経過であり、未開催の催事は含まれない。前年の通年実績と単純比較せず、増減を論じるときは前年同時期売上と比較すること。"
+          : "対象年・前年とも通年の実績。",
         月別売上_税込: {
-          [`${monthlySummary.thisYear}年`]: monthlySummary.totals[monthlySummary.thisYear],
-          [`${monthlySummary.lastYear}年`]: monthlySummary.totals[monthlySummary.lastYear],
+          [`${thisYear}年`]: monthlySummary.totals[thisYear],
+          [`${lastYear}年`]: monthlySummary.totals[lastYear],
         },
         会場別_上位20: venueSummary.slice(0, 20).map((v) => ({
           会場: v.label,
           今年売上: v.thisYearTotal,
-          前年売上: v.lastYearTotal,
+          前年売上_通年: v.lastYearTotal,
+          前年同時期売上: lastYearSamePeriod.get(v.label) ?? 0,
           今年催事数: v.thisYearEvents,
           前年催事数: v.lastYearEvents,
         })),
