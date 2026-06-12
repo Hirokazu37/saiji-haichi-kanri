@@ -18,10 +18,13 @@ type EventLite = {
   name: string | null;
   venue: string;
   store_name: string | null;
+  prefecture: string | null;
   start_date: string;
   end_date: string;
   revenue: number | null;
 };
+
+type AiReport = { id: string; title: string; content: string; created_at: string };
 
 type DailyRow = {
   event_id: string;
@@ -44,7 +47,7 @@ const toIncluded = (amount: number, taxType: "excluded" | "included", rate: numb
 const TRACK_LABELS = ["A", "B", "C", "D", "E", "F", "G", "H"];
 
 export default function SalesPage() {
-  const { canViewPayments, loading: permLoading } = usePermission();
+  const { canViewPayments, canEdit, loading: permLoading } = usePermission();
   const supabase = createClient();
   const [events, setEvents] = useState<EventLite[]>([]);
   const [dailyRows, setDailyRows] = useState<DailyRow[]>([]);
@@ -54,7 +57,7 @@ export default function SalesPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     const [evtRes, dailyRes] = await Promise.all([
-      supabase.from("events").select("id, name, venue, store_name, start_date, end_date, revenue").order("start_date", { ascending: true }),
+      supabase.from("events").select("id, name, venue, store_name, prefecture, start_date, end_date, revenue").order("start_date", { ascending: true }),
       supabase.from("event_daily_revenue").select("event_id, date, amount, tax_type, tax_rate"),
     ]);
     setEvents((evtRes.data || []) as EventLite[]);
@@ -188,6 +191,94 @@ export default function SalesPage() {
   const [aiInsight, setAiInsight] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+
+  // ===== AI戦略レポート =====
+  const [strategyReports, setStrategyReports] = useState<AiReport[]>([]);
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+  const [strategyLoading, setStrategyLoading] = useState(false);
+  const [strategyError, setStrategyError] = useState<string | null>(null);
+
+  const fetchReports = useCallback(async () => {
+    const { data } = await supabase
+      .from("ai_reports")
+      .select("id, title, content, created_at")
+      .eq("kind", "strategy")
+      .order("created_at", { ascending: false });
+    setStrategyReports((data || []) as AiReport[]);
+  }, [supabase]);
+
+  useEffect(() => { fetchReports(); }, [fetchReports]);
+
+  // AI戦略レポートを生成して保存する
+  const generateStrategy = async () => {
+    setStrategyLoading(true);
+    setStrategyError(null);
+    try {
+      const today = new Date();
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+      // アプリ実績: 会場×年 (税込)
+      const appByVenue = new Map<string, { 都道府県: string | null; 年別売上: Record<string, number> }>();
+      for (const e of events) {
+        const s = salesByEvent.get(e.id);
+        if (!s || !s.hasData) continue;
+        const label = e.store_name ? `${e.venue} ${e.store_name}` : e.venue;
+        const [y] = e.start_date.split("-").map(Number);
+        const rec = appByVenue.get(label) || { 都道府県: e.prefecture, 年別売上: {} };
+        rec.年別売上[`${y}年`] = (rec.年別売上[`${y}年`] || 0) + s.included;
+        appByVenue.set(label, rec);
+      }
+      // 過去実績 (紙記録): 会場×年 + 初出店/最終出店年
+      const { data: legacy } = await supabase
+        .from("legacy_sales")
+        .select("venue_name, year, total_sales");
+      const legacyAll = new Map<string, { 初出店年: number; 最終出店年: number; 年別売上_2012年以降: Record<string, number> }>();
+      for (const r of (legacy || []) as { venue_name: string; year: number; total_sales: number }[]) {
+        const rec = legacyAll.get(r.venue_name) || { 初出店年: r.year, 最終出店年: r.year, 年別売上_2012年以降: {} };
+        rec.初出店年 = Math.min(rec.初出店年, r.year);
+        rec.最終出店年 = Math.max(rec.最終出店年, r.year);
+        if (r.year >= 2012) {
+          rec.年別売上_2012年以降[`${r.year}年`] = (rec.年別売上_2012年以降[`${r.year}年`] || 0) + r.total_sales;
+        }
+        legacyAll.set(r.venue_name, rec);
+      }
+      const payload = {
+        本日: todayStr,
+        アプリ実績_税込_2025年以降: Object.fromEntries(appByVenue),
+        過去実績_紙記録_2005年以降: Object.fromEntries(legacyAll),
+      };
+      const res = await fetch("/api/strategy-insights", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setStrategyError(data.error || "レポート生成に失敗しました");
+        return;
+      }
+      const title = `AI戦略レポート ${today.toLocaleDateString("ja-JP", { year: "numeric", month: "long", day: "numeric" })}`;
+      const { data: inserted } = await supabase
+        .from("ai_reports")
+        .insert({ kind: "strategy", title, content: data.report })
+        .select("id, title, content, created_at")
+        .single();
+      if (inserted) {
+        setStrategyReports((prev) => [inserted as AiReport, ...prev]);
+        setSelectedReportId((inserted as AiReport).id);
+      }
+    } catch {
+      setStrategyError("通信に失敗しました。もう一度お試しください。");
+    } finally {
+      setStrategyLoading(false);
+    }
+  };
+
+  const deleteReport = async (id: string) => {
+    if (!window.confirm("このレポートを削除しますか？")) return;
+    await supabase.from("ai_reports").delete().eq("id", id);
+    setStrategyReports((prev) => prev.filter((r) => r.id !== id));
+    if (selectedReportId === id) setSelectedReportId(null);
+  };
 
   // ===== 会場別 (選択年 vs 前年) =====
   const venueSummary = useMemo(() => {
@@ -933,6 +1024,7 @@ export default function SalesPage() {
             <TabsTrigger value="monthly"><BarChart3 className="h-3.5 w-3.5" />月次サマリ</TabsTrigger>
             <TabsTrigger value="venue"><Store className="h-3.5 w-3.5" />会場別</TabsTrigger>
             <TabsTrigger value="chart"><LineChart className="h-3.5 w-3.5" />推移グラフ</TabsTrigger>
+            <TabsTrigger value="strategy"><Sparkles className="h-3.5 w-3.5" />AI戦略</TabsTrigger>
           </TabsList>
 
           {/* タブ: カレンダー */}
@@ -1302,6 +1394,105 @@ export default function SalesPage() {
                 </p>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* AI戦略レポート */}
+          <TabsContent value="strategy" className="space-y-4">
+            <Card className="border-violet-300 dark:border-violet-700">
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-start justify-between flex-wrap gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-violet-700 dark:text-violet-300 flex items-center gap-1.5">
+                      <Sparkles className="h-4 w-4" />AI戦略コンサル
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      2005年からの全実績（強い地域・閉店済み店舗・客層・リスク）をAIが総合分析し、戦略レポートを作成します。
+                      生成したレポートは保存され、いつでも読み返せます。
+                    </p>
+                  </div>
+                  {canEdit && (
+                    <Button
+                      size="sm"
+                      onClick={generateStrategy}
+                      disabled={strategyLoading || loading}
+                      className="bg-violet-600 hover:bg-violet-700 text-white shrink-0"
+                    >
+                      <Sparkles className="h-4 w-4 mr-1" />
+                      {strategyLoading ? "生成中..." : "レポートを生成"}
+                    </Button>
+                  )}
+                </div>
+                {strategyLoading && (
+                  <p className="text-sm text-muted-foreground animate-pulse">
+                    全期間のデータを分析しています… (1〜2分ほどかかります。このまま開いてお待ちください)
+                  </p>
+                )}
+                {strategyError && <p className="text-sm text-destructive">{strategyError}</p>}
+              </CardContent>
+            </Card>
+
+            {strategyReports.length > 0 && (
+              <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+                {/* レポート一覧 */}
+                <Card className="lg:col-span-1 h-fit">
+                  <CardContent className="p-2">
+                    <p className="text-xs font-semibold text-muted-foreground px-2 py-1.5">保存済みレポート</p>
+                    <div className="space-y-0.5">
+                      {strategyReports.map((r) => {
+                        const isSel = r.id === (selectedReportId ?? strategyReports[0]?.id);
+                        return (
+                          <div key={r.id} className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedReportId(r.id)}
+                              className={`flex-1 text-left text-xs px-2 py-1.5 rounded transition-colors ${isSel ? "bg-violet-100 dark:bg-violet-900/40 text-violet-900 dark:text-violet-200 font-medium" : "hover:bg-muted"}`}
+                            >
+                              {r.title}
+                              <span className="block text-[10px] text-muted-foreground">
+                                {new Date(r.created_at).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                              </span>
+                            </button>
+                            {canEdit && (
+                              <button
+                                type="button"
+                                onClick={() => deleteReport(r.id)}
+                                className="text-muted-foreground hover:text-destructive p-1 shrink-0"
+                                aria-label="レポートを削除"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+                {/* レポート本文 */}
+                <Card className="lg:col-span-3">
+                  <CardContent className="p-5">
+                    {(() => {
+                      const report = strategyReports.find((r) => r.id === selectedReportId) ?? strategyReports[0];
+                      if (!report) return null;
+                      return (
+                        <>
+                          <p className="text-sm font-bold mb-3">{report.title}</p>
+                          <div className="text-sm leading-relaxed whitespace-pre-wrap">{report.content}</div>
+                          <p className="text-[10px] text-muted-foreground mt-4">
+                            ※ AIによる自動分析です。閉店情報などの外部事実は不正確な場合があります。重要な判断の前にはご確認ください。
+                          </p>
+                        </>
+                      );
+                    })()}
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+            {strategyReports.length === 0 && !strategyLoading && (
+              <p className="text-sm text-muted-foreground text-center py-8">
+                まだレポートがありません。「レポートを生成」を押すと最初の戦略レポートを作成します。
+              </p>
+            )}
           </TabsContent>
         </Tabs>
       )}
