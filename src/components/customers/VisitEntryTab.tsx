@@ -64,15 +64,26 @@ export function VisitEntryTab({}: Props) {
       });
   }, [supabase]);
 
-  const eventItems: ComboboxItem[] = useMemo(
-    () =>
-      events.map((e) => ({
+  // 来場登録は「終わった催事への入力」が主なので、開催中→過去の順に並べ、
+  // まだ始まっていない催事はリストの最後に回す
+  const eventItems: ComboboxItem[] = useMemo(() => {
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    const started = events.filter((e) => e.start_date <= todayStr); // 取得時点で新しい順
+    const upcoming = events.filter((e) => e.start_date > todayStr).slice().reverse(); // 近い順
+    return [
+      ...started.map((e) => ({
         value: e.id,
         label: eventLabel(e),
         group: e.start_date.slice(0, 4) + "年",
       })),
-    [events]
-  );
+      ...upcoming.map((e) => ({
+        value: e.id,
+        label: eventLabel(e),
+        group: "今後の催事",
+      })),
+    ];
+  }, [events]);
 
   const selectedEvent = events.find((e) => e.id === eventId) || null;
 
