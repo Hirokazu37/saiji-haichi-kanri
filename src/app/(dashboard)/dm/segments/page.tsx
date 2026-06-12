@@ -75,10 +75,18 @@ export default function DmSegmentsPage() {
   }, [venues]);
 
   const venueItems: ComboboxItem[] = useMemo(() =>
-    venues.filter((v) => v.is_active).map((v) => ({
-      value: v.id,
-      label: v.store_name ? `${v.venue_name} ${v.store_name}` : v.venue_name,
-    })), [venues]);
+    venues.filter((v) => v.is_active).map((v) => {
+      // この百貨店に紐付いている区分を補足表示 (例: 区3-101・区4-112)
+      const linked = segments
+        .filter((s) => s.venue_id === v.id)
+        .map((s) => `区${s.kbn_no}-${s.code}`);
+      const shown = linked.slice(0, 3).join("・");
+      return {
+        value: v.id,
+        label: v.store_name ? `${v.venue_name} ${v.store_name}` : v.venue_name,
+        sublabel: linked.length > 0 ? (linked.length > 3 ? `${shown} 他${linked.length - 3}件` : shown) : undefined,
+      };
+    }), [venues, segments]);
 
   const updateVenue = async (seg: Segment, venueId: string | null) => {
     setSegments((prev) => prev.map((s) => s.id === seg.id ? { ...s, venue_id: venueId } : s));
