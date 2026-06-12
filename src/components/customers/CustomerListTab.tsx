@@ -256,6 +256,7 @@ export function CustomerListTab({ segments }: Props) {
         open={importOpen}
         onOpenChange={setImportOpen}
         onImported={() => { fetchTotal(); search(query); }}
+        segments={segments}
       />
     </div>
   );

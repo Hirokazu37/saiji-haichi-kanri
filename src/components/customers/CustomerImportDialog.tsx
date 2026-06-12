@@ -10,8 +10,10 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { Combobox, type ComboboxItem } from "@/components/ui/combobox";
 import { parseCsvFile } from "@/lib/csv";
 import { Upload, FileSpreadsheet } from "lucide-react";
+import { segKey, type SegmentMaster } from "./types";
 
 /** マッピング対象の基本項目 */
 const BASE_FIELDS = [
@@ -72,9 +74,10 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onImported: () => void;
+  segments: SegmentMaster[];
 };
 
-export function CustomerImportDialog({ open, onOpenChange, onImported }: Props) {
+export function CustomerImportDialog({ open, onOpenChange, onImported, segments }: Props) {
   const supabase = createClient();
   const [fileName, setFileName] = useState("");
   const [headers, setHeaders] = useState<string[]>([]);
@@ -83,6 +86,8 @@ export function CustomerImportDialog({ open, onOpenChange, onImported }: Props) 
     customer_no: NONE, name: NONE, kana: NONE, postal_code: NONE, address: NONE, phone: NONE,
   });
   const [segMapping, setSegMapping] = useState<Record<number, string>>({});
+  const [segMode, setSegMode] = useState<"fixed" | "columns">("fixed");
+  const [fixedSeg, setFixedSeg] = useState("");
   const [importing, setImporting] = useState(false);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
@@ -92,7 +97,16 @@ export function CustomerImportDialog({ open, onOpenChange, onImported }: Props) 
     setFileName(""); setHeaders([]); setRows([]); setError(""); setResult(""); setProgress("");
     setMapping({ customer_no: NONE, name: NONE, kana: NONE, postal_code: NONE, address: NONE, phone: NONE });
     setSegMapping({});
+    setSegMode("fixed");
+    setFixedSeg("");
   };
+
+  const segItems: ComboboxItem[] = segments.map((s) => ({
+    value: segKey(s.kbn_no, s.code),
+    label: s.segment_name,
+    group: `区分${s.kbn_no}`,
+    sublabel: `${s.kbn_no}-${s.code}`,
+  }));
 
   const handleFile = async (file: File) => {
     setError(""); setResult("");
@@ -108,6 +122,8 @@ export function CustomerImportDialog({ open, onOpenChange, onImported }: Props) 
       const guessed = guessMapping(parsed[0]);
       setMapping(guessed.base);
       setSegMapping(guessed.seg);
+      // 区分らしい列がCSVにあれば「列から読む」モードに自動切替
+      if (Object.keys(guessed.seg).length > 0) setSegMode("columns");
     } catch (e) {
       setError(`ファイルの読み込みに失敗しました: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -125,6 +141,9 @@ export function CustomerImportDialog({ open, onOpenChange, onImported }: Props) 
       setError("「顧客番号」と「氏名」の列を指定してください");
       return;
     }
+    const fixedSegMaster = segMode === "fixed"
+      ? segments.find((s) => segKey(s.kbn_no, s.code) === fixedSeg) || null
+      : null;
     setImporting(true); setError(""); setResult("");
     try {
       const now = new Date().toISOString();
@@ -145,15 +164,19 @@ export function CustomerImportDialog({ open, onOpenChange, onImported }: Props) 
           phone: col(row, "phone"),
           imported_at: now,
         });
-        const segs: { kbn_no: number; code: number }[] = [];
-        for (const kbn of SEGMENT_KBNS) {
-          const idx = segMapping[kbn];
-          if (idx === undefined || idx === NONE) continue;
-          const raw = (row[Number(idx)] ?? "").trim();
-          const code = Number(raw);
-          if (raw !== "" && Number.isInteger(code) && code > 0) segs.push({ kbn_no: kbn, code });
+        if (segMode === "columns") {
+          const segs: { kbn_no: number; code: number }[] = [];
+          for (const kbn of SEGMENT_KBNS) {
+            const idx = segMapping[kbn];
+            if (idx === undefined || idx === NONE) continue;
+            const raw = (row[Number(idx)] ?? "").trim();
+            const code = Number(raw);
+            if (raw !== "" && Number.isInteger(code) && code > 0) segs.push({ kbn_no: kbn, code });
+          }
+          segByNo.set(no, segs);
+        } else if (fixedSegMaster) {
+          segByNo.set(no, [{ kbn_no: fixedSegMaster.kbn_no, code: fixedSegMaster.code }]);
         }
-        segByNo.set(no, segs);
       }
       const records = Array.from(byNo.values());
       if (records.length === 0) {
@@ -172,9 +195,12 @@ export function CustomerImportDialog({ open, onOpenChange, onImported }: Props) 
         if (upErr) throw new Error(upErr.message);
       }
 
-      // 2. 区分列が指定されていれば、取込顧客の区分を入れ替える
+      // 2. 区分の紐付け
+      //    - 列モード: CSVの区分列を正として、取込顧客の区分を全入れ替え
+      //    - 指定モード: 選んだ区分だけを追加・更新（他の区分は保持）
       const hasSegCols = SEGMENT_KBNS.some((k) => segMapping[k] !== undefined && segMapping[k] !== NONE);
-      if (hasSegCols) {
+      const writeSegs = (segMode === "columns" && hasSegCols) || fixedSegMaster !== null;
+      if (writeSegs) {
         // 顧客番号 → id を取得
         const idByNo = new Map<string, string>();
         const noChunks = chunk(Array.from(byNo.keys()), 300);
@@ -187,16 +213,18 @@ export function CustomerImportDialog({ open, onOpenChange, onImported }: Props) 
           if (selErr) throw new Error(selErr.message);
           for (const r of data || []) idByNo.set(r.customer_no, r.id);
         }
-        // 既存区分を削除して再挿入
-        const allIds = Array.from(idByNo.values());
-        const idChunks = chunk(allIds, 300);
-        for (let i = 0; i < idChunks.length; i++) {
-          setProgress(`既存の区分を整理中… ${Math.round(((i + 1) / idChunks.length) * 100)}%`);
-          const { error: delErr } = await supabase
-            .from("customer_segments")
-            .delete()
-            .in("customer_id", idChunks[i]);
-          if (delErr) throw new Error(delErr.message);
+        // 列モードのみ: 既存区分を削除してから入れ直す
+        if (segMode === "columns") {
+          const allIds = Array.from(idByNo.values());
+          const idChunks = chunk(allIds, 300);
+          for (let i = 0; i < idChunks.length; i++) {
+            setProgress(`既存の区分を整理中… ${Math.round(((i + 1) / idChunks.length) * 100)}%`);
+            const { error: delErr } = await supabase
+              .from("customer_segments")
+              .delete()
+              .in("customer_id", idChunks[i]);
+            if (delErr) throw new Error(delErr.message);
+          }
         }
         const segRows: { customer_id: string; kbn_no: number; code: number }[] = [];
         for (const [no, segs] of segByNo) {
@@ -207,13 +235,16 @@ export function CustomerImportDialog({ open, onOpenChange, onImported }: Props) 
         const segChunks = chunk(segRows, 1000);
         for (let i = 0; i < segChunks.length; i++) {
           setProgress(`区分を登録中… ${Math.round(((i + 1) / segChunks.length) * 100)}%`);
-          const { error: insErr } = await supabase.from("customer_segments").insert(segChunks[i]);
+          const { error: insErr } = await supabase
+            .from("customer_segments")
+            .upsert(segChunks[i], { onConflict: "customer_id,kbn_no" });
           if (insErr) throw new Error(insErr.message);
         }
       }
 
       setProgress("");
-      setResult(`${records.length.toLocaleString()}件を取り込みました${skipped > 0 ? `（番号または氏名が空の ${skipped} 行はスキップ）` : ""}`);
+      const segNote = fixedSegMaster ? `「${fixedSegMaster.segment_name}」に紐付けて` : "";
+      setResult(`${records.length.toLocaleString()}件を${segNote}取り込みました${skipped > 0 ? `（番号または氏名が空の ${skipped} 行はスキップ）` : ""}`);
       onImported();
     } catch (e) {
       setError(`取込中にエラーが発生しました: ${e instanceof Error ? e.message : String(e)}`);
@@ -280,15 +311,42 @@ export function CustomerImportDialog({ open, onOpenChange, onImported }: Props) 
               </div>
 
               <div className="space-y-2">
-                <div className="text-sm font-medium">DM区分の列（汎用マスター区分 3〜10。コード値が入っている列）</div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {SEGMENT_KBNS.map((kbn) => (
-                    <div key={kbn} className="space-y-1">
-                      <Label className="text-xs">区分{kbn}</Label>
-                      {colSelect(segMapping[kbn] ?? NONE, (v) => setSegMapping((prev) => ({ ...prev, [kbn]: v })))}
+                <div className="text-sm font-medium">DM区分（百貨店）の紐付け</div>
+                <Select value={segMode} onValueChange={(v) => setSegMode((v as "fixed" | "columns") || "fixed")}>
+                  <SelectTrigger className="w-full md:w-96">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="fixed">この名簿の全員を、選んだ区分に紐付ける（区分指定で抽出したCSV）</SelectItem>
+                    <SelectItem value="columns">CSVの中にある区分3〜10の列から読み取る</SelectItem>
+                  </SelectContent>
+                </Select>
+                {segMode === "fixed" ? (
+                  <div className="space-y-1">
+                    <Combobox
+                      items={segItems}
+                      value={fixedSeg}
+                      onChange={setFixedSeg}
+                      placeholder="区分（百貨店）を選択"
+                      searchPlaceholder="百貨店名で検索"
+                      allowCustom={false}
+                      className="w-full md:w-96"
+                    />
+                    <div className="text-xs text-muted-foreground">
+                      産直くんで「区分5の○○百貨店」のように抽出したCSVなら、ここでその区分を選んでください。
+                      既に付いている他の区分はそのまま残ります。選ばずに取り込むと顧客情報だけ更新されます。
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {SEGMENT_KBNS.map((kbn) => (
+                      <div key={kbn} className="space-y-1">
+                        <Label className="text-xs">区分{kbn}</Label>
+                        {colSelect(segMapping[kbn] ?? NONE, (v) => setSegMapping((prev) => ({ ...prev, [kbn]: v })))}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1">
