@@ -305,8 +305,11 @@ export function VisitEntryTab({ segments }: Props) {
     return () => clearTimeout(timer);
   }, [nameQuery, supabase]);
 
-  const undoVisit = async (visitId: string) => {
-    await supabase.from("event_visits").delete().eq("id", visitId);
+  const undoVisit = async (visit: Visit) => {
+    // スマホでの誤タップ防止に確認を挟む
+    const name = visit.customers?.name ?? "この方";
+    if (!window.confirm(`${name} 様の来場記録を取り消しますか？`)) return;
+    await supabase.from("event_visits").delete().eq("id", visit.id);
     fetchVisits(eventId);
   };
 
@@ -596,7 +599,7 @@ export function VisitEntryTab({ segments }: Props) {
                         >
                           <StickyNote className={`h-4 w-4 ${v.notes ? "text-amber-600" : "text-muted-foreground"}`} />
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => undoVisit(v.id)} title="取消">
+                        <Button variant="ghost" size="sm" onClick={() => undoVisit(v)} title="取消">
                           <Undo2 className="h-4 w-4 text-muted-foreground" />
                         </Button>
                       </>
