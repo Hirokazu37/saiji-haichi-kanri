@@ -7,9 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Combobox, type ComboboxItem } from "@/components/ui/combobox";
-import { CheckCircle2, AlertTriangle, XCircle, Undo2, UserSearch, CalendarDays } from "lucide-react";
+import { CheckCircle2, AlertTriangle, XCircle, Undo2, UserSearch } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
-import { EventPickerDialog } from "./EventPickerDialog";
+import { EventCalendar } from "./EventCalendar";
 import {
   eventLabel, normalizeCustomerNo,
   type Customer, type EventLite, type SegmentMaster,
@@ -45,7 +45,6 @@ export function VisitEntryTab({}: Props) {
   const [nameQuery, setNameQuery] = useState("");
   const [nameResults, setNameResults] = useState<Customer[]>([]);
   const [busy, setBusy] = useState(false);
-  const [pickerOpen, setPickerOpen] = useState(false);
   const numberRef = useRef<HTMLInputElement>(null);
 
   // 催事一覧（新しい順）
@@ -192,27 +191,30 @@ export function VisitEntryTab({}: Props) {
       {/* 催事の選択 */}
       <Card>
         <CardContent className="pt-4 space-y-2">
-          <Label>対象の催事</Label>
-          <div className="flex flex-col md:flex-row gap-2 md:items-center">
+          <Label>対象の催事（日程表から選択）</Label>
+          {selectedEvent && (
+            <div className="rounded-md bg-primary/5 border border-primary/20 px-3 py-2">
+              <div className="font-semibold">
+                {selectedEvent.venue}{selectedEvent.store_name ? ` ${selectedEvent.store_name}` : ""}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {selectedEvent.start_date}〜{selectedEvent.end_date} ／ 登録済みの来場: {visits.length}人
+              </div>
+            </div>
+          )}
+          <EventCalendar events={events} selectedId={eventId} onSelect={setEventId} />
+          <div className="flex flex-col md:flex-row gap-1 md:items-center pt-1">
+            <span className="text-xs text-muted-foreground shrink-0">検索して選ぶ場合：</span>
             <Combobox
               items={eventItems}
               value={eventId}
               onChange={setEventId}
-              placeholder="催事を選択"
+              placeholder="会場名などで検索"
               searchPlaceholder="会場名などで検索"
               allowCustom={false}
-              className="max-w-xl md:flex-1"
+              className="max-w-md"
             />
-            <Button variant="outline" onClick={() => setPickerOpen(true)} className="shrink-0">
-              <CalendarDays className="h-4 w-4 mr-1" />
-              日程表から選ぶ
-            </Button>
           </div>
-          {selectedEvent && (
-            <div className="text-xs text-muted-foreground">
-              {selectedEvent.start_date}〜 {selectedEvent.end_date} ／ 登録済みの来場: {visits.length}人
-            </div>
-          )}
         </CardContent>
       </Card>
 
@@ -314,14 +316,6 @@ export function VisitEntryTab({}: Props) {
           </CardContent>
         </Card>
       )}
-
-      <EventPickerDialog
-        open={pickerOpen}
-        onOpenChange={setPickerOpen}
-        events={events}
-        selectedId={eventId}
-        onSelect={setEventId}
-      />
 
       {/* この催事の来場一覧 */}
       {eventId && visits.length > 0 && (
