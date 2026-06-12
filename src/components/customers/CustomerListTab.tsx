@@ -140,19 +140,24 @@ export function CustomerListTab({ segments }: Props) {
             登録顧客数: {totalCount === null ? "…" : totalCount.toLocaleString()}人
           </span>
           {canImport && (
-            <Button onClick={() => setImportOpen(true)}>
+            <Button variant="outline" onClick={() => setImportOpen(true)}>
               <Upload className="h-4 w-4 mr-1" />
-              CSV取込
+              マスタ一括取込
             </Button>
           )}
         </div>
+      </div>
+
+      <div className="text-xs text-muted-foreground">
+        ※ 名簿CSVの取込は、通常は<span className="font-semibold text-foreground">「DMハガキ」画面の各催事の「名簿」ボタン</span>から行ってください（催事にひも付き、来場の照合や反応率に使われます）。
+        この画面の「マスタ一括取込」は補助用です（初回の一括登録／区分の付け直し／住所変更などの情報更新）。
       </div>
 
       {totalCount === 0 && (
         <Card>
           <CardContent className="py-8 text-center text-sm text-muted-foreground">
             まだ顧客が登録されていません。
-            {canImport && "「CSV取込」から産直くん11のエクスポートCSVを取り込んでください。"}
+            {canImport && "「DMハガキ」画面の各催事の「名簿」ボタンから名簿CSVを取り込むと、ここに顧客が登録されていきます。"}
           </CardContent>
         </Card>
       )}

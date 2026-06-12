@@ -413,10 +413,16 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
     <Dialog open={open} onOpenChange={(o) => { if (!importing) { onOpenChange(o); if (!o) reset(); } }}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{event ? `DM名簿CSVの取込 — ${event.label}` : "産直くんCSVの取込"}</DialogTitle>
+          <DialogTitle>{event ? `DM名簿CSVの取込 — ${event.label}` : "マスタ一括取込（補助）"}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
+          {!event && (
+            <div className="text-xs font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+              催事のDM名簿の取込は、ここではなく「DMハガキ」画面の各催事の「名簿」ボタンから行ってください。
+              この画面は催事にひも付けない補助用（初回の一括登録／区分の付け直し／住所変更などの情報更新）です。
+            </div>
+          )}
           <div className="text-sm text-muted-foreground">
             {event
               ? "この催事のDMに使った名簿CSV（産直くんで区分抽出したもの）を選んでください。名簿のお客様がこの催事にひも付き、来場登録時の照合や反応率に使われます。"
