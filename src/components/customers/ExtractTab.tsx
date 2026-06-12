@@ -22,6 +22,7 @@ const ALL = "__all__";
 
 type VisitRow = {
   customer_id: string;
+  event_id: string;
   visited_on: string | null;
   events: { start_date: string; venue: string; store_name: string | null } | null;
 };
@@ -124,25 +125,37 @@ export function ExtractTab({ segments }: Props) {
       const visits = await fetchAll<VisitRow>((from, to) =>
         supabase
           .from("event_visits")
-          .select("customer_id, visited_on, events(start_date, venue, store_name)")
+          .select("customer_id, event_id, visited_on, events(start_date, venue, store_name)")
           .range(from, to)
       );
 
-      // 区分の百貨店の催事のみで判定する場合は会場で絞る
+      // 区分の催事のみで判定する場合:
+      //   ① DMハガキ画面で「この催事のDM名簿」としてひも付けた催事を優先（正確）
+      //   ② ひも付けがまだ無ければ、区分の百貨店名で会場一致にフォールバック
       let scopedVisits = visits;
-      if (selectedSeg?.venue_id && scope === "venue") {
-        const { data: venue } = await supabase
-          .from("venue_master")
-          .select("venue_name, store_name")
-          .eq("id", selectedSeg.venue_id)
-          .single();
-        if (venue) {
-          scopedVisits = visits.filter(
-            (v) =>
-              v.events &&
-              v.events.venue === venue.venue_name &&
-              (v.events.store_name || "") === (venue.store_name || "")
-          );
+      if (selectedSeg && scope === "venue") {
+        const { data: links } = await supabase
+          .from("event_dm_segments")
+          .select("event_id")
+          .eq("kbn_no", selectedSeg.kbn_no)
+          .eq("code", selectedSeg.code);
+        const linkedIds = new Set(((links as { event_id: string }[]) || []).map((l) => l.event_id));
+        if (linkedIds.size > 0) {
+          scopedVisits = visits.filter((v) => linkedIds.has(v.event_id));
+        } else if (selectedSeg.venue_id) {
+          const { data: venue } = await supabase
+            .from("venue_master")
+            .select("venue_name, store_name")
+            .eq("id", selectedSeg.venue_id)
+            .single();
+          if (venue) {
+            scopedVisits = visits.filter(
+              (v) =>
+                v.events &&
+                v.events.venue === venue.venue_name &&
+                (v.events.store_name || "") === (venue.store_name || "")
+            );
+          }
         }
       }
 
@@ -225,19 +238,23 @@ export function ExtractTab({ segments }: Props) {
               <Select
                 value={scope}
                 onValueChange={(v) => setScope((v as "all" | "venue") || "all")}
-                disabled={!selectedSeg?.venue_id}
+                disabled={!selectedSeg}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">どの催事への来場も数える</SelectItem>
-                  <SelectItem value="venue">この区分の百貨店の催事だけ数える</SelectItem>
+                  <SelectItem value="venue">この区分のDMを出した催事だけ数える</SelectItem>
                 </SelectContent>
               </Select>
-              {!selectedSeg?.venue_id && (
+              {!selectedSeg ? (
                 <div className="text-[11px] text-muted-foreground">
-                  区分を選ぶと百貨店単位の判定が選べます
+                  区分を選ぶと区分単位の判定が選べます
+                </div>
+              ) : (
+                <div className="text-[11px] text-muted-foreground">
+                  DMハガキ画面で催事に区分をひも付けるとより正確になります
                 </div>
               )}
             </div>

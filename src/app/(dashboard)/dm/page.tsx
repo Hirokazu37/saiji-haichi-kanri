@@ -23,7 +23,7 @@ type EventDM = {
   dm_count: number | null;
 };
 
-type SegmentRow = { kbn_no: number; code: number; venue_id: string | null };
+type SegmentRow = { kbn_no: number; code: number; segment_name: string; venue_id: string | null };
 type VenueRow = { id: string; venue_name: string; store_name: string | null };
 
 /** YYYY-MM-DD の今日の文字列 (タイムゾーンはローカル) */
@@ -44,17 +44,27 @@ export default function DMListPage() {
   const [includePast, setIncludePast] = useState(false);
   const [savedId, setSavedId] = useState<string | null>(null);
   const [segmentsByVenueKey, setSegmentsByVenueKey] = useState<Map<string, SegmentRow[]>>(new Map());
+  // 催事ID → 選択中のDM区分キー("kbn-code")の集合
+  const [eventSegSel, setEventSegSel] = useState<Map<string, Set<string>>>(new Map());
 
   const fetchData = useCallback(async () => {
-    const [evRes, segRes, venRes] = await Promise.all([
+    const [evRes, segRes, venRes, linkRes] = await Promise.all([
       supabase
         .from("events")
         .select("id, name, venue, store_name, start_date, end_date, status, dm_status, dm_count")
         .order("start_date"),
-      supabase.from("sanchoku_segments").select("kbn_no, code, venue_id").not("venue_id", "is", null).order("kbn_no").order("code"),
+      supabase.from("sanchoku_segments").select("kbn_no, code, segment_name, venue_id").not("venue_id", "is", null).order("kbn_no").order("code"),
       supabase.from("venue_master").select("id, venue_name, store_name"),
+      supabase.from("event_dm_segments").select("event_id, kbn_no, code"),
     ]);
     setEvents(evRes.data || []);
+    // 催事ごとの選択済みDM区分
+    const selMap = new Map<string, Set<string>>();
+    for (const l of (linkRes.data as { event_id: string; kbn_no: number; code: number }[]) || []) {
+      if (!selMap.has(l.event_id)) selMap.set(l.event_id, new Set());
+      selMap.get(l.event_id)!.add(`${l.kbn_no}-${l.code}`);
+    }
+    setEventSegSel(selMap);
     // 百貨店名+店舗名 → 区分リスト のマップを構築 (events.venue は文字列のため名前で結合)
     const venueById = new Map<string, VenueRow>((venRes.data || []).map((v: VenueRow) => [v.id, v]));
     const map = new Map<string, SegmentRow[]>();
@@ -78,6 +88,27 @@ export default function DMListPage() {
       setSavedId(evtId);
       setTimeout(() => setSavedId((prev) => prev === evtId ? null : prev), 1500);
     });
+  };
+
+  /** この催事のDMをどの区分（名簿）に出したかをトグルで記録 */
+  const toggleEventSegment = async (evtId: string, s: SegmentRow) => {
+    const key = `${s.kbn_no}-${s.code}`;
+    const wasSelected = eventSegSel.get(evtId)?.has(key) ?? false;
+    // 楽観更新
+    setEventSegSel((prev) => {
+      const m = new Map(prev);
+      const set = new Set(m.get(evtId) || []);
+      if (wasSelected) set.delete(key); else set.add(key);
+      m.set(evtId, set);
+      return m;
+    });
+    if (wasSelected) {
+      await supabase.from("event_dm_segments").delete().match({ event_id: evtId, kbn_no: s.kbn_no, code: s.code });
+    } else {
+      await supabase.from("event_dm_segments").insert({ event_id: evtId, kbn_no: s.kbn_no, code: s.code });
+    }
+    setSavedId(evtId);
+    setTimeout(() => setSavedId((prev) => prev === evtId ? null : prev), 1500);
   };
 
   const updateField = (evtId: string, field: string, value: string | number | null) => {
@@ -124,7 +155,8 @@ export default function DMListPage() {
         </Link>
       </div>
       <p className="text-xs text-muted-foreground">
-        ※ 会期終了済の催事はデフォルトで非表示。確認したいときは「過去も見る」を ON にしてください。
+        ※ 会期終了済の催事はデフォルトで非表示。確認したいときは「過去も見る」を ON にしてください。<br />
+        ※ 「区分」列のバッジをクリックすると、この催事のDMをどの名簿（区分）に出したかを記録できます（緑＝選択中）。顧客・来場管理の抽出で使われます。
       </p>
 
       <div className="flex gap-2 flex-wrap items-center print:hidden">
@@ -168,11 +200,28 @@ export default function DMListPage() {
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">
                       <div className="flex gap-1 flex-wrap">
-                        {(segmentsByVenueKey.get(`${e.venue}|${e.store_name || ""}`) || []).map((s) => (
-                          <span key={`${s.kbn_no}-${s.code}`} className="inline-block px-1.5 py-0.5 text-[10px] font-mono rounded bg-amber-50 border border-amber-200 text-amber-800 whitespace-nowrap">
-                            区{s.kbn_no}-{s.code}
-                          </span>
-                        ))}
+                        {(segmentsByVenueKey.get(`${e.venue}|${e.store_name || ""}`) || []).map((s) => {
+                          const key = `${s.kbn_no}-${s.code}`;
+                          const isSel = eventSegSel.get(e.id)?.has(key) ?? false;
+                          const cls = isSel
+                            ? "bg-green-700 border-green-700 text-white font-bold"
+                            : "bg-amber-50 border-amber-200 text-amber-800";
+                          return canEdit ? (
+                            <button
+                              key={key}
+                              type="button"
+                              onClick={() => toggleEventSegment(e.id, s)}
+                              title={`${s.segment_name}${isSel ? "（この催事のDM名簿として選択中）" : "（クリックでこの催事のDM名簿に設定）"}`}
+                              className={`inline-block px-1.5 py-0.5 text-[10px] font-mono rounded border whitespace-nowrap transition-colors hover:opacity-80 ${cls}`}
+                            >
+                              区{s.kbn_no}-{s.code}
+                            </button>
+                          ) : (
+                            <span key={key} title={s.segment_name} className={`inline-block px-1.5 py-0.5 text-[10px] font-mono rounded border whitespace-nowrap ${cls}`}>
+                              区{s.kbn_no}-{s.code}
+                            </span>
+                          );
+                        })}
                       </div>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{e.name || "—"}</TableCell>

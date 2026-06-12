@@ -32,7 +32,7 @@ type Feedback =
 
 type Props = { segments: SegmentMaster[] };
 
-export function VisitEntryTab({}: Props) {
+export function VisitEntryTab({ segments }: Props) {
   // 来場登録は社員（viewer）がメインで入力する運用のため、admin/viewer とも入力可。
   // limited はページ自体にアクセス不可（lib/access.ts）。
   const { role } = usePermission();
@@ -51,6 +51,8 @@ export function VisitEntryTab({}: Props) {
   const [nameQuery, setNameQuery] = useState("");
   const [nameResults, setNameResults] = useState<Customer[]>([]);
   const [busy, setBusy] = useState(false);
+  // 選択中の催事にひも付いたDM区分名（DMハガキ画面で設定したもの）
+  const [eventSegNames, setEventSegNames] = useState<string[]>([]);
   const numberRef = useRef<HTMLInputElement>(null);
 
   // 催事一覧（新しい順）
@@ -105,6 +107,22 @@ export function VisitEntryTab({}: Props) {
   }, [supabase]);
 
   useEffect(() => { fetchVisits(eventId); }, [eventId, fetchVisits]);
+
+  // 催事にひも付いたDM区分名を取得
+  useEffect(() => {
+    if (!eventId) { setEventSegNames([]); return; }
+    supabase
+      .from("event_dm_segments")
+      .select("kbn_no, code")
+      .eq("event_id", eventId)
+      .then(({ data }) => {
+        const names = ((data as { kbn_no: number; code: number }[]) || []).map((l) => {
+          const seg = segments.find((s) => s.kbn_no === l.kbn_no && s.code === l.code);
+          return seg ? seg.segment_name : `区分${l.kbn_no}-${l.code}`;
+        });
+        setEventSegNames(names);
+      });
+  }, [eventId, supabase, segments]);
 
   /** 催事を選んで入力画面へ */
   const goEntry = (id: string) => {
@@ -274,6 +292,11 @@ export function VisitEntryTab({}: Props) {
                       DM {selectedEvent.dm_count.toLocaleString()}枚
                     </span>
                   )}
+                  {eventSegNames.map((n) => (
+                    <span key={n} className="text-xs font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                      {n}
+                    </span>
+                  ))}
                 </div>
                 <div className="text-xs text-muted-foreground">
                   {selectedEvent.start_date}〜{selectedEvent.end_date}
