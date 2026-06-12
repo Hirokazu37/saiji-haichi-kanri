@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { usePermission } from "@/hooks/usePermission";
 import { Button } from "@/components/ui/button";
@@ -219,6 +219,21 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
     }
   };
 
+  // ファイル内の「同じ顧客番号の重複行」を数える（取込時に自動で1件にまとめる）
+  const dupCount = useMemo(() => {
+    const idx = mapping.customer_no;
+    if (idx === NONE || rows.length === 0) return 0;
+    const seen = new Set<string>();
+    let dups = 0;
+    for (const row of rows) {
+      const v = (row[Number(idx)] ?? "").trim();
+      if (!v) continue;
+      if (seen.has(v)) dups++;
+      else seen.add(v);
+    }
+    return dups;
+  }, [rows, mapping.customer_no]);
+
   const col = (row: string[], key: BaseFieldKey): string | null => {
     const idx = mapping[key];
     if (idx === NONE) return null;
@@ -378,7 +393,12 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
       const segNote = event
         ? `「${event.label}」の名簿として`
         : fixedSegMaster ? `「${fixedSegMaster.segment_name}」に紐付けて` : "";
-      setResult(`${records.length.toLocaleString()}件を${segNote}取り込みました${skipped > 0 ? `（番号または氏名が空の ${skipped} 行はスキップ）` : ""}`);
+      const dupNote = rows.length - skipped - records.length;
+      const notes = [
+        dupNote > 0 ? `重複 ${dupNote} 行を1件にまとめ` : "",
+        skipped > 0 ? `番号または氏名が空の ${skipped} 行はスキップ` : "",
+      ].filter(Boolean).join("、");
+      setResult(`${records.length.toLocaleString()}件を${segNote}取り込みました${notes ? `（${notes}）` : ""}`);
       onImported();
       // 履歴表示を更新
       const { data: logs } = await supabase
@@ -578,7 +598,14 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
                     </tbody>
                   </table>
                 </div>
-                <div className="text-xs text-muted-foreground">データ行数: {rows.length.toLocaleString()}</div>
+                <div className="text-xs text-muted-foreground">
+                  データ行数: {rows.length.toLocaleString()}
+                  {dupCount > 0 && (
+                    <span className="text-amber-700 font-medium">
+                      {" "}（うち同じ顧客番号の重複 {dupCount} 行 — 取込時に自動で1件にまとめます）
+                    </span>
+                  )}
+                </div>
               </div>
             </>
           )}
