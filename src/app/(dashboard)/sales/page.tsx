@@ -241,6 +241,36 @@ export default function SalesPage() {
         const label = e.store_name ? `${e.venue} ${e.store_name}` : e.venue;
         lastYearSamePeriod.set(label, (lastYearSamePeriod.get(label) || 0) + sales.included);
       }
+      // 過去実績 (legacy_sales) を取得し、上位会場に名前マッチで紐付ける
+      // (2005年〜の紙Excel由来データ。アプリ管理開始前の年だけを参考として渡す)
+      const normName = (s: string) =>
+        s.replace(/[\s　・]/g, "").replace(/百貨店/g, "").replace(/店$/, "");
+      const legacyByVenue = new Map<string, Record<string, number>>();
+      try {
+        const { data: legacy } = await supabase
+          .from("legacy_sales")
+          .select("venue_name, year, total_sales")
+          .lt("year", lastYear)
+          .gte("year", thisYear - 10);
+        if (legacy && legacy.length > 0) {
+          const topLabels = venueSummary.slice(0, 20).map((v) => v.label);
+          for (const row of legacy as { venue_name: string; year: number; total_sales: number }[]) {
+            const ln = normName(row.venue_name);
+            if (ln.length < 2) continue;
+            for (const label of topLabels) {
+              const al = normName(label);
+              if (al.includes(ln) || ln.includes(al)) {
+                const rec = legacyByVenue.get(label) || {};
+                rec[`${row.year}年`] = (rec[`${row.year}年`] || 0) + row.total_sales;
+                legacyByVenue.set(label, rec);
+                break;
+              }
+            }
+          }
+        }
+      } catch {
+        // 過去実績テーブルが無い・取得失敗時は過去実績なしで続行
+      }
       const payload = {
         本日: todayStr,
         対象年: thisYear,
@@ -259,6 +289,9 @@ export default function SalesPage() {
           前年同時期売上: lastYearSamePeriod.get(v.label) ?? 0,
           今年催事数: v.thisYearEvents,
           前年催事数: v.lastYearEvents,
+          ...(legacyByVenue.has(v.label)
+            ? { 過去実績_年別_参考値: legacyByVenue.get(v.label) }
+            : {}),
         })),
       };
       const res = await fetch("/api/sales-insights", {
