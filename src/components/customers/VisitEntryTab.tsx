@@ -175,7 +175,8 @@ export function VisitEntryTab({ segments }: Props) {
     setNameResults([]);
     setNameQuery("");
     setNumberInput("");
-    numberRef.current?.focus();
+    // 状態更新が反映された後にフォーカスを戻す
+    setTimeout(() => numberRef.current?.focus(), 0);
   }, [eventId, supabase, fetchVisits]);
 
   /** 番号で顧客を探して確認待ちにする（ゼロ埋め違いも許容） */
@@ -230,7 +231,7 @@ export function VisitEntryTab({ segments }: Props) {
       }
     } finally {
       setBusy(false);
-      numberRef.current?.focus();
+      setTimeout(() => numberRef.current?.focus(), 0);
     }
   }, [numberInput, eventId, busy, supabase, rosterCount]);
 
@@ -348,8 +349,11 @@ export function VisitEntryTab({ segments }: Props) {
               value={numberInput}
               onChange={(e) => { setNumberInput(e.target.value); setPending(null); }}
               onKeyDown={(e) => {
+                // 日本語入力の変換確定Enterには反応しない
+                if (e.nativeEvent.isComposing) return;
                 if (e.key === "Enter") {
                   e.preventDefault();
+                  if (busy) return;
                   if (pending) register(pending);
                   else lookup();
                 } else if (e.key === "Escape") {
@@ -361,7 +365,7 @@ export function VisitEntryTab({ segments }: Props) {
               inputMode="numeric"
               autoFocus
               placeholder="ハガキ宛名面の番号"
-              disabled={!eventId || busy}
+              disabled={!eventId}
               className="max-w-sm h-14 text-2xl font-mono tracking-wider"
             />
 
