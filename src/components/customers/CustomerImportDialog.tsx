@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { usePermission } from "@/hooks/usePermission";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -81,6 +82,40 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
+/** ファイル名から区分を推測する（「3-104」形式 or 区分名の最長一致） */
+function suggestSegmentFromFilename(
+  fileName: string,
+  segments: SegmentMaster[]
+): SegmentMaster | null {
+  const base = fileName.replace(/\.[^.]+$/, "");
+  // ① 「3-104」「3_104」のような 区分番号-コード
+  const m = base.match(/(10|[3-9])\s*[-_－―‐]\s*(\d{1,3})/);
+  if (m) {
+    const hit = segments.find((s) => s.kbn_no === Number(m[1]) && s.code === Number(m[2]));
+    if (hit) return hit;
+  }
+  // ② 区分名がファイル名に含まれる（最も長い名前を優先）
+  const norm = (s: string) => s.replace(/[\s　]/g, "");
+  const nb = norm(base);
+  let best: SegmentMaster | null = null;
+  for (const s of segments) {
+    const n = norm(s.segment_name);
+    if (n.length >= 2 && nb.includes(n)) {
+      if (!best || n.length > norm(best.segment_name).length) best = s;
+    }
+  }
+  return best;
+}
+
+type ImportLog = {
+  id: string;
+  file_name: string;
+  imported_count: number;
+  segment_label: string | null;
+  imported_by: string | null;
+  created_at: string;
+};
+
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -90,6 +125,7 @@ type Props = {
 
 export function CustomerImportDialog({ open, onOpenChange, onImported, segments }: Props) {
   const supabase = createClient();
+  const { displayName } = usePermission();
   const [fileName, setFileName] = useState("");
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<string[][]>([]);
@@ -97,6 +133,8 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments 
   const [segMapping, setSegMapping] = useState<Record<number, string>>({});
   const [segMode, setSegMode] = useState<"fixed" | "columns">("fixed");
   const [fixedSeg, setFixedSeg] = useState("");
+  const [suggestNote, setSuggestNote] = useState("");
+  const [recentLogs, setRecentLogs] = useState<ImportLog[]>([]);
   const [importing, setImporting] = useState(false);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
@@ -108,7 +146,19 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments 
     setSegMapping({});
     setSegMode("fixed");
     setFixedSeg("");
+    setSuggestNote("");
   };
+
+  // ダイアログを開いたら直近の取込履歴を読む
+  useEffect(() => {
+    if (!open) return;
+    supabase
+      .from("customer_import_logs")
+      .select("id, file_name, imported_count, segment_label, imported_by, created_at")
+      .order("created_at", { ascending: false })
+      .limit(5)
+      .then(({ data }) => setRecentLogs((data as ImportLog[]) || []));
+  }, [open, supabase]);
 
   const segItems: ComboboxItem[] = segments.map((s) => ({
     value: segKey(s.kbn_no, s.code),
@@ -132,7 +182,19 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments 
       setMapping(guessed.base);
       setSegMapping(guessed.seg);
       // 区分らしい列がCSVにあれば「列から読む」モードに自動切替
-      if (Object.keys(guessed.seg).length > 0) setSegMode("columns");
+      if (Object.keys(guessed.seg).length > 0) {
+        setSegMode("columns");
+        setSuggestNote("");
+      } else {
+        // ファイル名から区分を推測（例: 「3-104」や「池袋東武」を含むファイル名）
+        const hit = suggestSegmentFromFilename(file.name, segments);
+        if (hit) {
+          setFixedSeg(segKey(hit.kbn_no, hit.code));
+          setSuggestNote(`ファイル名から「${hit.segment_name}」（${hit.kbn_no}-${hit.code}）と推測しました。違う場合は変更してください。`);
+        } else {
+          setSuggestNote("");
+        }
+      }
     } catch (e) {
       setError(`ファイルの読み込みに失敗しました: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -257,9 +319,30 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments 
       }
 
       setProgress("");
+      // 取込履歴を記録（取り違えに後から気付けるように）
+      await supabase.from("customer_import_logs").insert({
+        file_name: fileName,
+        total_rows: rows.length,
+        imported_count: records.length,
+        skipped_count: skipped,
+        kbn_no: fixedSegMaster?.kbn_no ?? null,
+        code: fixedSegMaster?.code ?? null,
+        segment_label: fixedSegMaster
+          ? `${fixedSegMaster.kbn_no}-${fixedSegMaster.code} ${fixedSegMaster.segment_name}`
+          : segMode === "columns" && hasSegCols ? "CSVの区分列から読取" : "区分紐付けなし",
+        mode: segMode,
+        imported_by: displayName || null,
+      });
       const segNote = fixedSegMaster ? `「${fixedSegMaster.segment_name}」に紐付けて` : "";
       setResult(`${records.length.toLocaleString()}件を${segNote}取り込みました${skipped > 0 ? `（番号または氏名が空の ${skipped} 行はスキップ）` : ""}`);
       onImported();
+      // 履歴表示を更新
+      const { data: logs } = await supabase
+        .from("customer_import_logs")
+        .select("id, file_name, imported_count, segment_label, imported_by, created_at")
+        .order("created_at", { ascending: false })
+        .limit(5);
+      setRecentLogs((logs as ImportLog[]) || []);
     } catch (e) {
       setError(`取込中にエラーが発生しました: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -340,12 +423,17 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments 
                     <Combobox
                       items={segItems}
                       value={fixedSeg}
-                      onChange={setFixedSeg}
+                      onChange={(v) => { setFixedSeg(v); setSuggestNote(""); }}
                       placeholder="区分（百貨店）を選択"
                       searchPlaceholder="百貨店名で検索"
                       allowCustom={false}
                       className="w-full md:w-96"
                     />
+                    {suggestNote && (
+                      <div className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-2 py-1">
+                        {suggestNote}
+                      </div>
+                    )}
                     <div className="text-xs text-muted-foreground">
                       産直くんで「区分5の○○百貨店」のように抽出したCSVなら、ここでその区分を選んでください。
                       既に付いている他の区分はそのまま残ります。選ばずに取り込むと顧客情報だけ更新されます。
@@ -393,6 +481,23 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments 
           {progress && <div className="text-sm text-primary">{progress}</div>}
           {error && <div className="text-sm text-destructive whitespace-pre-wrap">{error}</div>}
           {result && <div className="text-sm text-green-600 font-medium">{result}</div>}
+
+          {recentLogs.length > 0 && (
+            <div className="space-y-1 pt-2 border-t">
+              <div className="text-xs font-semibold text-muted-foreground">最近の取込履歴</div>
+              <ul className="space-y-0.5">
+                {recentLogs.map((l) => (
+                  <li key={l.id} className="text-xs text-muted-foreground flex flex-wrap gap-x-2">
+                    <span className="font-mono">{l.created_at.slice(0, 16).replace("T", " ")}</span>
+                    <span className="truncate max-w-[180px]" title={l.file_name}>{l.file_name}</span>
+                    <span className="text-foreground">{l.segment_label || "—"}</span>
+                    <span>{l.imported_count.toLocaleString()}件</span>
+                    {l.imported_by && <span>({l.imported_by})</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
 
         <DialogFooter>
