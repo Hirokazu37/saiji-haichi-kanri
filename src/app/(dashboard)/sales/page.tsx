@@ -241,7 +241,17 @@ export default function SalesPage() {
         const label = e.store_name ? `${e.venue} ${e.store_name}` : e.venue;
         lastYearSamePeriod.set(label, (lastYearSamePeriod.get(label) || 0) + sales.included);
       }
-      // 過去実績 (legacy_sales) を取得し、上位会場に名前マッチで紐付ける
+      // 開催済み/開催中なのに売上未入力の催事 (月次合計に含まれず、見かけ上売上が低くなる)
+      const eventLabel = (e: { venue: string; store_name: string | null }) =>
+        e.store_name ? `${e.venue} ${e.store_name}` : e.venue;
+      const noSalesEvents = events.filter((e) => {
+        const [y] = e.start_date.split("-").map(Number);
+        if (y !== thisYear || e.start_date > todayStr) return false;
+        const s = salesByEvent.get(e.id);
+        return !s || !s.hasData;
+      });
+
+      // 過去実績 (legacy_sales) を取得し、上位会場+売上未入力会場に名前マッチで紐付ける
       // (2005年〜の紙Excel由来データ。アプリ管理開始前の年だけを参考として渡す)
       const normName = (s: string) =>
         s.replace(/[\s　・]/g, "").replace(/百貨店/g, "").replace(/店$/, "");
@@ -253,7 +263,10 @@ export default function SalesPage() {
           .lt("year", lastYear)
           .gte("year", thisYear - 10);
         if (legacy && legacy.length > 0) {
-          const topLabels = venueSummary.slice(0, 20).map((v) => v.label);
+          const topLabels = [...new Set([
+            ...venueSummary.slice(0, 20).map((v) => v.label),
+            ...noSalesEvents.map(eventLabel),
+          ])];
           for (const row of legacy as { venue_name: string; year: number; total_sales: number }[]) {
             const ln = normName(row.venue_name);
             if (ln.length < 2) continue;
@@ -271,6 +284,28 @@ export default function SalesPage() {
       } catch {
         // 過去実績テーブルが無い・取得失敗時は過去実績なしで続行
       }
+      // 売上未入力の催事に前年の同会場実績を添える (AIが補完見込みを出せるように)
+      const 売上未入力の催事 = noSalesEvents.map((e) => {
+        const label = eventLabel(e);
+        const prevYearSales = events
+          .filter((e2) => {
+            const [y2] = e2.start_date.split("-").map(Number);
+            return y2 === lastYear && eventLabel(e2) === label && salesByEvent.get(e2.id)?.hasData;
+          })
+          .map((e2) => ({
+            会期: `${e2.start_date}〜${e2.end_date}`,
+            売上: salesByEvent.get(e2.id)!.included,
+          }));
+        return {
+          会場: label,
+          会期: `${e.start_date}〜${e.end_date}`,
+          前年の同会場実績: prevYearSales,
+          ...(legacyByVenue.has(label)
+            ? { 過去実績_年別_参考値: legacyByVenue.get(label) }
+            : {}),
+        };
+      });
+
       const currentMonth = today.getMonth() + 1;
       const isInProgress = thisYear >= today.getFullYear();
       const payload = {
@@ -280,6 +315,13 @@ export default function SalesPage() {
         注意: isInProgress
           ? `対象年は進行中。実績として確定しているのは${currentMonth - 1}月末まで。${currentMonth}月は途中経過。${currentMonth + 1}月以降は未来のため実績ゼロ表示だが未開催なだけ（「今後の見込み」として予想すること）。前年の通年実績と単純比較せず、増減を論じるときは前年同時期売上と比較すること。`
           : "対象年・前年とも通年の実績。",
+        ...(売上未入力の催事.length > 0
+          ? {
+              売上未入力の催事,
+              売上未入力の注意:
+                "上記は開催済み・開催中なのに売上がまだ入力されていない催事。該当する月の月別売上はこの分だけ実際より低く見えている。前年の同会場実績や過去実績から、入力されれば何万円程度上乗せされる見込みかを必ず補足すること。",
+            }
+          : {}),
         月別売上_税込: {
           [`${thisYear}年`]: monthlySummary.totals[thisYear],
           [`${lastYear}年`]: monthlySummary.totals[lastYear],
