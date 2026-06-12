@@ -15,13 +15,17 @@ import { parseCsvFile } from "@/lib/csv";
 import { Upload, FileSpreadsheet } from "lucide-react";
 import { segKey, type SegmentMaster } from "./types";
 
-/** マッピング対象の基本項目 */
+/** マッピング対象の基本項目（住所は複数列を結合して保存する） */
 const BASE_FIELDS = [
   { key: "customer_no", label: "顧客番号（得意先コード）", required: true },
   { key: "name", label: "氏名", required: true },
   { key: "kana", label: "カナ（フリガナ）", required: false },
   { key: "postal_code", label: "郵便番号", required: false },
-  { key: "address", label: "住所", required: false },
+  { key: "pref", label: "住所（都道府県）", required: false },
+  { key: "city", label: "住所（市区町村）", required: false },
+  { key: "address1", label: "住所１", required: false },
+  { key: "address2", label: "住所２（建物名など）", required: false },
+  { key: "address3", label: "住所３", required: false },
   { key: "phone", label: "電話番号", required: false },
 ] as const;
 
@@ -32,17 +36,24 @@ const SEGMENT_KBNS = [3, 4, 5, 6, 7, 8, 9, 10];
 const NONE = "__none__";
 
 /** ヘッダー名から対応列を推測する */
+const EMPTY_MAPPING: Record<BaseFieldKey, string> = {
+  customer_no: NONE, name: NONE, kana: NONE, postal_code: NONE,
+  pref: NONE, city: NONE, address1: NONE, address2: NONE, address3: NONE, phone: NONE,
+};
+
 function guessMapping(headers: string[]) {
-  const base: Record<BaseFieldKey, string> = {
-    customer_no: NONE, name: NONE, kana: NONE, postal_code: NONE, address: NONE, phone: NONE,
-  };
+  const base: Record<BaseFieldKey, string> = { ...EMPTY_MAPPING };
   const seg: Record<number, string> = {};
   const patterns: [BaseFieldKey, RegExp][] = [
     ["customer_no", /得意先コード|得意先CD|顧客番号|顧客コード|顧客No|会員番号|^コード$/i],
     ["kana", /カナ|かな|フリガナ|ふりがな/],
     ["name", /氏名|名前|得意先名|顧客名/],
     ["postal_code", /郵便|〒/],
-    ["address", /住所/],
+    ["pref", /都道府県/],
+    ["city", /市区町村|市町村/],
+    ["address1", /住所[1１]|^住所$|得意先住所$/],
+    ["address2", /住所[2２]/],
+    ["address3", /住所[3３]/],
     ["phone", /電話|TEL/i],
   ];
   headers.forEach((h, i) => {
@@ -82,9 +93,7 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments 
   const [fileName, setFileName] = useState("");
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<string[][]>([]);
-  const [mapping, setMapping] = useState<Record<BaseFieldKey, string>>({
-    customer_no: NONE, name: NONE, kana: NONE, postal_code: NONE, address: NONE, phone: NONE,
-  });
+  const [mapping, setMapping] = useState<Record<BaseFieldKey, string>>({ ...EMPTY_MAPPING });
   const [segMapping, setSegMapping] = useState<Record<number, string>>({});
   const [segMode, setSegMode] = useState<"fixed" | "columns">("fixed");
   const [fixedSeg, setFixedSeg] = useState("");
@@ -95,7 +104,7 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments 
 
   const reset = () => {
     setFileName(""); setHeaders([]); setRows([]); setError(""); setResult(""); setProgress("");
-    setMapping({ customer_no: NONE, name: NONE, kana: NONE, postal_code: NONE, address: NONE, phone: NONE });
+    setMapping({ ...EMPTY_MAPPING });
     setSegMapping({});
     setSegMode("fixed");
     setFixedSeg("");
@@ -155,12 +164,17 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments 
         const no = col(row, "customer_no");
         const name = col(row, "name");
         if (!no || !name) { skipped++; continue; }
+        // 住所は 都道府県+市区町村+住所1 を連結し、建物名(住所2,3)はスペース区切りで続ける
+        const addrMain = [col(row, "pref"), col(row, "city"), col(row, "address1")]
+          .filter(Boolean).join("");
+        const addrTail = [col(row, "address2"), col(row, "address3")]
+          .filter(Boolean).join(" ");
         byNo.set(no, {
           customer_no: no,
           name,
           kana: col(row, "kana"),
           postal_code: col(row, "postal_code"),
-          address: col(row, "address"),
+          address: [addrMain, addrTail].filter((s) => s !== "").join(" ") || null,
           phone: col(row, "phone"),
           imported_at: now,
         });
