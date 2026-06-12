@@ -27,7 +27,9 @@ type VisitWithEvent = {
 type Props = { segments: SegmentMaster[] };
 
 export function CustomerListTab({ segments }: Props) {
-  const { canEdit } = usePermission();
+  // CSV取込も社員（viewer）が行う運用のため admin/viewer とも可
+  const { role } = usePermission();
+  const canImport = role === "admin" || role === "viewer";
   const supabase = createClient();
   const [query, setQuery] = useState("");
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -137,7 +139,7 @@ export function CustomerListTab({ segments }: Props) {
           <span className="text-sm text-muted-foreground">
             登録顧客数: {totalCount === null ? "…" : totalCount.toLocaleString()}人
           </span>
-          {canEdit && (
+          {canImport && (
             <Button onClick={() => setImportOpen(true)}>
               <Upload className="h-4 w-4 mr-1" />
               CSV取込
@@ -150,7 +152,7 @@ export function CustomerListTab({ segments }: Props) {
         <Card>
           <CardContent className="py-8 text-center text-sm text-muted-foreground">
             まだ顧客が登録されていません。
-            {canEdit && "「CSV取込」から産直くん11のエクスポートCSVを取り込んでください。"}
+            {canImport && "「CSV取込」から産直くん11のエクスポートCSVを取り込んでください。"}
           </CardContent>
         </Card>
       )}

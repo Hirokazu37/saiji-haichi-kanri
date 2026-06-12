@@ -7,8 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Combobox, type ComboboxItem } from "@/components/ui/combobox";
-import { CheckCircle2, AlertTriangle, XCircle, Undo2, UserSearch } from "lucide-react";
+import { CheckCircle2, AlertTriangle, XCircle, Undo2, UserSearch, CalendarDays } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
+import { EventPickerDialog } from "./EventPickerDialog";
 import {
   eventLabel, normalizeCustomerNo,
   type Customer, type EventLite, type SegmentMaster,
@@ -44,6 +45,7 @@ export function VisitEntryTab({}: Props) {
   const [nameQuery, setNameQuery] = useState("");
   const [nameResults, setNameResults] = useState<Customer[]>([]);
   const [busy, setBusy] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const numberRef = useRef<HTMLInputElement>(null);
 
   // 催事一覧（新しい順）
@@ -191,15 +193,21 @@ export function VisitEntryTab({}: Props) {
       <Card>
         <CardContent className="pt-4 space-y-2">
           <Label>対象の催事</Label>
-          <Combobox
-            items={eventItems}
-            value={eventId}
-            onChange={setEventId}
-            placeholder="催事を選択"
-            searchPlaceholder="会場名などで検索"
-            allowCustom={false}
-            className="max-w-xl"
-          />
+          <div className="flex flex-col md:flex-row gap-2 md:items-center">
+            <Combobox
+              items={eventItems}
+              value={eventId}
+              onChange={setEventId}
+              placeholder="催事を選択"
+              searchPlaceholder="会場名などで検索"
+              allowCustom={false}
+              className="max-w-xl md:flex-1"
+            />
+            <Button variant="outline" onClick={() => setPickerOpen(true)} className="shrink-0">
+              <CalendarDays className="h-4 w-4 mr-1" />
+              日程表から選ぶ
+            </Button>
+          </div>
           {selectedEvent && (
             <div className="text-xs text-muted-foreground">
               {selectedEvent.start_date}〜 {selectedEvent.end_date} ／ 登録済みの来場: {visits.length}人
@@ -306,6 +314,14 @@ export function VisitEntryTab({}: Props) {
           </CardContent>
         </Card>
       )}
+
+      <EventPickerDialog
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        events={events}
+        selectedId={eventId}
+        onSelect={setEventId}
+      />
 
       {/* この催事の来場一覧 */}
       {eventId && visits.length > 0 && (
