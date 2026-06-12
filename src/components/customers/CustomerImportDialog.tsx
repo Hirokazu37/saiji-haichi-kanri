@@ -131,6 +131,9 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
   const supabase = createClient();
   const { displayName } = usePermission();
   const [fileName, setFileName] = useState("");
+  // 産直くんの出力ファイル名は「DMハガキ出力用.csv」固定のため、
+  // 古いエクスポートの取り違え防止としてファイル更新日時を表示・警告する
+  const [fileMtime, setFileMtime] = useState<number | null>(null);
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<string[][]>([]);
   const [mapping, setMapping] = useState<Record<BaseFieldKey, string>>({ ...EMPTY_MAPPING });
@@ -154,7 +157,7 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
   const [result, setResult] = useState("");
 
   const reset = () => {
-    setFileName(""); setHeaders([]); setRows([]); setError(""); setResult(""); setProgress("");
+    setFileName(""); setFileMtime(null); setHeaders([]); setRows([]); setError(""); setResult(""); setProgress("");
     setMapping({ ...EMPTY_MAPPING });
     setSegMapping({});
     setSegMode("fixed");
@@ -190,6 +193,7 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
         return;
       }
       setFileName(file.name);
+      setFileMtime(file.lastModified || null);
       setHeaders(parsed[0]);
       setRows(parsed.slice(1));
       const guessed = guessMapping(parsed[0]);
@@ -429,6 +433,23 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
               onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }}
             />
           </label>
+
+          {fileMtime != null && (() => {
+            const ageMs = Date.now() - fileMtime;
+            const isStale = ageMs > 24 * 60 * 60 * 1000;
+            const ageDays = Math.floor(ageMs / (24 * 60 * 60 * 1000));
+            const stamp = new Date(fileMtime).toLocaleString("ja-JP", {
+              year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+            });
+            return isStale ? (
+              <div className="text-xs font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                ⚠ このファイルは {ageDays >= 1 ? `${ageDays}日以上前` : "昨日以前"} に作られたものです（{stamp}）。
+                産直くんの出力ファイル名は毎回同じなので、最新のエクスポートか確認してください。
+              </div>
+            ) : (
+              <div className="text-xs text-muted-foreground">ファイルの作成/更新日時: {stamp}</div>
+            );
+          })()}
 
           {headers.length > 0 && (
             <>
