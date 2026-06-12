@@ -10,7 +10,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, Calendar as CalendarIcon, BarChart3, Store, LineChart, Download, Upload, FileText, Copy, Check, Wallet, Hash, Coins, CalendarDays } from "lucide-react";
+import { TrendingUp, Calendar as CalendarIcon, BarChart3, Store, LineChart, Download, Upload, FileText, Copy, Check, Wallet, Hash, Coins, CalendarDays, Sparkles, X } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
 
 type EventLite = {
@@ -184,6 +184,11 @@ export default function SalesPage() {
     return { thisYear, lastYear, totals: yearMonthTotals };
   }, [events, salesByEvent, calendarYear]);
 
+  // ===== AI解説 =====
+  const [aiInsight, setAiInsight] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
   // ===== 会場別 (選択年 vs 前年) =====
   const venueSummary = useMemo(() => {
     type VenueRow = {
@@ -215,6 +220,44 @@ export default function SalesPage() {
       .filter((r) => r.thisYearTotal > 0 || r.lastYearTotal > 0)
       .sort((a, b) => b.thisYearTotal - a.thisYearTotal);
   }, [events, salesByEvent, calendarYear]);
+
+  // AI解説を生成: 集計済みデータをサーバーAPIに送り、Claudeの解説を受け取る
+  const generateInsight = async () => {
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const payload = {
+        対象年: monthlySummary.thisYear,
+        前年: monthlySummary.lastYear,
+        月別売上_税込: {
+          [`${monthlySummary.thisYear}年`]: monthlySummary.totals[monthlySummary.thisYear],
+          [`${monthlySummary.lastYear}年`]: monthlySummary.totals[monthlySummary.lastYear],
+        },
+        会場別_上位20: venueSummary.slice(0, 20).map((v) => ({
+          会場: v.label,
+          今年売上: v.thisYearTotal,
+          前年売上: v.lastYearTotal,
+          今年催事数: v.thisYearEvents,
+          前年催事数: v.lastYearEvents,
+        })),
+      };
+      const res = await fetch("/api/sales-insights", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAiError(data.error || "AI解説の生成に失敗しました");
+        return;
+      }
+      setAiInsight(data.insight);
+    } catch {
+      setAiError("通信に失敗しました。もう一度お試しください。");
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   // ===== KPI サマリ (選択年 vs 前年 / YTD累計 / 今月 vs 前年同月) =====
   const kpi = useMemo(() => {
@@ -510,8 +553,55 @@ export default function SalesPage() {
           <Button variant="outline" size="sm" onClick={exportCsv}>
             <Download className="h-4 w-4 mr-1" />CSV出力
           </Button>
+          <Button
+            size="sm"
+            onClick={generateInsight}
+            disabled={aiLoading || loading}
+            className="bg-violet-600 hover:bg-violet-700 text-white"
+            title="売上データをAIが分析して解説します"
+          >
+            <Sparkles className="h-4 w-4 mr-1" />
+            {aiLoading ? "分析中..." : "AI解説"}
+          </Button>
         </div>
       </div>
+
+      {/* AI解説パネル */}
+      {(aiInsight || aiError || aiLoading) && (
+        <Card className="border-violet-300 dark:border-violet-700 print:hidden">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-semibold text-violet-700 dark:text-violet-300 flex items-center gap-1.5">
+                <Sparkles className="h-4 w-4" />AI解説（{calendarYear}年）
+              </p>
+              {!aiLoading && (
+                <button
+                  type="button"
+                  onClick={() => { setAiInsight(null); setAiError(null); }}
+                  className="text-muted-foreground hover:text-foreground"
+                  aria-label="閉じる"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+            {aiLoading && (
+              <p className="text-sm text-muted-foreground animate-pulse">
+                売上データを分析しています… (10〜30秒ほどかかります)
+              </p>
+            )}
+            {aiError && <p className="text-sm text-destructive">{aiError}</p>}
+            {aiInsight && (
+              <div className="text-sm leading-relaxed whitespace-pre-wrap">{aiInsight}</div>
+            )}
+            {aiInsight && (
+              <p className="text-[10px] text-muted-foreground mt-3">
+                ※ AIによる自動分析です。重要な判断の前には元データをご確認ください。
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* 年セレクタ (横並びチップ) */}
       {!loading && dataYears.length > 0 && (
