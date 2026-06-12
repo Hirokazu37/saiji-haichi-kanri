@@ -271,12 +271,14 @@ export default function SalesPage() {
       } catch {
         // 過去実績テーブルが無い・取得失敗時は過去実績なしで続行
       }
+      const currentMonth = today.getMonth() + 1;
+      const isInProgress = thisYear >= today.getFullYear();
       const payload = {
         本日: todayStr,
         対象年: thisYear,
         前年: lastYear,
-        注意: thisYear >= today.getFullYear()
-          ? "対象年は進行中。対象年の売上は本日までの途中経過であり、未開催の催事は含まれない。前年の通年実績と単純比較せず、増減を論じるときは前年同時期売上と比較すること。"
+        注意: isInProgress
+          ? `対象年は進行中。実績として確定しているのは${currentMonth - 1}月末まで。${currentMonth}月は途中経過。${currentMonth + 1}月以降は未来のため実績ゼロ表示だが未開催なだけ（「今後の見込み」として予想すること）。前年の通年実績と単純比較せず、増減を論じるときは前年同時期売上と比較すること。`
           : "対象年・前年とも通年の実績。",
         月別売上_税込: {
           [`${thisYear}年`]: monthlySummary.totals[thisYear],
