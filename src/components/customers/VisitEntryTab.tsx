@@ -63,6 +63,8 @@ export function VisitEntryTab({ segments }: Props) {
   // 来場メモの編集中の行とテキスト（登録後の修正用）
   const [memoVisitId, setMemoVisitId] = useState<string | null>(null);
   const [memoText, setMemoText] = useState("");
+  // カレンダー表示用: 催事ID → 来場数・名簿数（集計ビューから取得）
+  const [eventStats, setEventStats] = useState<Map<string, { visits: number; roster: number }>>(new Map());
   const numberRef = useRef<HTMLInputElement>(null);
 
   // 催事一覧（新しい順）
@@ -117,6 +119,26 @@ export function VisitEntryTab({ segments }: Props) {
   }, [supabase]);
 
   useEffect(() => { fetchVisits(eventId); }, [eventId, fetchVisits]);
+
+  // カレンダー用の集計（来場数・名簿数）。選択画面に戻るたびに最新化
+  useEffect(() => {
+    if (step !== "select") return;
+    Promise.all([
+      supabase.from("event_visit_counts").select("event_id, visit_count"),
+      supabase.from("event_roster_counts").select("event_id, roster_count"),
+    ]).then(([vRes, rRes]) => {
+      const m = new Map<string, { visits: number; roster: number }>();
+      for (const r of (vRes.data as { event_id: string; visit_count: number }[]) || []) {
+        m.set(r.event_id, { visits: r.visit_count, roster: 0 });
+      }
+      for (const r of (rRes.data as { event_id: string; roster_count: number }[]) || []) {
+        const cur = m.get(r.event_id) || { visits: 0, roster: 0 };
+        cur.roster = r.roster_count;
+        m.set(r.event_id, cur);
+      }
+      setEventStats(m);
+    });
+  }, [step, supabase]);
 
   // 催事にひも付いたDM区分名と名簿人数を取得
   useEffect(() => {
@@ -319,7 +341,7 @@ export function VisitEntryTab({ segments }: Props) {
           <CardContent className="pt-4 space-y-3">
             <Label>催事（百貨店）をクリックすると番号入力に進みます</Label>
             <div className="max-w-2xl mx-auto">
-              <EventCalendar events={events} selectedId={eventId} onSelect={goEntry} />
+              <EventCalendar events={events} selectedId={eventId} onSelect={goEntry} stats={eventStats} />
             </div>
             <div className="flex flex-col md:flex-row gap-1 md:items-center justify-center pt-1">
               <span className="text-xs text-muted-foreground shrink-0">検索して選ぶ場合：</span>

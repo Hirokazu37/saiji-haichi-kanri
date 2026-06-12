@@ -80,9 +80,11 @@ type Props = {
   events: EventLite[];
   selectedId: string;
   onSelect: (id: string) => void;
+  /** 催事ID → 来場数・名簿数（来場入力の進捗とヒット率の表示に使う） */
+  stats?: Map<string, { visits: number; roster: number }>;
 };
 
-export function EventCalendar({ events, selectedId, onSelect }: Props) {
+export function EventCalendar({ events, selectedId, onSelect, stats }: Props) {
   const today = new Date();
   const [calYear, setCalYear] = useState(today.getFullYear());
   const [calMonth, setCalMonth] = useState(today.getMonth() + 1);
@@ -149,6 +151,20 @@ export function EventCalendar({ events, selectedId, onSelect }: Props) {
         </span>
       </div>
 
+      {/* 凡例 */}
+      {stats && (
+        <div className="flex items-center gap-3 flex-wrap text-[11px] text-muted-foreground">
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-block h-3 w-6 rounded border-2 border-emerald-500 bg-emerald-50" />
+            来場入力済み（✓人数・ヒット率）
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-block h-3 w-6 rounded border-2 border-amber-500 bg-amber-50" />
+            DMあり・来場未入力（会期終了後）
+          </span>
+        </div>
+      )}
+
       <div className="border-t border-l">
         <div className="grid grid-cols-7">
           {weekDayNames.map((wd, i) => (
@@ -194,22 +210,35 @@ export function EventCalendar({ events, selectedId, onSelect }: Props) {
                 {lanes.map(({ event, laneIdx, startDay, endDay }) => {
                   const spanDays = endDay - startDay + 1;
                   const name = event.store_name ? `${event.venue} ${event.store_name}` : event.venue;
-                  // DM枚数はバー上に常時表示（幅が狭いバーでは省略されるが、ツールチップで確認できる）
-                  const label = event.dm_count != null
-                    ? `${name}〔DM ${event.dm_count.toLocaleString()}〕`
-                    : name;
+                  const st = stats?.get(event.id);
+                  const visitCount = st?.visits ?? 0;
+                  const dmBase = event.dm_count || st?.roster || 0; // ヒット率の分母（DM枚数→名簿人数の順）
+                  const rate = visitCount > 0 && dmBase > 0 ? ((visitCount / dmBase) * 100).toFixed(1) : null;
+                  const ended = event.end_date < fmtLocalYmd(today);
+                  const hasDm = event.dm_count != null || (st?.roster ?? 0) > 0;
+                  // 状態: done=来場入力済み / missing=DMありなのに会期終了後も未入力
+                  const isDone = visitCount > 0;
+                  const isMissing = !isDone && hasDm && ended;
+                  const statusText = isDone ? ` ✓${visitCount}人${rate ? `・${rate}%` : ""}` : "";
+                  const label = `${name}${event.dm_count != null ? `〔DM ${event.dm_count.toLocaleString()}〕` : ""}${statusText}`;
+                  const tooltip = [
+                    `${name}（${event.start_date}〜${event.end_date}）`,
+                    event.dm_count != null ? `DM ${event.dm_count.toLocaleString()}枚` : "",
+                    st?.roster ? `名簿 ${st.roster.toLocaleString()}人` : "",
+                    isDone ? `来場 ${visitCount}人${rate ? `（ヒット率 ${rate}%）` : ""}` : isMissing ? "来場が未入力です" : "",
+                  ].filter(Boolean).join(" ／ ");
                   const isSelected = event.id === selectedId;
                   return (
                     <button
                       key={`${event.id}-${wIdx}`}
                       type="button"
                       onClick={() => onSelect(event.id)}
-                      title={`${name}（${event.start_date}〜${event.end_date}）${event.dm_count != null ? ` DM ${event.dm_count.toLocaleString()}枚` : ""}`}
+                      title={tooltip}
                       className={`pointer-events-auto absolute rounded border px-1 text-[11px] font-medium text-left truncate transition-colors ${
                         isSelected
                           ? "bg-primary text-primary-foreground border-primary"
                           : colorOf(event.id)
-                      }`}
+                      } ${!isSelected && isDone ? "border-2 border-emerald-500" : ""} ${!isSelected && isMissing ? "border-2 border-amber-500" : ""}`}
                       style={{
                         left: `calc(${(startDay / 7) * 100}% + 2px)`,
                         width: `calc(${(spanDays / 7) * 100}% - 4px)`,
