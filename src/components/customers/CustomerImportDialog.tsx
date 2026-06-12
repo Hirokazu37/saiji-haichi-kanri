@@ -435,7 +435,9 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
           <DialogTitle>{event ? `DM名簿CSVの取込 — ${event.label}` : "マスタ一括取込（補助）"}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
+        {/* min-w-0: グリッド子要素が中身（横長のプレビュー表）に引っ張られて
+            ダイアログ全体が横に膨らむのを防ぐ。表は枠内で横スクロールさせる */}
+        <div className="space-y-4 min-w-0">
           {!event && (
             <div className="text-xs font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
               催事のDM名簿の取込は、ここではなく「DMハガキ」画面の各催事の「名簿」ボタンから行ってください。
@@ -578,7 +580,7 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
 
               <div className="space-y-1">
                 <div className="text-sm font-medium">プレビュー（先頭3行）</div>
-                <div className="overflow-x-auto border rounded-md">
+                <div className="overflow-x-auto border rounded-md max-w-full">
                   <table className="text-xs w-full">
                     <thead>
                       <tr className="bg-muted">
