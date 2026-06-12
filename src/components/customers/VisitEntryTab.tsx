@@ -235,6 +235,26 @@ export function VisitEntryTab({ segments }: Props) {
     }
   }, [numberInput, eventId, busy, supabase, rosterCount]);
 
+  // 確認カード表示中は、フォーカスがどこにあっても Enter=登録 / Esc=やめる を効かせる
+  // （入力欄のフォーカス頼みだと環境によって2回目のEnterが落ちるため、画面全体で受ける）
+  useEffect(() => {
+    if (!pending) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.isComposing) return;
+      if (e.key === "Enter") {
+        e.preventDefault();
+        register(pending);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        setPending(null);
+        setNumberInput("");
+        setTimeout(() => numberRef.current?.focus(), 0);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pending, register]);
+
   /** 名前・カナで検索（ハガキ忘れの方の調査用） */
   useEffect(() => {
     const q = nameQuery.trim();
@@ -351,14 +371,13 @@ export function VisitEntryTab({ segments }: Props) {
               onKeyDown={(e) => {
                 // 日本語入力の変換確定Enterには反応しない
                 if (e.nativeEvent.isComposing) return;
+                // 確認カード表示中のキー操作は画面全体のリスナーが処理する
+                if (pending) return;
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  if (busy) return;
-                  if (pending) register(pending);
-                  else lookup();
+                  if (!busy) lookup();
                 } else if (e.key === "Escape") {
                   e.preventDefault();
-                  setPending(null);
                   setNumberInput("");
                 }
               }}
