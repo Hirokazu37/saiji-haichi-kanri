@@ -51,7 +51,7 @@ export function VisitEntryTab({}: Props) {
   useEffect(() => {
     supabase
       .from("events")
-      .select("id, name, venue, store_name, start_date, end_date")
+      .select("id, name, venue, store_name, start_date, end_date, dm_count")
       .order("start_date", { ascending: false })
       .limit(300)
       .then(({ data }) => {
@@ -194,15 +194,24 @@ export function VisitEntryTab({}: Props) {
           <Label>対象の催事（日程表から選択）</Label>
           {selectedEvent && (
             <div className="rounded-md bg-primary/5 border border-primary/20 px-3 py-2">
-              <div className="font-semibold">
-                {selectedEvent.venue}{selectedEvent.store_name ? ` ${selectedEvent.store_name}` : ""}
+              <div className="font-semibold flex items-baseline gap-2 flex-wrap">
+                <span>{selectedEvent.venue}{selectedEvent.store_name ? ` ${selectedEvent.store_name}` : ""}</span>
+                {selectedEvent.dm_count != null && (
+                  <span className="text-xs font-medium text-primary bg-primary/10 rounded px-1.5 py-0.5">
+                    DM {selectedEvent.dm_count.toLocaleString()}枚
+                  </span>
+                )}
               </div>
               <div className="text-xs text-muted-foreground">
-                {selectedEvent.start_date}〜{selectedEvent.end_date} ／ 登録済みの来場: {visits.length}人
+                {selectedEvent.start_date}〜{selectedEvent.end_date}
+                ／ 登録済みの来場: {visits.length}人
+                {selectedEvent.dm_count ? `（反応率 ${((visits.length / selectedEvent.dm_count) * 100).toFixed(1)}%）` : ""}
               </div>
             </div>
           )}
-          <EventCalendar events={events} selectedId={eventId} onSelect={setEventId} />
+          <div className="max-w-2xl">
+            <EventCalendar events={events} selectedId={eventId} onSelect={setEventId} />
+          </div>
           <div className="flex flex-col md:flex-row gap-1 md:items-center pt-1">
             <span className="text-xs text-muted-foreground shrink-0">検索して選ぶ場合：</span>
             <Combobox

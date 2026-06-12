@@ -200,7 +200,7 @@ export function EventCalendar({ events, selectedId, onSelect }: Props) {
                       key={`${event.id}-${wIdx}`}
                       type="button"
                       onClick={() => onSelect(event.id)}
-                      title={`${label}（${event.start_date}〜${event.end_date}）`}
+                      title={`${label}（${event.start_date}〜${event.end_date}）${event.dm_count != null ? ` DM ${event.dm_count.toLocaleString()}枚` : ""}`}
                       className={`pointer-events-auto absolute rounded border px-1 text-[11px] font-medium text-left truncate transition-colors ${
                         isSelected
                           ? "bg-primary text-primary-foreground border-primary"

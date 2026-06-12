@@ -33,6 +33,7 @@ export type EventLite = {
   store_name: string | null;
   start_date: string;
   end_date: string;
+  dm_count: number | null;
 };
 
 /** kbn_no と code から区分マスターを引くキー */
