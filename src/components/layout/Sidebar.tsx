@@ -19,6 +19,7 @@ import {
   Wallet,
   TrendingUp,
   UserCheck,
+  UsersRound,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePermission, type UserRole } from "@/hooks/usePermission";
@@ -44,6 +45,7 @@ const navItems: NavItem[] = [
   { label: "備品の流れ", href: "/shipments", icon: Package, roles: ["admin", "viewer"] },
   { label: "出店申込書", href: "/applications", icon: FileText, roles: ["admin", "viewer"] },
   { label: "DMハガキ", href: "/dm", icon: Mail, roles: ["admin", "viewer"] },
+  { label: "顧客・来場管理", href: "/customers", icon: UsersRound, roles: ["admin", "viewer"] },
   { label: "マネキンの手配", href: "/mannequin-arrangements", icon: UserCheck, roles: ["admin", "viewer"] },
   { label: "百貨店マスター", href: "/venue-master", icon: Store, roles: ["admin", "viewer"] },
   { label: "帳合先マスター", href: "/payer-master", icon: Store, roles: ["admin", "viewer"], requiresPayments: true },

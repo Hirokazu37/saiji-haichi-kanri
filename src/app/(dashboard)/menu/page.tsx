@@ -8,6 +8,7 @@ import {
   Store,
   MapPin,
   Users,
+  UsersRound,
   Building2,
   UserCog,
   Archive,
@@ -35,6 +36,7 @@ const sections: Section[] = [
       { label: "ホテル・交通", href: "/hotels", icon: Hotel, desc: "社員ごとの宿泊と行き帰り", roles: ["admin", "viewer"] },
       { label: "出店申込書", href: "/applications", icon: FileText, desc: "提出状況の一覧管理", roles: ["admin", "viewer"] },
       { label: "DMハガキ", href: "/dm", icon: Mail, desc: "制作ステータスと枚数", roles: ["admin", "viewer"] },
+      { label: "顧客・来場管理", href: "/customers", icon: UsersRound, desc: "DM持参のお客様の記録と抽出", roles: ["admin", "viewer"] },
     ],
   },
   {

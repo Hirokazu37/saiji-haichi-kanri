@@ -25,7 +25,7 @@ const allTabs: Tab[] = [
   { label: "日程表", href: "/events", icon: CalendarDays, match: (p) => p.startsWith("/events") || p.startsWith("/archive"), roles: ["admin", "viewer", "limited"] },
   { label: "社員", href: "/schedule", icon: CalendarClock, match: (p) => p.startsWith("/schedule"), roles: ["admin", "viewer", "limited"] },
   { label: "備品", href: "/shipments", icon: Package, match: (p) => p.startsWith("/shipments"), roles: ["admin", "viewer"] },
-  { label: "メニュー", href: "/menu", icon: MoreHorizontal, match: (p) => p.startsWith("/menu") || p.startsWith("/hotels") || p.startsWith("/applications") || p.startsWith("/dm") || p.startsWith("/venue-master") || p.startsWith("/area-master") || p.startsWith("/hotel-master") || p.startsWith("/employees") || p.startsWith("/agencies") || p.startsWith("/users"), roles: ["admin", "viewer", "limited"] },
+  { label: "メニュー", href: "/menu", icon: MoreHorizontal, match: (p) => p.startsWith("/menu") || p.startsWith("/hotels") || p.startsWith("/applications") || p.startsWith("/dm") || p.startsWith("/customers") || p.startsWith("/venue-master") || p.startsWith("/area-master") || p.startsWith("/hotel-master") || p.startsWith("/employees") || p.startsWith("/agencies") || p.startsWith("/users"), roles: ["admin", "viewer", "limited"] },
 ];
 
 export function BottomNav() {
