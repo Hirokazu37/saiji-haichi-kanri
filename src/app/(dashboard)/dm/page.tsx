@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -23,6 +23,9 @@ type EventDM = {
   dm_count: number | null;
 };
 
+type SegmentRow = { kbn_no: number; code: number; venue_id: string | null };
+type VenueRow = { id: string; venue_name: string; store_name: string | null };
+
 /** YYYY-MM-DD の今日の文字列 (タイムゾーンはローカル) */
 function todayStr(): string {
   const d = new Date();
@@ -40,13 +43,29 @@ export default function DMListPage() {
   const [filter, setFilter] = useState<"all" | "notDone">("all");
   const [includePast, setIncludePast] = useState(false);
   const [savedId, setSavedId] = useState<string | null>(null);
+  const [segmentsByVenueKey, setSegmentsByVenueKey] = useState<Map<string, SegmentRow[]>>(new Map());
 
   const fetchData = useCallback(async () => {
-    const { data } = await supabase
-      .from("events")
-      .select("id, name, venue, store_name, start_date, end_date, status, dm_status, dm_count")
-      .order("start_date");
-    setEvents(data || []);
+    const [evRes, segRes, venRes] = await Promise.all([
+      supabase
+        .from("events")
+        .select("id, name, venue, store_name, start_date, end_date, status, dm_status, dm_count")
+        .order("start_date"),
+      supabase.from("sanchoku_segments").select("kbn_no, code, venue_id").not("venue_id", "is", null).order("kbn_no").order("code"),
+      supabase.from("venue_master").select("id, venue_name, store_name"),
+    ]);
+    setEvents(evRes.data || []);
+    // 百貨店名+店舗名 → 区分リスト のマップを構築 (events.venue は文字列のため名前で結合)
+    const venueById = new Map<string, VenueRow>((venRes.data || []).map((v: VenueRow) => [v.id, v]));
+    const map = new Map<string, SegmentRow[]>();
+    for (const s of (segRes.data || []) as SegmentRow[]) {
+      const v = s.venue_id ? venueById.get(s.venue_id) : null;
+      if (!v) continue;
+      const key = `${v.venue_name}|${v.store_name || ""}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(s);
+    }
+    setSegmentsByVenueKey(map);
     setLoading(false);
   }, [supabase]);
 
@@ -98,7 +117,12 @@ export default function DMListPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">DMハガキ一覧</h1>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h1 className="text-2xl font-bold">DMハガキ一覧</h1>
+        <Link href="/dm/segments" className={buttonVariants({ variant: "outline", size: "sm" })}>
+          DM区分マスター
+        </Link>
+      </div>
       <p className="text-xs text-muted-foreground">
         ※ 会期終了済の催事はデフォルトで非表示。確認したいときは「過去も見る」を ON にしてください。
       </p>
@@ -123,6 +147,7 @@ export default function DMListPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>催事</TableHead>
+                <TableHead className="hidden lg:table-cell">区分</TableHead>
                 <TableHead>催事名</TableHead>
                 <TableHead className="hidden md:table-cell">会期</TableHead>
                 <TableHead>印刷済み</TableHead>
@@ -140,6 +165,15 @@ export default function DMListPage() {
                       <Link href={`/events/${e.id}`} className="text-primary hover:underline text-sm font-medium">
                         {e.venue}{e.store_name ? ` ${e.store_name}` : ""}
                       </Link>
+                    </TableCell>
+                    <TableCell className="hidden lg:table-cell">
+                      <div className="flex gap-1 flex-wrap">
+                        {(segmentsByVenueKey.get(`${e.venue}|${e.store_name || ""}`) || []).map((s) => (
+                          <span key={`${s.kbn_no}-${s.code}`} className="inline-block px-1.5 py-0.5 text-[10px] font-mono rounded bg-amber-50 border border-amber-200 text-amber-800 whitespace-nowrap">
+                            区{s.kbn_no}-{s.code}
+                          </span>
+                        ))}
+                      </div>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{e.name || "—"}</TableCell>
                     <TableCell className="text-sm hidden md:table-cell">
@@ -207,7 +241,7 @@ export default function DMListPage() {
                 );
               })}
               {filtered.length === 0 && (
-                <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                   {filter === "all"
                     ? includePast
                       ? "DMハガキが登録された催事がありません"

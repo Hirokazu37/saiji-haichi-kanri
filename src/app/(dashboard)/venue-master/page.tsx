@@ -66,6 +66,7 @@ type VenueMaster = {
 };
 
 type PayerMasterItem = { id: string; name: string; is_active: boolean };
+type DmSegmentItem = { id: string; kbn_no: number; code: number; segment_name: string; venue_id: string | null };
 
 type AreaItem = { id: string; name: string; region: string | null; prefecture: string | null; color: string | null };
 type HotelMasterItem = { id: string; name: string; area_id: string | null };
@@ -103,6 +104,7 @@ export default function VenueMasterPage() {
   const [mannequinAgencies, setMannequinAgencies] = useState<MannequinAgency[]>([]);
   const [mannequinLinks, setMannequinLinks] = useState<VenueMannequinLink[]>([]);
   const [payers, setPayers] = useState<PayerMasterItem[]>([]);
+  const [dmSegments, setDmSegments] = useState<DmSegmentItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
@@ -192,7 +194,7 @@ export default function VenueMasterPage() {
   };
 
   const fetchData = useCallback(async () => {
-    const [venueRes, areaRes, hmRes, hlRes, mpRes, maRes, mlRes, pyrRes] = await Promise.all([
+    const [venueRes, areaRes, hmRes, hlRes, mpRes, maRes, mlRes, pyrRes, segRes] = await Promise.all([
       supabase.from("venue_master").select("*").order("sort_order").order("venue_name"),
       supabase.from("area_master").select("id, name, region, prefecture, color").order("sort_order"),
       supabase.from("hotel_master").select("id, name, area_id").eq("is_active", true).order("name"),
@@ -201,6 +203,7 @@ export default function VenueMasterPage() {
       supabase.from("mannequin_agencies").select("id, name").order("name"),
       supabase.from("venue_mannequin_links").select("*"),
       supabase.from("payer_master").select("id, name, is_active"),
+      supabase.from("sanchoku_segments").select("id, kbn_no, code, segment_name, venue_id").not("venue_id", "is", null).order("kbn_no").order("code"),
     ]);
     setVenues(venueRes.data || []);
     setAreas((areaRes.data || []) as AreaItem[]);
@@ -213,6 +216,7 @@ export default function VenueMasterPage() {
     setMannequinAgencies((maRes.data || []) as MannequinAgency[]);
     setMannequinLinks((mlRes.data || []) as VenueMannequinLink[]);
     setPayers((pyrRes.data || []) as PayerMasterItem[]);
+    setDmSegments((segRes.data || []) as DmSegmentItem[]);
     setLoading(false);
   }, [supabase]);
 
@@ -554,6 +558,16 @@ export default function VenueMasterPage() {
             {hotels.length > 0 ? hotels.map((h) => <Badge key={h.id} variant="outline" className="text-xs">{h.name}</Badge>) : <span className="text-xs text-muted-foreground">—</span>}
           </div>
         </TableCell>
+        <TableCell className="hidden lg:table-cell">
+          <div className="flex flex-wrap gap-1">
+            {dmSegments.filter((s) => s.venue_id === v.id).map((s) => (
+              <span key={s.id} title={s.segment_name} className="inline-block px-1.5 py-0.5 text-[10px] font-mono rounded bg-amber-50 border border-amber-200 text-amber-800 whitespace-nowrap">
+                区{s.kbn_no}-{s.code}
+              </span>
+            ))}
+            {dmSegments.every((s) => s.venue_id !== v.id) && <span className="text-xs text-muted-foreground">—</span>}
+          </div>
+        </TableCell>
         <TableCell className="text-sm hidden lg:table-cell">
           {v.sanchoku_code_1 ? <span>{v.sanchoku_code_1}{v.sanchoku_memo_1 ? <span className="text-muted-foreground text-xs ml-1">({v.sanchoku_memo_1})</span> : ""}</span> : "—"}
         </TableCell>
@@ -804,6 +818,7 @@ export default function VenueMasterPage() {
                 <TableHead>百貨店名</TableHead>
                 <TableHead className="hidden md:table-cell">マネキン</TableHead>
                 <TableHead className="hidden md:table-cell">ホテル</TableHead>
+                <TableHead className="hidden lg:table-cell">汎用区分</TableHead>
                 <TableHead className="hidden lg:table-cell">産直くん①</TableHead>
                 <TableHead className="hidden lg:table-cell">産直くん②</TableHead>
                 <TableHead className="hidden lg:table-cell">産直くん③</TableHead>
@@ -824,7 +839,7 @@ export default function VenueMasterPage() {
                     >
                       {canEdit && <TableCell className="p-0 w-8" />}
                       <TableCell className="p-0" style={{ backgroundColor: regionColor, width: 6 }} />
-                      <TableCell colSpan={canEdit ? 9 : 8} className="py-1.5 font-semibold text-xs">
+                      <TableCell colSpan={canEdit ? 10 : 9} className="py-1.5 font-semibold text-xs">
                         <span className="inline-flex items-center gap-2">
                           {isCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                           <span className="inline-block w-3 h-3 rounded" style={{ backgroundColor: regionColor }} />
@@ -841,7 +856,7 @@ export default function VenueMasterPage() {
                   );
                 })}
                 {filtered.length === 0 && (
-                  <TableRow><TableCell colSpan={canEdit ? 11 : 9} className="text-center text-muted-foreground py-8">百貨店が登録されていません</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={canEdit ? 12 : 10} className="text-center text-muted-foreground py-8">百貨店が登録されていません</TableCell></TableRow>
                 )}
               </TableBody>
             </DndContext>
