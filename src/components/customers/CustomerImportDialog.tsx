@@ -572,7 +572,7 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
                     onChange={(e) => setUpdateDmCount(e.target.checked)}
                     className="h-4 w-4"
                   />
-                  この催事のDM枚数を名簿の人数（{rows.length.toLocaleString()}件）で更新する
+                  この催事のDM枚数を名簿の人数（{(rows.length - dupCount).toLocaleString()}人）で更新する
                 </label>
               )}
 
