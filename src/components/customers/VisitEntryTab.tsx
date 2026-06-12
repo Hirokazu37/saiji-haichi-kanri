@@ -26,7 +26,7 @@ type Visit = {
 };
 
 type Feedback =
-  | { kind: "ok"; customer: Customer }
+  | { kind: "ok"; customer: Customer; memo?: string }
   | { kind: "dup"; customer: Customer }
   | { kind: "notfound"; input: string }
   | { kind: "error"; message: string };
@@ -58,7 +58,9 @@ export function VisitEntryTab({ segments }: Props) {
   const [rosterCount, setRosterCount] = useState(0);
   // 確認待ちの顧客が名簿に載っているか（null = 名簿未取込で照合不可）
   const [pendingInRoster, setPendingInRoster] = useState<boolean | null>(null);
-  // 来場メモの編集中の行とテキスト
+  // 確認カードで一緒に入力する来場メモ（任意）
+  const [pendingMemo, setPendingMemo] = useState("");
+  // 来場メモの編集中の行とテキスト（登録後の修正用）
   const [memoVisitId, setMemoVisitId] = useState<string | null>(null);
   const [memoText, setMemoText] = useState("");
   const numberRef = useRef<HTMLInputElement>(null);
@@ -157,12 +159,13 @@ export function VisitEntryTab({ segments }: Props) {
     setNameQuery("");
   };
 
-  /** 来場を登録する（重複は警告） */
+  /** 来場を登録する（確認カードのメモも一緒に保存。重複は警告） */
   const register = useCallback(async (customer: Customer) => {
     if (!eventId) return;
+    const memo = pendingMemo.trim();
     const { error } = await supabase
       .from("event_visits")
-      .insert({ event_id: eventId, customer_id: customer.id });
+      .insert({ event_id: eventId, customer_id: customer.id, notes: memo || null });
     if (error) {
       if (error.code === "23505") {
         setFeedback({ kind: "dup", customer });
@@ -170,18 +173,19 @@ export function VisitEntryTab({ segments }: Props) {
         setFeedback({ kind: "error", message: error.message });
       }
     } else {
-      setFeedback({ kind: "ok", customer });
+      setFeedback({ kind: "ok", customer, memo: memo || undefined });
       fetchVisits(eventId);
     }
     setPending(null);
     setPendingInRoster(null);
+    setPendingMemo("");
     setCandidates([]);
     setNameResults([]);
     setNameQuery("");
     setNumberInput("");
-    // 状態更新が反映された後にフォーカスを戻す
+    // 状態更新が反映された後にフォーカスを番号入力へ戻す
     setTimeout(() => numberRef.current?.focus(), 0);
-  }, [eventId, supabase, fetchVisits]);
+  }, [eventId, supabase, fetchVisits, pendingMemo]);
 
   /** 番号で顧客を探して確認待ちにする（ゼロ埋め違いも許容） */
   const lookup = useCallback(async () => {
@@ -211,10 +215,12 @@ export function VisitEntryTab({ segments }: Props) {
           (c) => normalizeCustomerNo(c.customer_no) === stripped
         );
       }
+      let foundPending = false;
       if (found.length === 0) {
         setFeedback({ kind: "notfound", input: raw });
         setNumberInput("");
       } else if (found.length === 1) {
+        foundPending = true;
         // 名簿CSVを取込済みなら「この催事の名簿に載っているか」を照合
         let inRoster: boolean | null = null;
         if (rosterCount > 0) {
@@ -233,9 +239,10 @@ export function VisitEntryTab({ segments }: Props) {
         // 同一番号とみなせる顧客が複数 → 選んでもらう
         setCandidates(found);
       }
+      // 確認カードが出るときはメモ欄にフォーカスが移るので番号欄には戻さない
+      if (!foundPending) setTimeout(() => numberRef.current?.focus(), 0);
     } finally {
       setBusy(false);
-      setTimeout(() => numberRef.current?.focus(), 0);
     }
   }, [numberInput, eventId, busy, supabase, rosterCount]);
 
@@ -251,6 +258,7 @@ export function VisitEntryTab({ segments }: Props) {
       } else if (e.key === "Escape") {
         e.preventDefault();
         setPending(null);
+        setPendingMemo("");
         setNumberInput("");
         setTimeout(() => numberRef.current?.focus(), 0);
       }
@@ -429,6 +437,15 @@ export function VisitEntryTab({ segments }: Props) {
                         この催事のDM名簿には見つかりません。番号やハガキの催事名を確認してください（このまま登録もできます）
                       </div>
                     )}
+                    <div className="mt-2">
+                      <Input
+                        value={pendingMemo}
+                        onChange={(e) => setPendingMemo(e.target.value)}
+                        autoFocus
+                        placeholder="メモ（任意）例: 5箱購入・発送依頼"
+                        className="h-9 bg-white max-w-md"
+                      />
+                    </div>
                     <div className="mt-2 flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-blue-900">この方を来場登録しますか？</span>
                       <Button size="sm" onClick={() => register(pending)}>
@@ -437,7 +454,7 @@ export function VisitEntryTab({ segments }: Props) {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => { setPending(null); setNumberInput(""); numberRef.current?.focus(); }}
+                        onClick={() => { setPending(null); setPendingMemo(""); setNumberInput(""); numberRef.current?.focus(); }}
                       >
                         やめる（Esc）
                       </Button>
@@ -454,6 +471,7 @@ export function VisitEntryTab({ segments }: Props) {
                 <div>
                   <div className="font-bold text-lg">{feedback.customer.name} 様を登録しました</div>
                   <div className="text-xs">#{feedback.customer.customer_no} {feedback.customer.address || ""}</div>
+                  {feedback.memo && <div className="text-xs mt-0.5">📝 メモ: {feedback.memo}</div>}
                 </div>
               </div>
             )}
