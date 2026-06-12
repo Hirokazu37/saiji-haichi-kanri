@@ -42,6 +42,19 @@ type Venue = {
 
 const emptyForm = { kbn_no: "3", code: "", segment_name: "", venue_id: "", notes: "" };
 
+// 区分ごとのテーマカラー (タブ・見出しで共通)
+const KBN_COLORS: Record<number, { dot: string; active: string; header: string }> = {
+  3:  { dot: "bg-rose-500",    active: "data-active:bg-rose-100 data-active:text-rose-900 dark:data-active:bg-rose-900/40 dark:data-active:text-rose-200",       header: "bg-rose-50 dark:bg-rose-950/30" },
+  4:  { dot: "bg-orange-500",  active: "data-active:bg-orange-100 data-active:text-orange-900 dark:data-active:bg-orange-900/40 dark:data-active:text-orange-200", header: "bg-orange-50 dark:bg-orange-950/30" },
+  5:  { dot: "bg-amber-500",   active: "data-active:bg-amber-100 data-active:text-amber-900 dark:data-active:bg-amber-900/40 dark:data-active:text-amber-200",    header: "bg-amber-50 dark:bg-amber-950/30" },
+  6:  { dot: "bg-lime-600",    active: "data-active:bg-lime-100 data-active:text-lime-900 dark:data-active:bg-lime-900/40 dark:data-active:text-lime-200",        header: "bg-lime-50 dark:bg-lime-950/30" },
+  7:  { dot: "bg-emerald-500", active: "data-active:bg-emerald-100 data-active:text-emerald-900 dark:data-active:bg-emerald-900/40 dark:data-active:text-emerald-200", header: "bg-emerald-50 dark:bg-emerald-950/30" },
+  8:  { dot: "bg-sky-500",     active: "data-active:bg-sky-100 data-active:text-sky-900 dark:data-active:bg-sky-900/40 dark:data-active:text-sky-200",            header: "bg-sky-50 dark:bg-sky-950/30" },
+  9:  { dot: "bg-violet-500",  active: "data-active:bg-violet-100 data-active:text-violet-900 dark:data-active:bg-violet-900/40 dark:data-active:text-violet-200", header: "bg-violet-50 dark:bg-violet-950/30" },
+  10: { dot: "bg-fuchsia-500", active: "data-active:bg-fuchsia-100 data-active:text-fuchsia-900 dark:data-active:bg-fuchsia-900/40 dark:data-active:text-fuchsia-200", header: "bg-fuchsia-50 dark:bg-fuchsia-950/30" },
+};
+const kbnColor = (k: number) => KBN_COLORS[k] ?? { dot: "bg-gray-400", active: "", header: "bg-muted/50" };
+
 export default function DmSegmentsPage() {
   const { canEdit } = usePermission();
   const supabase = createClient();
@@ -215,10 +228,12 @@ export default function DmSegmentsPage() {
           </TabsTrigger>
           {allKbns.map((k) => {
             const count = baseFiltered.filter((s) => s.kbn_no === k).length;
+            const c = kbnColor(k);
             return (
-              <TabsTrigger key={k} value={String(k)}>
+              <TabsTrigger key={k} value={String(k)} className={c.active}>
+                <span className={`inline-block h-2 w-2 rounded-full shrink-0 ${c.dot}`} />
                 区分{k}
-                <span className="ml-1 text-[10px] text-muted-foreground">{count}</span>
+                <span className="ml-0.5 text-[10px] text-muted-foreground">{count}</span>
               </TabsTrigger>
             );
           })}
@@ -228,9 +243,10 @@ export default function DmSegmentsPage() {
       {kbnGroups.map((kbn) => (
         <Card key={kbn}>
           <CardContent className="p-0">
-            <div className="px-4 py-2 border-b bg-muted/50 font-semibold text-sm">
+            <div className={`px-4 py-2 border-b font-semibold text-sm flex items-center gap-2 ${kbnColor(kbn).header}`}>
+              <span className={`inline-block h-2.5 w-2.5 rounded-full shrink-0 ${kbnColor(kbn).dot}`} />
               区分{kbn}
-              <span className="ml-2 text-xs font-normal text-muted-foreground">
+              <span className="text-xs font-normal text-muted-foreground">
                 {filtered.filter((s) => s.kbn_no === kbn).length}件
               </span>
             </div>
