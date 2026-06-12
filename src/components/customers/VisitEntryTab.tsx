@@ -30,7 +30,10 @@ type Feedback =
 type Props = { segments: SegmentMaster[] };
 
 export function VisitEntryTab({}: Props) {
-  const { canEdit } = usePermission();
+  // 来場登録は社員（viewer）がメインで入力する運用のため、admin/viewer とも入力可。
+  // limited はページ自体にアクセス不可（lib/access.ts）。
+  const { role } = usePermission();
+  const canRegister = role === "admin" || role === "viewer";
   const supabase = createClient();
   const [events, setEvents] = useState<EventLite[]>([]);
   const [eventId, setEventId] = useState("");
@@ -205,7 +208,7 @@ export function VisitEntryTab({}: Props) {
         </CardContent>
       </Card>
 
-      {canEdit ? (
+      {canRegister ? (
         <Card>
           <CardContent className="pt-4 space-y-3">
             <Label className="text-base font-semibold">お客様番号を入力して Enter</Label>
@@ -299,7 +302,7 @@ export function VisitEntryTab({}: Props) {
       ) : (
         <Card>
           <CardContent className="py-6 text-center text-sm text-muted-foreground">
-            来場登録には編集権限が必要です
+            来場登録の権限がありません
           </CardContent>
         </Card>
       )}
@@ -316,7 +319,7 @@ export function VisitEntryTab({}: Props) {
                     #{v.customers?.customer_no ?? "?"}
                   </span>
                   <span className="flex-1 truncate font-medium">{v.customers?.name ?? "（削除された顧客）"}</span>
-                  {canEdit && (
+                  {canRegister && (
                     <Button variant="ghost" size="sm" onClick={() => undoVisit(v.id)} title="取消">
                       <Undo2 className="h-4 w-4 text-muted-foreground" />
                     </Button>
