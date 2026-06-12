@@ -17,6 +17,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import Link from "next/link";
 import { usePermission } from "@/hooks/usePermission";
@@ -49,6 +50,7 @@ export default function DmSegmentsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [onlyUnlinked, setOnlyUnlinked] = useState(false);
+  const [activeKbn, setActiveKbn] = useState<string>("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -147,7 +149,8 @@ export default function DmSegmentsPage() {
     fetchData();
   };
 
-  const filtered = segments.filter((s) => {
+  // 検索・未紐付けフィルタ適用後 (タブの件数表示にも使う)
+  const baseFiltered = segments.filter((s) => {
     if (onlyUnlinked && s.venue_id) return false;
     if (!search.trim()) return true;
     const q = search.trim();
@@ -156,7 +159,11 @@ export default function DmSegmentsPage() {
       || `区分${s.kbn_no}`.includes(q)
       || (venueLabel(s.venue_id) || "").includes(q);
   });
+  const filtered = activeKbn === "all"
+    ? baseFiltered
+    : baseFiltered.filter((s) => s.kbn_no === Number(activeKbn));
 
+  const allKbns = [...new Set(segments.map((s) => s.kbn_no))].sort((a, b) => a - b);
   const kbnGroups = [...new Set(filtered.map((s) => s.kbn_no))].sort((a, b) => a - b);
   const unlinkedCount = segments.filter((s) => !s.venue_id).length;
 
@@ -178,7 +185,11 @@ export default function DmSegmentsPage() {
       <div className="flex gap-2 flex-wrap items-center">
         <Input
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            // 検索を始めたら全区分から探せるよう「すべて」タブに切り替える
+            if (e.target.value && !search) setActiveKbn("all");
+            setSearch(e.target.value);
+          }}
           placeholder="名称・コード・百貨店で検索"
           className="h-9 w-64 bg-white"
         />
@@ -195,6 +206,24 @@ export default function DmSegmentsPage() {
           </Button>
         )}
       </div>
+
+      <Tabs value={activeKbn} onValueChange={(v) => setActiveKbn(String(v))} className="w-full">
+        <TabsList className="w-full justify-start flex-wrap h-auto">
+          <TabsTrigger value="all">
+            すべて
+            <span className="ml-1 text-[10px] text-muted-foreground">{baseFiltered.length}</span>
+          </TabsTrigger>
+          {allKbns.map((k) => {
+            const count = baseFiltered.filter((s) => s.kbn_no === k).length;
+            return (
+              <TabsTrigger key={k} value={String(k)}>
+                区分{k}
+                <span className="ml-1 text-[10px] text-muted-foreground">{count}</span>
+              </TabsTrigger>
+            );
+          })}
+        </TabsList>
+      </Tabs>
 
       {kbnGroups.map((kbn) => (
         <Card key={kbn}>
