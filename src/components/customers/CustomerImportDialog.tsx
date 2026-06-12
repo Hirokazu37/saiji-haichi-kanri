@@ -397,7 +397,9 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
   const colSelect = (value: string, onChange: (v: string) => void) => (
     <Select value={value} onValueChange={(v) => onChange(v ?? NONE)}>
       <SelectTrigger className="w-full">
-        <SelectValue placeholder="（使わない）" />
+        <SelectValue>
+          {value === NONE ? "（使わない）" : headers[Number(value)] || `列${Number(value) + 1}`}
+        </SelectValue>
       </SelectTrigger>
       <SelectContent>
         <SelectItem value={NONE}>（使わない）</SelectItem>
@@ -412,7 +414,7 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!importing) { onOpenChange(o); if (!o) reset(); } }}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{event ? `DM名簿CSVの取込 — ${event.label}` : "マスタ一括取込（補助）"}</DialogTitle>
         </DialogHeader>
@@ -498,7 +500,11 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
                 <div className="text-sm font-medium">DM区分（百貨店）の紐付け</div>
                 <Select value={segMode} onValueChange={(v) => setSegMode((v as "fixed" | "columns") || "fixed")}>
                   <SelectTrigger className="w-full md:w-96">
-                    <SelectValue />
+                    <SelectValue>
+                      {segMode === "fixed"
+                        ? "この名簿の全員を、選んだ区分に紐付ける（区分指定で抽出したCSV）"
+                        : "CSVの中にある区分3〜10の列から読み取る"}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="fixed">この名簿の全員を、選んだ区分に紐付ける（区分指定で抽出したCSV）</SelectItem>

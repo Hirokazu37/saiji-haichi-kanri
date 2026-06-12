@@ -241,7 +241,9 @@ export function ExtractTab({ segments }: Props) {
                 disabled={!selectedSeg}
               >
                 <SelectTrigger className="w-full">
-                  <SelectValue />
+                  <SelectValue>
+                    {scope === "all" ? "どの催事への来場も数える" : "この区分のDMを出した催事だけ数える"}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">どの催事への来場も数える</SelectItem>

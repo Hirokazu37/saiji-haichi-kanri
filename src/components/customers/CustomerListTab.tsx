@@ -210,7 +210,7 @@ export function CustomerListTab({ segments }: Props) {
 
       {/* 顧客詳細ダイアログ */}
       <Dialog open={detail !== null} onOpenChange={(o) => { if (!o) setDetail(null); }}>
-        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
           {detail && (
             <>
               <DialogHeader>
