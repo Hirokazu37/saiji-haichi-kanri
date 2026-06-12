@@ -134,6 +134,7 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
   // 産直くんの出力ファイル名は「DMハガキ出力用.csv」固定のため、
   // 古いエクスポートの取り違え防止としてファイル更新日時を表示・警告する
   const [fileMtime, setFileMtime] = useState<number | null>(null);
+  const [dragging, setDragging] = useState(false);
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<string[][]>([]);
   const [mapping, setMapping] = useState<Record<BaseFieldKey, string>>({ ...EMPTY_MAPPING });
@@ -429,9 +430,28 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
               : "産直くん11からエクスポートした得意先のCSVを選んでください（Shift_JIS / UTF-8 どちらでも可）。同じ顧客番号は上書き更新されるので、何度でも取り込み直せます。"}
           </div>
 
-          <label className="flex items-center justify-center gap-2 border-2 border-dashed rounded-lg p-6 cursor-pointer hover:bg-muted/50 transition-colors">
+          <label
+            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragging(false);
+              const f = e.dataTransfer.files?.[0];
+              if (!f) return;
+              if (!/\.(csv|txt)$/i.test(f.name)) {
+                setError("CSVファイル（.csv / .txt）をドロップしてください");
+                return;
+              }
+              handleFile(f);
+            }}
+            className={`flex items-center justify-center gap-2 border-2 border-dashed rounded-lg p-6 cursor-pointer transition-colors ${
+              dragging ? "border-primary bg-primary/5" : "hover:bg-muted/50"
+            }`}
+          >
             <FileSpreadsheet className="h-5 w-5 text-muted-foreground" />
-            <span className="text-sm">{fileName || "CSVファイルを選択"}</span>
+            <span className="text-sm">
+              {fileName || (dragging ? "ここにドロップして取込" : "CSVファイルを選択（ここにドラッグ＆ドロップも可）")}
+            </span>
             <input
               type="file"
               accept=".csv,.txt"
