@@ -193,14 +193,18 @@ export function EventCalendar({ events, selectedId, onSelect }: Props) {
               <div className="absolute inset-0 pointer-events-none">
                 {lanes.map(({ event, laneIdx, startDay, endDay }) => {
                   const spanDays = endDay - startDay + 1;
-                  const label = event.store_name ? `${event.venue} ${event.store_name}` : event.venue;
+                  const name = event.store_name ? `${event.venue} ${event.store_name}` : event.venue;
+                  // DM枚数はバー上に常時表示（幅が狭いバーでは省略されるが、ツールチップで確認できる）
+                  const label = event.dm_count != null
+                    ? `${name}〔DM ${event.dm_count.toLocaleString()}〕`
+                    : name;
                   const isSelected = event.id === selectedId;
                   return (
                     <button
                       key={`${event.id}-${wIdx}`}
                       type="button"
                       onClick={() => onSelect(event.id)}
-                      title={`${label}（${event.start_date}〜${event.end_date}）${event.dm_count != null ? ` DM ${event.dm_count.toLocaleString()}枚` : ""}`}
+                      title={`${name}（${event.start_date}〜${event.end_date}）${event.dm_count != null ? ` DM ${event.dm_count.toLocaleString()}枚` : ""}`}
                       className={`pointer-events-auto absolute rounded border px-1 text-[11px] font-medium text-left truncate transition-colors ${
                         isSelected
                           ? "bg-primary text-primary-foreground border-primary"

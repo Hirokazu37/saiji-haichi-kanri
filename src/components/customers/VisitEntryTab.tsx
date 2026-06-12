@@ -7,7 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Combobox, type ComboboxItem } from "@/components/ui/combobox";
-import { CheckCircle2, AlertTriangle, XCircle, Undo2, UserSearch } from "lucide-react";
+import {
+  CheckCircle2, AlertTriangle, XCircle, Undo2, UserSearch, ArrowLeft, UserCheck,
+} from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
 import { EventCalendar } from "./EventCalendar";
 import {
@@ -38,8 +40,12 @@ export function VisitEntryTab({}: Props) {
   const supabase = createClient();
   const [events, setEvents] = useState<EventLite[]>([]);
   const [eventId, setEventId] = useState("");
+  // select: 日程表から催事を選ぶ / entry: 番号を連続入力する
+  const [step, setStep] = useState<"select" | "entry">("select");
   const [visits, setVisits] = useState<Visit[]>([]);
   const [numberInput, setNumberInput] = useState("");
+  // 番号で見つかった顧客。「登録しますか？」の確認待ち状態
+  const [pending, setPending] = useState<Customer | null>(null);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [candidates, setCandidates] = useState<Customer[]>([]);
   const [nameQuery, setNameQuery] = useState("");
@@ -100,6 +106,26 @@ export function VisitEntryTab({}: Props) {
 
   useEffect(() => { fetchVisits(eventId); }, [eventId, fetchVisits]);
 
+  /** 催事を選んで入力画面へ */
+  const goEntry = (id: string) => {
+    setEventId(id);
+    setStep("entry");
+    setFeedback(null);
+    setPending(null);
+    setCandidates([]);
+    setNumberInput("");
+  };
+
+  /** 入力画面から催事選択に戻る */
+  const backToSelect = () => {
+    setStep("select");
+    setFeedback(null);
+    setPending(null);
+    setCandidates([]);
+    setNumberInput("");
+    setNameQuery("");
+  };
+
   /** 来場を登録する（重複は警告） */
   const register = useCallback(async (customer: Customer) => {
     if (!eventId) return;
@@ -116,6 +142,7 @@ export function VisitEntryTab({}: Props) {
       setFeedback({ kind: "ok", customer });
       fetchVisits(eventId);
     }
+    setPending(null);
     setCandidates([]);
     setNameResults([]);
     setNameQuery("");
@@ -123,13 +150,14 @@ export function VisitEntryTab({}: Props) {
     numberRef.current?.focus();
   }, [eventId, supabase, fetchVisits]);
 
-  /** 番号で検索して即登録（ゼロ埋め違いも許容） */
-  const lookupAndRegister = useCallback(async () => {
+  /** 番号で顧客を探して確認待ちにする（ゼロ埋め違いも許容） */
+  const lookup = useCallback(async () => {
     const raw = numberInput.trim();
     if (!raw || !eventId || busy) return;
     setBusy(true);
     setFeedback(null);
     setCandidates([]);
+    setPending(null);
     try {
       // まず完全一致
       const { data: exact } = await supabase
@@ -153,17 +181,18 @@ export function VisitEntryTab({}: Props) {
       if (found.length === 0) {
         setFeedback({ kind: "notfound", input: raw });
         setNumberInput("");
-        numberRef.current?.focus();
       } else if (found.length === 1) {
-        await register(found[0]);
+        // 確認待ちへ（Enterで登録 / Escでやり直し）
+        setPending(found[0]);
       } else {
         // 同一番号とみなせる顧客が複数 → 選んでもらう
         setCandidates(found);
       }
     } finally {
       setBusy(false);
+      numberRef.current?.focus();
     }
-  }, [numberInput, eventId, busy, supabase, register]);
+  }, [numberInput, eventId, busy, supabase]);
 
   /** 名前・カナで検索（ハガキ忘れの方の調査用） */
   useEffect(() => {
@@ -197,43 +226,62 @@ export function VisitEntryTab({}: Props) {
     </div>
   );
 
+  /* ============ 画面1: 日程表から催事を選ぶ ============ */
+  if (step === "select") {
+    return (
+      <div className="space-y-4">
+        <Card>
+          <CardContent className="pt-4 space-y-3">
+            <Label>催事（百貨店）をクリックすると番号入力に進みます</Label>
+            <div className="max-w-2xl mx-auto">
+              <EventCalendar events={events} selectedId={eventId} onSelect={goEntry} />
+            </div>
+            <div className="flex flex-col md:flex-row gap-1 md:items-center justify-center pt-1">
+              <span className="text-xs text-muted-foreground shrink-0">検索して選ぶ場合：</span>
+              <Combobox
+                items={eventItems}
+                value={eventId}
+                onChange={(v) => { if (v) goEntry(v); }}
+                placeholder="会場名などで検索"
+                searchPlaceholder="会場名などで検索"
+                allowCustom={false}
+                className="max-w-md"
+              />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  /* ============ 画面2: 番号を連続入力 ============ */
   return (
     <div className="space-y-4">
-      {/* 催事の選択 */}
+      {/* 選択中の催事ヘッダー */}
       <Card>
         <CardContent className="pt-4 space-y-2">
-          <Label>対象の催事（日程表から選択）</Label>
-          {selectedEvent && (
-            <div className="rounded-md bg-primary/5 border border-primary/20 px-3 py-2">
-              <div className="font-semibold flex items-baseline gap-2 flex-wrap">
-                <span>{selectedEvent.venue}{selectedEvent.store_name ? ` ${selectedEvent.store_name}` : ""}</span>
-                {selectedEvent.dm_count != null && (
-                  <span className="text-xs font-medium text-primary bg-primary/10 rounded px-1.5 py-0.5">
-                    DM {selectedEvent.dm_count.toLocaleString()}枚
-                  </span>
-                )}
+          <div className="flex items-start gap-3">
+            <Button variant="outline" size="sm" onClick={backToSelect} className="shrink-0">
+              <ArrowLeft className="h-4 w-4 mr-1" />
+              催事を選び直す
+            </Button>
+            {selectedEvent && (
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold flex items-baseline gap-2 flex-wrap">
+                  <span>{selectedEvent.venue}{selectedEvent.store_name ? ` ${selectedEvent.store_name}` : ""}</span>
+                  {selectedEvent.dm_count != null && (
+                    <span className="text-xs font-medium text-primary bg-primary/10 rounded px-1.5 py-0.5">
+                      DM {selectedEvent.dm_count.toLocaleString()}枚
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {selectedEvent.start_date}〜{selectedEvent.end_date}
+                  ／ 登録済みの来場: {visits.length}人
+                  {selectedEvent.dm_count ? `（反応率 ${((visits.length / selectedEvent.dm_count) * 100).toFixed(1)}%）` : ""}
+                </div>
               </div>
-              <div className="text-xs text-muted-foreground">
-                {selectedEvent.start_date}〜{selectedEvent.end_date}
-                ／ 登録済みの来場: {visits.length}人
-                {selectedEvent.dm_count ? `（反応率 ${((visits.length / selectedEvent.dm_count) * 100).toFixed(1)}%）` : ""}
-              </div>
-            </div>
-          )}
-          <div className="max-w-2xl">
-            <EventCalendar events={events} selectedId={eventId} onSelect={setEventId} />
-          </div>
-          <div className="flex flex-col md:flex-row gap-1 md:items-center pt-1">
-            <span className="text-xs text-muted-foreground shrink-0">検索して選ぶ場合：</span>
-            <Combobox
-              items={eventItems}
-              value={eventId}
-              onChange={setEventId}
-              placeholder="会場名などで検索"
-              searchPlaceholder="会場名などで検索"
-              allowCustom={false}
-              className="max-w-md"
-            />
+            )}
           </div>
         </CardContent>
       </Card>
@@ -245,11 +293,16 @@ export function VisitEntryTab({}: Props) {
             <Input
               ref={numberRef}
               value={numberInput}
-              onChange={(e) => setNumberInput(e.target.value)}
+              onChange={(e) => { setNumberInput(e.target.value); setPending(null); }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  lookupAndRegister();
+                  if (pending) register(pending);
+                  else lookup();
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  setPending(null);
+                  setNumberInput("");
                 }
               }}
               inputMode="numeric"
@@ -259,9 +312,41 @@ export function VisitEntryTab({}: Props) {
               className="max-w-sm h-14 text-2xl font-mono tracking-wider"
             />
 
+            {/* 確認待ち: 登録しますか？ */}
+            {pending && (
+              <div className="rounded-md bg-blue-50 border-2 border-blue-300 px-4 py-3 max-w-xl">
+                <div className="flex items-start gap-2">
+                  <UserCheck className="h-6 w-6 mt-0.5 shrink-0 text-blue-700" />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-xl text-blue-900">{pending.name} 様</div>
+                    <div className="text-sm text-blue-800">
+                      #{pending.customer_no}
+                      {pending.kana ? ` ／ ${pending.kana}` : ""}
+                    </div>
+                    {pending.address && (
+                      <div className="text-xs text-blue-800/80 truncate">{pending.address}</div>
+                    )}
+                    <div className="mt-2 flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-blue-900">この方を来場登録しますか？</span>
+                      <Button size="sm" onClick={() => register(pending)}>
+                        登録する（Enter）
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => { setPending(null); setNumberInput(""); numberRef.current?.focus(); }}
+                      >
+                        やめる（Esc）
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* 直前の結果フィードバック */}
             {feedback?.kind === "ok" && (
-              <div className="flex items-start gap-2 rounded-md bg-green-50 border border-green-200 px-3 py-2 text-green-800">
+              <div className="flex items-start gap-2 rounded-md bg-green-50 border border-green-200 px-3 py-2 text-green-800 max-w-xl">
                 <CheckCircle2 className="h-5 w-5 mt-0.5 shrink-0" />
                 <div>
                   <div className="font-bold text-lg">{feedback.customer.name} 様を登録しました</div>
@@ -270,7 +355,7 @@ export function VisitEntryTab({}: Props) {
               </div>
             )}
             {feedback?.kind === "dup" && (
-              <div className="flex items-start gap-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-amber-800">
+              <div className="flex items-start gap-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-amber-800 max-w-xl">
                 <AlertTriangle className="h-5 w-5 mt-0.5 shrink-0" />
                 <div>
                   <div className="font-bold">{feedback.customer.name} 様はこの催事に登録済みです</div>
@@ -279,7 +364,7 @@ export function VisitEntryTab({}: Props) {
               </div>
             )}
             {feedback?.kind === "notfound" && (
-              <div className="flex items-start gap-2 rounded-md bg-red-50 border border-red-200 px-3 py-2 text-red-800">
+              <div className="flex items-start gap-2 rounded-md bg-red-50 border border-red-200 px-3 py-2 text-red-800 max-w-xl">
                 <XCircle className="h-5 w-5 mt-0.5 shrink-0" />
                 <div>
                   <div className="font-bold">番号「{feedback.input}」の顧客が見つかりません</div>
@@ -288,7 +373,7 @@ export function VisitEntryTab({}: Props) {
               </div>
             )}
             {feedback?.kind === "error" && (
-              <div className="flex items-start gap-2 rounded-md bg-red-50 border border-red-200 px-3 py-2 text-red-800">
+              <div className="flex items-start gap-2 rounded-md bg-red-50 border border-red-200 px-3 py-2 text-red-800 max-w-xl">
                 <XCircle className="h-5 w-5 mt-0.5 shrink-0" />
                 <div className="text-sm">登録に失敗しました: {feedback.message}</div>
               </div>
@@ -296,7 +381,7 @@ export function VisitEntryTab({}: Props) {
 
             {/* 同一番号に複数候補がある場合 */}
             {candidates.length > 0 && (
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 max-w-xl">
                 <div className="text-sm text-amber-700">該当が複数います。登録する方を選んでください：</div>
                 {candidates.map((c) =>
                   customerRow(c, <Button size="sm" onClick={() => register(c)}>登録</Button>)
@@ -317,7 +402,7 @@ export function VisitEntryTab({}: Props) {
                 className="max-w-sm"
               />
               {nameResults.length > 0 && (
-                <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                <div className="space-y-1.5 max-h-72 overflow-y-auto max-w-xl">
                   {nameResults.map((c) =>
                     customerRow(c, <Button size="sm" onClick={() => register(c)}>登録</Button>)
                   )}
