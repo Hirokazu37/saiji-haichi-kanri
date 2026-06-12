@@ -45,17 +45,13 @@ const EMPTY_MAPPING: Record<BaseFieldKey, string> = {
 function guessMapping(headers: string[]) {
   const base: Record<BaseFieldKey, string> = { ...EMPTY_MAPPING };
   const seg: Record<number, string> = {};
+  // 個人情報最小化の方針（2026-06 ユーザー決定）:
+  // 標準で取り込むのは 顧客番号・氏名・カナ のみ。
+  // 住所・電話・郵便番号は自動割り当てしない（必要な場合のみ手動で選択）。
   const patterns: [BaseFieldKey, RegExp][] = [
     ["customer_no", /得意先コード|得意先CD|顧客番号|顧客コード|顧客No|会員番号|^コード$/i],
     ["kana", /カナ|かな|フリガナ|ふりがな/],
     ["name", /氏名|名前|得意先名|顧客名/],
-    ["postal_code", /郵便|〒/],
-    ["pref", /都道府県/],
-    ["city", /市区町村|市町村/],
-    ["address1", /住所[1１]|^住所$|得意先住所$/],
-    ["address2", /住所[2２]/],
-    ["address3", /住所[3３]/],
-    ["phone", /電話|TEL/i],
   ];
   headers.forEach((h, i) => {
     const idx = String(i);
@@ -503,6 +499,10 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
             <>
               <div className="space-y-2">
                 <div className="text-sm font-medium">列の割り当て（自動で推測しています。違っていたら直してください）</div>
+                <div className="text-xs text-muted-foreground">
+                  個人情報保護のため、標準で取り込むのは<span className="font-semibold text-foreground">顧客番号・氏名・カナ</span>のみです。
+                  住所・電話番号などは「（使わない）」のままにしてください（来場登録には不要です）。
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {BASE_FIELDS.map((f) => (
                     <div key={f.key} className="space-y-1">
