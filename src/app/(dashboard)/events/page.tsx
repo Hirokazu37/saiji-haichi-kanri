@@ -199,6 +199,8 @@ export default function EventsPage() {
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  // 手配に未対応(✗)が残っている催事だけを表示する絞り込み
+  const [onlyIncomplete, setOnlyIncomplete] = useState(false);
   const [filterRegion, setFilterRegion] = useState<string>("all");
   const [filterPrefecture, setFilterPrefecture] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -402,8 +404,26 @@ export default function EventsPage() {
   const trimmedQuery = searchQuery.trim();
   const normalizedQuery = normalize(trimmedQuery);
 
+  /** 手配アイコンに ✗（未対応）が1つでもあるか。日程表のアイコンと同じ判定。 */
+  const hasIncompleteArrangement = (evt: Event): boolean => {
+    const staff = allStaff.filter((s) => s.event_id === evt.id);
+    const hotelArranged = (s: StaffWithArrangement) =>
+      s.hotel_status === "手配済" || s.hotel_status === "不要" || !!s.hotel_name;
+    const hotelNg = staff.length > 0 && !staff.every(hotelArranged);
+    const transportNg =
+      staff.length > 0 &&
+      !staff.every((s) => s.transport_outbound_status === "手配済" && s.transport_return_status === "手配済");
+    const manns = mannequinSummaries.filter((m) => m.event_id === evt.id);
+    const mannNg = manns.length > 0 && !manns.every((m) => m.arrangement_status === "手配済");
+    const applicationNg = (evt.application_status || "未提出") !== "提出済";
+    const dmNg = evt.dm_status != null && evt.dm_status !== "印刷済み";
+    const shipmentNg = !(evt.equipment_from && evt.equipment_to);
+    return hotelNg || transportNg || mannNg || applicationNg || dmNg || shipmentNg;
+  };
+
   const filtered = events.filter((e) => {
     if (!showPast && e.end_date < todayIsoStr) return false;
+    if (onlyIncomplete && !hasIncompleteArrangement(e)) return false;
     // ステータスフィルタは時間軸でも判定する（status が古いまま放置されたケース対策）
     if (filterStatus === "開催中") {
       // 開催中: 開始日 ≦ 今日 ≦ 終了日（実際に今やっている催事のみ）
@@ -685,6 +705,15 @@ export default function EventsPage() {
         {(["開催中", "終了"] as const).map((s) => (
           <Button key={s} variant={filterStatus === s ? "default" : "outline"} size="sm" onClick={() => setFilterStatus(s)}>{s}</Button>
         ))}
+        <Button
+          variant={onlyIncomplete ? "default" : "outline"}
+          size="sm"
+          onClick={() => setOnlyIncomplete((v) => !v)}
+          className={onlyIncomplete ? "bg-red-600 hover:bg-red-700" : "text-red-600 border-red-300 hover:bg-red-50"}
+          title="手配に未対応（✗）が残っている催事だけを表示"
+        >
+          未対応あり
+        </Button>
         <div className="ml-auto flex items-center gap-2">
           <Link href="/archive" className="text-xs text-muted-foreground hover:text-foreground hover:underline">
             履歴ページ →
@@ -892,12 +921,12 @@ export default function EventsPage() {
                               return (
                                 <div
                                   key={day}
-                                  className={`text-center border-r ${isT ? "bg-primary/10" : isRed ? "bg-red-50/50" : isSat ? "bg-blue-50/50" : ""}`}
-                                  title={holiday || undefined}
+                                  className={`text-center border-r ${isT ? "bg-red-100 border-l-2 border-l-red-500" : isRed ? "bg-red-50/50" : isSat ? "bg-blue-50/50" : ""}`}
+                                  title={isT ? "今日" : holiday || undefined}
                                 >
-                                  <div className="text-[14px] font-bold leading-tight pt-1">{day}</div>
-                                  <div className={`text-[11px] leading-tight pb-1 ${isRed ? "text-red-500 font-bold" : isSat ? "text-blue-500" : "text-muted-foreground"}`}>
-                                    {getDayOfWeek(date)}
+                                  <div className={`text-[14px] font-bold leading-tight pt-1 ${isT ? "text-red-600" : ""}`}>{day}</div>
+                                  <div className={`text-[11px] leading-tight pb-1 ${isT ? "text-red-600 font-bold" : isRed ? "text-red-500 font-bold" : isSat ? "text-blue-500" : "text-muted-foreground"}`}>
+                                    {isT ? "今日" : getDayOfWeek(date)}
                                   </div>
                                 </div>
                               );
@@ -929,7 +958,7 @@ export default function EventsPage() {
                                     const isRed = isSun || !!holidays.has(dateStr);
                                     const isT = today.getFullYear() === cm.year && today.getMonth() + 1 === cm.month && today.getDate() === day;
                                     return (
-                                      <div key={i} className={`border-r ${isT ? "bg-primary/5" : isRed ? "bg-red-50/30" : isSat ? "bg-blue-50/30" : ""}`} />
+                                      <div key={i} className={`border-r ${isT ? "bg-red-50/40 border-l-2 border-l-red-500" : isRed ? "bg-red-50/30" : isSat ? "bg-blue-50/30" : ""}`} />
                                     );
                                   })}
                                 </div>
