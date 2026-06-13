@@ -13,7 +13,8 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { Upload, Search } from "lucide-react";
+import { Upload, Search, Info } from "lucide-react";
+import Link from "next/link";
 import { usePermission } from "@/hooks/usePermission";
 import { CustomerImportDialog } from "./CustomerImportDialog";
 import { segKey, type Customer, type CustomerSegment, type SegmentMaster } from "./types";
@@ -138,6 +139,25 @@ export function CustomerListTab({ segments }: Props) {
     return vs[0].visited_on || vs[0].events?.start_date || null;
   };
 
+  /** 来場回数バッジ。3回以上は常連として★付き＆色を変える */
+  const visitBadge = (count: number) => {
+    if (count === 0) return <span className="text-muted-foreground text-sm">—</span>;
+    const regular = count >= 3;
+    return (
+      <span
+        className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-bold whitespace-nowrap ${
+          regular
+            ? "bg-amber-100 text-amber-800 border border-amber-300"
+            : "bg-blue-100 text-blue-800 border border-blue-200"
+        }`}
+        title={regular ? "常連（3回以上ご来場）" : undefined}
+      >
+        {regular && <span aria-hidden>★</span>}
+        {count}回
+      </span>
+    );
+  };
+
   const segBadges = (c: Customer) => {
     const segs = custSegs.get(c.id) || [];
     return segs.map((s) => (
@@ -172,9 +192,16 @@ export function CustomerListTab({ segments }: Props) {
         </div>
       </div>
 
-      <div className="text-xs text-muted-foreground">
-        ※ 名簿CSVの取込は、通常は<span className="font-semibold text-foreground">「DMハガキ」画面の各催事の「名簿」ボタン</span>から行ってください（催事にひも付き、来場の照合や反応率に使われます）。
-        この画面の「マスタ一括取込」は補助用です（初回の一括登録／区分の付け直し／住所変更などの情報更新）。
+      <div className="flex items-start gap-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-900">
+        <Info className="h-4 w-4 mt-0.5 shrink-0 text-amber-600" />
+        <div>
+          名簿CSVの取込は、通常は{" "}
+          <Link href="/dm" className="font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-900">
+            「DMハガキ」画面
+          </Link>
+          {" "}の各催事の「名簿」ボタンから行ってください（催事にひも付き、来場の照合や反応率に使われます）。
+          この画面の「マスタ一括取込」は補助用です（初回の一括登録／区分の付け直しなど）。
+        </div>
       </div>
 
       {totalCount === 0 && (
@@ -189,23 +216,23 @@ export function CustomerListTab({ segments }: Props) {
       {(totalCount ?? 0) > 0 && (
         <Card>
           <CardContent className="p-0">
-            <Table>
+            {/* PC・タブレット: テーブル表示 */}
+            <Table className="hidden md:table">
               <TableHeader>
                 <TableRow>
                   <TableHead>番号</TableHead>
                   <TableHead>氏名</TableHead>
-                  <TableHead className="hidden md:table-cell">カナ</TableHead>
-                  <TableHead className="hidden lg:table-cell">住所</TableHead>
+                  <TableHead>カナ</TableHead>
                   <TableHead>来場</TableHead>
-                  <TableHead className="hidden md:table-cell">最終来場</TableHead>
+                  <TableHead>最終来場</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading && (
-                  <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-6">読み込み中…</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-6">読み込み中…</TableCell></TableRow>
                 )}
                 {!loading && customers.length === 0 && (
-                  <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-6">該当する顧客がいません</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-6">該当する顧客がいません</TableCell></TableRow>
                 )}
                 {!loading && customers.map((c) => {
                   const last = lastVisitOf(c);
@@ -214,15 +241,44 @@ export function CustomerListTab({ segments }: Props) {
                     <TableRow key={c.id} className="cursor-pointer" onClick={() => openDetail(c)}>
                       <TableCell className="font-mono text-xs">{c.customer_no}</TableCell>
                       <TableCell className="font-medium">{c.name}</TableCell>
-                      <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{c.kana || "—"}</TableCell>
-                      <TableCell className="hidden lg:table-cell text-xs text-muted-foreground max-w-[260px] truncate">{c.address || "—"}</TableCell>
-                      <TableCell>{count > 0 ? `${count}回` : "—"}</TableCell>
-                      <TableCell className="hidden md:table-cell text-xs">{last || "—"}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{c.kana || "—"}</TableCell>
+                      <TableCell>{visitBadge(count)}</TableCell>
+                      <TableCell className="text-xs">{last || "—"}</TableCell>
                     </TableRow>
                   );
                 })}
               </TableBody>
             </Table>
+
+            {/* スマホ: カード表示 */}
+            <div className="md:hidden divide-y">
+              {loading && <div className="text-center text-muted-foreground py-6 text-sm">読み込み中…</div>}
+              {!loading && customers.length === 0 && (
+                <div className="text-center text-muted-foreground py-6 text-sm">該当する顧客がいません</div>
+              )}
+              {!loading && customers.map((c) => {
+                const last = lastVisitOf(c);
+                const count = visits.get(c.id)?.length ?? 0;
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => openDetail(c)}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-left active:bg-muted transition-colors"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium truncate">{c.name}</div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        #{c.customer_no}{c.kana ? ` ／ ${c.kana}` : ""}
+                      </div>
+                      {last && <div className="text-[11px] text-muted-foreground mt-0.5">最終来場 {last}</div>}
+                    </div>
+                    <div className="shrink-0">{visitBadge(count)}</div>
+                  </button>
+                );
+              })}
+            </div>
+
             {!loading && customers.length === 100 && (
               <div className="px-4 py-2 text-xs text-muted-foreground border-t">
                 先頭100件を表示しています。検索で絞り込んでください。
@@ -246,9 +302,8 @@ export function CustomerListTab({ segments }: Props) {
               <div className="space-y-3 text-sm">
                 <div className="grid grid-cols-[5rem_1fr] gap-y-1.5">
                   <span className="text-muted-foreground">カナ</span><span>{detail.kana || "—"}</span>
-                  <span className="text-muted-foreground">郵便番号</span><span>{detail.postal_code || "—"}</span>
-                  <span className="text-muted-foreground">住所</span><span>{detail.address || "—"}</span>
-                  <span className="text-muted-foreground">電話</span><span>{detail.phone || "—"}</span>
+                  <span className="text-muted-foreground">来場回数</span>
+                  <span>{visitBadge(visits.get(detail.id)?.length ?? 0)}</span>
                 </div>
                 <div>
                   <div className="text-muted-foreground mb-1">DM区分</div>
