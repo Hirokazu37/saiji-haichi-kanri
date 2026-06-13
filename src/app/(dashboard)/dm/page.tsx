@@ -9,7 +9,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import Link from "next/link";
-import { Upload } from "lucide-react";
+import { Upload, Search, CheckCircle2, AlertTriangle } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
 import { CustomerImportDialog } from "@/components/customers/CustomerImportDialog";
 import { segKey, type SegmentMaster } from "@/components/customers/types";
@@ -45,8 +45,14 @@ export default function DMListPage() {
   const supabase = createClient();
   const [events, setEvents] = useState<EventDM[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<"all" | "notDone">("all");
+  // ステータス絞り込み: すべて / 未完了 / ステータス単体
+  const [filter, setFilter] = useState<"all" | "notDone" | "未着手" | "校正中" | "印刷済み">("all");
   const [includePast, setIncludePast] = useState(false);
+  const [query, setQuery] = useState("");
+  // 並び順: 会期が近い順（昇順）/ 新しい順（降順）
+  const [sortDesc, setSortDesc] = useState(false);
+  // 催事ID → 取り込んだ名簿の人数（取込状況の可視化）
+  const [rosterCounts, setRosterCounts] = useState<Map<string, number>>(new Map());
   const [savedId, setSavedId] = useState<string | null>(null);
   const [segmentsByVenueKey, setSegmentsByVenueKey] = useState<Map<string, SegmentRow[]>>(new Map());
   // 催事ID → 選択中のDM区分キー("kbn-code")の集合
@@ -56,7 +62,7 @@ export default function DMListPage() {
   const [allSegments, setAllSegments] = useState<SegmentMaster[]>([]);
 
   const fetchData = useCallback(async () => {
-    const [evRes, segRes, venRes, linkRes] = await Promise.all([
+    const [evRes, segRes, venRes, linkRes, rosterRes] = await Promise.all([
       supabase
         .from("events")
         .select("id, name, venue, store_name, start_date, end_date, status, dm_status, dm_count")
@@ -64,9 +70,16 @@ export default function DMListPage() {
       supabase.from("sanchoku_segments").select("kbn_no, code, segment_name, venue_id").order("kbn_no").order("code"),
       supabase.from("venue_master").select("id, venue_name, store_name"),
       supabase.from("event_dm_segments").select("event_id, kbn_no, code"),
+      supabase.from("event_roster_counts").select("event_id, roster_count"),
     ]);
     setEvents(evRes.data || []);
     setAllSegments((segRes.data as SegmentMaster[]) || []);
+    // 催事ごとの名簿人数（取込状況の表示用）
+    const rc = new Map<string, number>();
+    for (const r of (rosterRes.data as { event_id: string; roster_count: number }[]) || []) {
+      rc.set(r.event_id, r.roster_count);
+    }
+    setRosterCounts(rc);
     // 催事ごとの選択済みDM区分
     const selMap = new Map<string, Set<string>>();
     for (const l of (linkRes.data as { event_id: string; kbn_no: number; code: number }[]) || []) {
@@ -146,28 +159,42 @@ export default function DMListPage() {
   // 会期終了済 (end_date < today) はデフォルトで除外。includePast=true で含める。
   const isUpcoming = (e: EventDM) => e.end_date >= today;
 
-  const filtered = filter === "notDone"
-    ? events.filter(
-        (e) =>
-          e.dm_status !== "印刷済み" &&
-          e.dm_status !== null &&
-          e.status !== "終了" &&
-          (includePast || isUpcoming(e))
-      )
-    : events.filter((e) => e.dm_status !== null && (includePast || isUpcoming(e)));
+  /** 開始日まであと何日か（負なら開催中/終了済み、未開始のみ正の値） */
+  const daysToStart = (e: EventDM): number => {
+    const start = new Date(e.start_date + "T00:00:00");
+    const now = new Date(today + "T00:00:00");
+    return Math.round((start.getTime() - now.getTime()) / 86400000);
+  };
+
+  // DM対象（dm_status が設定されている）かつ過去フィルタを満たす催事が母集団
+  const baseEvents = events.filter((e) => e.dm_status !== null && (includePast || isUpcoming(e)));
+
+  const q = query.trim().toLowerCase();
+  const matchesQuery = (e: EventDM) =>
+    q === "" ||
+    `${e.venue} ${e.store_name || ""} ${e.name || ""}`.toLowerCase().includes(q);
+
+  const matchesStatus = (e: EventDM) => {
+    if (filter === "all") return true;
+    if (filter === "notDone") return e.dm_status !== "印刷済み" && e.status !== "終了";
+    return e.dm_status === filter;
+  };
+
+  const filtered = baseEvents
+    .filter((e) => matchesStatus(e) && matchesQuery(e))
+    .sort((a, b) =>
+      sortDesc ? b.start_date.localeCompare(a.start_date) : a.start_date.localeCompare(b.start_date)
+    );
 
   if (loading) return <p className="text-muted-foreground">読み込み中...</p>;
 
-  const allDmEvents = events.filter(
-    (e) => e.dm_status !== null && (includePast || isUpcoming(e))
-  );
-  const notDoneCount = events.filter(
-    (e) =>
-      e.dm_status !== "印刷済み" &&
-      e.dm_status !== null &&
-      e.status !== "終了" &&
-      (includePast || isUpcoming(e))
-  ).length;
+  // 各チップの件数
+  const countOf = (f: typeof filter) =>
+    baseEvents.filter((e) => {
+      if (f === "all") return true;
+      if (f === "notDone") return e.dm_status !== "印刷済み" && e.status !== "終了";
+      return e.dm_status === f;
+    }).length;
 
   return (
     <div className="space-y-4">
@@ -182,18 +209,48 @@ export default function DMListPage() {
         ※ 「区分」列のバッジをクリックすると、この催事のDMをどの名簿（区分）に出したかを記録できます（緑＝選択中）。顧客・来場管理の抽出で使われます。
       </p>
 
-      <div className="flex gap-2 flex-wrap items-center print:hidden">
-        <Button variant={filter === "all" ? "default" : "outline"} size="sm" onClick={() => setFilter("all")}>すべて ({allDmEvents.length})</Button>
-        <Button variant={filter === "notDone" ? "default" : "outline"} size="sm" onClick={() => setFilter("notDone")}>未完了のみ ({notDoneCount})</Button>
-        <label className="ml-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={includePast}
-            onChange={(e) => setIncludePast(e.target.checked)}
-            className="h-3.5 w-3.5"
+      <div className="space-y-2 print:hidden">
+        {/* 検索窓 */}
+        <div className="relative max-w-sm">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="百貨店名・催事名で検索（例: 阪急 / 横浜）"
+            className="pl-8 h-9"
           />
-          過去も見る（会期終了済）
-        </label>
+        </div>
+        {/* ステータス絞り込みチップ */}
+        <div className="flex gap-1.5 flex-wrap items-center">
+          {([
+            ["all", "すべて"],
+            ["notDone", "未完了のみ"],
+            ["未着手", "未着手"],
+            ["校正中", "校正中"],
+            ["印刷済み", "印刷済み"],
+          ] as const).map(([key, label]) => (
+            <Button
+              key={key}
+              variant={filter === key ? "default" : "outline"}
+              size="sm"
+              onClick={() => setFilter(key)}
+            >
+              {label} ({countOf(key)})
+            </Button>
+          ))}
+          <Button variant="ghost" size="sm" onClick={() => setSortDesc((v) => !v)} title="会期の並び順を切り替え">
+            会期: {sortDesc ? "新しい順" : "近い順"}
+          </Button>
+          <label className="ml-1 inline-flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={includePast}
+              onChange={(e) => setIncludePast(e.target.checked)}
+              className="h-3.5 w-3.5"
+            />
+            過去も見る（会期終了済）
+          </label>
+        </div>
       </div>
 
       <Card>
@@ -251,9 +308,27 @@ export default function DMListPage() {
                     <TableCell className="text-sm text-muted-foreground">{e.name || "—"}</TableCell>
                     <TableCell className="text-sm hidden md:table-cell">
                       {e.start_date} 〜 {e.end_date}
-                      {isPast && (
+                      {isPast ? (
                         <span className="ml-1 text-[10px] text-muted-foreground">（終了）</span>
-                      )}
+                      ) : (() => {
+                        const d = daysToStart(e);
+                        if (d < 0) {
+                          return <span className="ml-1 text-[10px] font-medium text-green-700">開催中</span>;
+                        }
+                        // DM未完了で会期が近いほど強く警告（赤: 7日以内 / 橙: 14日以内）
+                        const urgent = !isDone && d <= 7;
+                        const soon = !isDone && d <= 14;
+                        const cls = urgent
+                          ? "bg-red-100 text-red-700 font-bold"
+                          : soon
+                          ? "bg-amber-100 text-amber-700 font-medium"
+                          : "text-muted-foreground";
+                        return (
+                          <span className={`ml-1 inline-block text-[10px] rounded px-1 ${cls}`}>
+                            あと{d}日{urgent ? " ⚠" : ""}
+                          </span>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell>
                       {canEdit ? (
@@ -298,8 +373,12 @@ export default function DMListPage() {
                             type="number"
                             value={e.dm_count ?? ""}
                             onChange={(ev) => updateField(e.id, "dm_count", ev.target.value ? parseInt(ev.target.value) : null)}
-                            placeholder="枚数"
-                            className="h-8 text-sm w-20 bg-white"
+                            placeholder="未入力"
+                            className={`h-8 text-sm w-20 ${
+                              e.dm_count == null && !isPast
+                                ? "bg-amber-50 border-amber-300 placeholder:text-amber-500"
+                                : "bg-white"
+                            }`}
                             min="0"
                           />
                           {savedId === e.id && (
@@ -311,17 +390,34 @@ export default function DMListPage() {
                       )}
                     </TableCell>
                     <TableCell>
-                      {canImport && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openRosterImport(e)}
-                          title="この催事のDM名簿CSVを取り込む"
-                          className="whitespace-nowrap"
-                        >
-                          <Upload className="h-3.5 w-3.5 mr-1" />
-                          名簿
-                        </Button>
+                      {canImport ? (
+                        <div className="flex items-center gap-1.5">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openRosterImport(e)}
+                            title="この催事のDM名簿CSVを取り込む"
+                            className="whitespace-nowrap"
+                          >
+                            <Upload className="h-3.5 w-3.5 mr-1" />
+                            名簿
+                          </Button>
+                          {rosterCounts.has(e.id) ? (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] text-green-700 font-medium whitespace-nowrap" title="名簿CSV取込済み">
+                              <CheckCircle2 className="h-3 w-3" />
+                              {rosterCounts.get(e.id)!.toLocaleString()}人
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground whitespace-nowrap" title="名簿CSV未取込">
+                              <AlertTriangle className="h-3 w-3" />
+                              未取込
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        rosterCounts.has(e.id) && (
+                          <span className="text-[10px] text-green-700">{rosterCounts.get(e.id)!.toLocaleString()}人</span>
+                        )
                       )}
                     </TableCell>
                   </TableRow>
