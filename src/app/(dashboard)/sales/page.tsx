@@ -1045,7 +1045,8 @@ export default function SalesPage() {
               return (
                 <Card key={m.ym} className="overflow-hidden print:break-inside-avoid">
                   <CardContent className="p-0 overflow-x-auto print:overflow-visible">
-                    <div className="min-w-[600px]">
+                    {/* スマホでは1日あたりの幅を広げてバー内の売上金額が見切れないようにする */}
+                    <div className="min-w-[960px] md:min-w-[600px]">
                       {/* 月タイトル + 日付ヘッダ */}
                       <div className="flex border-b bg-white">
                         <div className="w-14 shrink-0 border-r flex flex-col items-center justify-center py-1.5 bg-emerald-50">
@@ -1121,11 +1122,11 @@ export default function SalesPage() {
                                       title={`${venueLabel} (${en.event.start_date}〜${en.event.end_date}) ${salesLabel}`}
                                     >
                                       <div className="truncate font-semibold leading-tight text-[11px]">{venueLabel}</div>
-                                      <div className="truncate text-[10px] leading-tight">
-                                        期間: {en.event.start_date.slice(5)}〜{en.event.end_date.slice(5)}
+                                      <div className="truncate text-[10px] leading-tight text-black/60">
+                                        {en.event.start_date.slice(5)}〜{en.event.end_date.slice(5)}
                                       </div>
-                                      <div className="truncate text-[10px] leading-tight font-semibold">
-                                        売上(税込): {salesLabel}
+                                      <div className="truncate text-[13px] leading-tight font-bold">
+                                        {salesLabel}
                                       </div>
                                     </Link>
                                   );
