@@ -159,7 +159,16 @@ export default function DMListPage() {
   // 会期終了済 (end_date < today) はデフォルトで除外。includePast=true で含める。
   const isUpcoming = (e: EventDM) => e.end_date >= today;
 
-  /** 開始日まであと何日か（負なら開催中/終了済み、未開始のみ正の値） */
+  /** DM投函期限（会期開始の7日前）まであと何日か */
+  const MAIL_LEAD_DAYS = 7;
+  const daysToDeadline = (e: EventDM): number => {
+    const deadline = new Date(e.start_date + "T00:00:00");
+    deadline.setDate(deadline.getDate() - MAIL_LEAD_DAYS);
+    const now = new Date(today + "T00:00:00");
+    return Math.round((deadline.getTime() - now.getTime()) / 86400000);
+  };
+
+  /** 開始日まであと何日か（開催中判定用） */
   const daysToStart = (e: EventDM): number => {
     const start = new Date(e.start_date + "T00:00:00");
     const now = new Date(today + "T00:00:00");
@@ -310,22 +319,28 @@ export default function DMListPage() {
                       {e.start_date} 〜 {e.end_date}
                       {isPast ? (
                         <span className="ml-1 text-[10px] text-muted-foreground">（終了）</span>
+                      ) : daysToStart(e) < 0 ? (
+                        <span className="ml-1 text-[10px] font-medium text-green-700">開催中</span>
+                      ) : isDone ? (
+                        <span className="ml-1 text-[10px] text-muted-foreground">投函済み</span>
                       ) : (() => {
-                        const d = daysToStart(e);
-                        if (d < 0) {
-                          return <span className="ml-1 text-[10px] font-medium text-green-700">開催中</span>;
-                        }
-                        // DM未完了で会期が近いほど強く警告（赤: 7日以内 / 橙: 14日以内）
-                        const urgent = !isDone && d <= 7;
-                        const soon = !isDone && d <= 14;
-                        const cls = urgent
-                          ? "bg-red-100 text-red-700 font-bold"
-                          : soon
-                          ? "bg-amber-100 text-amber-700 font-medium"
+                        // DM投函期限（会期7日前）までの残り日数で警告
+                        const d = daysToDeadline(e);
+                        const cls = d < 0
+                          ? "bg-red-200 text-red-800 font-bold"      // 期限超過
+                          : d <= 3
+                          ? "bg-red-100 text-red-700 font-bold"      // 直前
+                          : d <= 7
+                          ? "bg-amber-100 text-amber-700 font-medium" // 間近
                           : "text-muted-foreground";
+                        const text = d < 0
+                          ? `投函期限 ${-d}日超過 ⚠`
+                          : d === 0
+                          ? "投函期限 今日 ⚠"
+                          : `投函期限まで${d}日`;
                         return (
                           <span className={`ml-1 inline-block text-[10px] rounded px-1 ${cls}`}>
-                            あと{d}日{urgent ? " ⚠" : ""}
+                            {text}
                           </span>
                         );
                       })()}
