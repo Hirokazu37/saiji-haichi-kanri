@@ -116,6 +116,8 @@ export default function SalesPage() {
     return Array.from(ys).sort();
   }, [events]);
   const [calendarYear, setCalendarYear] = useState<number>(() => new Date().getFullYear());
+  // カレンダーの1日あたりの横幅(px)。+/- で拡大縮小し、細い催事バーの文字を読めるようにする
+  const [calDayWidth, setCalDayWidth] = useState<number>(40);
   type CalEntry = { event: EventLite; sales: { excluded: number; included: number; hasData: boolean; source?: "daily" | "revenue" } };
   const calendarMonths = useMemo(() => {
     type MonthData = {
@@ -1035,19 +1037,39 @@ export default function SalesPage() {
                 <CalendarIcon className="h-4 w-4 text-emerald-700" />
                 <h2 className="text-sm font-bold">{calendarYear}年 催事カレンダー（売上付き）</h2>
               </div>
-              <span className="inline-flex items-center gap-2 text-[10px] flex-wrap">
-                <span className="inline-flex items-center gap-0.5"><span className="inline-block w-3 h-3 bg-emerald-100 border-2 border-emerald-500 rounded-sm"></span>売上入力済</span>
-                <span className="inline-flex items-center gap-0.5"><span className="inline-block w-3 h-3 bg-yellow-100 border-2 border-yellow-500 rounded-sm"></span>売上未入力(終了済)</span>
-                <span className="inline-flex items-center gap-0.5"><span className="inline-block w-3 h-3 bg-gray-100 border-2 border-gray-400 rounded-sm"></span>未開催</span>
-              </span>
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* カレンダーの横幅ズーム（文字サイズは変えず、1日の幅を広げて細い催事も読めるように） */}
+                <div className="inline-flex items-center rounded-md border overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setCalDayWidth((w) => Math.max(28, w - 16))}
+                    className="px-2 h-7 text-sm font-bold bg-white hover:bg-muted disabled:opacity-40"
+                    disabled={calDayWidth <= 28}
+                    title="カレンダーを縮小"
+                  >−</button>
+                  <span className="px-2 text-[11px] text-muted-foreground select-none">幅</span>
+                  <button
+                    type="button"
+                    onClick={() => setCalDayWidth((w) => Math.min(120, w + 16))}
+                    className="px-2 h-7 text-sm font-bold bg-white border-l hover:bg-muted disabled:opacity-40"
+                    disabled={calDayWidth >= 120}
+                    title="カレンダーを拡大（細い催事の文字が読めるようになります）"
+                  >＋</button>
+                </div>
+                <span className="inline-flex items-center gap-2 text-[10px] flex-wrap">
+                  <span className="inline-flex items-center gap-0.5"><span className="inline-block w-3 h-3 bg-emerald-100 border-2 border-emerald-500 rounded-sm"></span>売上入力済</span>
+                  <span className="inline-flex items-center gap-0.5"><span className="inline-block w-3 h-3 bg-yellow-100 border-2 border-yellow-500 rounded-sm"></span>売上未入力(終了済)</span>
+                  <span className="inline-flex items-center gap-0.5"><span className="inline-block w-3 h-3 bg-gray-100 border-2 border-gray-400 rounded-sm"></span>未開催</span>
+                </span>
+              </div>
             </div>
             {calendarMonths.map((m) => {
               const todayStr = new Date().toISOString().slice(0, 10);
               return (
                 <Card key={m.ym} className="overflow-hidden print:break-inside-avoid">
                   <CardContent className="p-0 overflow-x-auto print:overflow-visible">
-                    {/* スマホでは1日あたりの幅を広げてバー内の売上金額が見切れないようにする */}
-                    <div className="min-w-[1200px] md:min-w-[600px]">
+                    {/* 1日あたりの幅(calDayWidth)×日数 + ラベル列で全体幅を決める。＋/−で拡大縮小 */}
+                    <div style={{ minWidth: m.daysInMonth * calDayWidth + 56 }}>
                       {/* 月タイトル + 日付ヘッダ */}
                       <div className="flex border-b bg-white">
                         <div className="w-14 shrink-0 border-r flex flex-col items-center justify-center py-1.5 bg-emerald-50">
