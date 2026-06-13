@@ -926,7 +926,7 @@ export default function EventsPage() {
                                 >
                                   <div className={`text-[14px] font-bold leading-tight pt-1 ${isT ? "text-red-600" : ""}`}>{day}</div>
                                   <div className={`text-[11px] leading-tight pb-1 ${isT ? "text-red-600 font-bold" : isRed ? "text-red-500 font-bold" : isSat ? "text-blue-500" : "text-muted-foreground"}`}>
-                                    {isT ? "今日" : getDayOfWeek(date)}
+                                    {getDayOfWeek(date)}
                                   </div>
                                 </div>
                               );
