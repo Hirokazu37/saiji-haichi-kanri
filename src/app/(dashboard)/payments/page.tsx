@@ -1315,7 +1315,7 @@ function PaymentsPageInner() {
           表示する入金レコードがありません。
         </div>
       ) : (
-        <div className="rounded-md border overflow-x-auto print:hidden">
+        <div className="rounded-md border overflow-x-auto print:hidden hidden md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -1400,6 +1400,66 @@ function PaymentsPageInner() {
               ))}
             </TableBody>
           </Table>
+        </div>
+      )}
+
+      {/* スマホ: カード表示 */}
+      {!loading && filtered.length > 0 && (
+        <div className="md:hidden space-y-2 print:hidden">
+          {filtered.map((p) => {
+            const planned = p.planned_amount != null
+              ? toIncludedAmt(p.planned_amount, p.planned_tax_type)
+              : null;
+            return (
+              <Card key={p.id}>
+                <CardContent className="p-3 space-y-1.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      {p.events && (
+                        <Link href={`/events/${p.event_id}`} className="font-medium text-sm hover:underline inline-flex items-center gap-1">
+                          <span className="truncate">{eventLabel(p.events)}</span>
+                          {p.installment_total > 1 && (
+                            <span className="text-[9px] px-1 rounded bg-blue-100 text-blue-800 font-bold shrink-0">{p.installment_no}/{p.installment_total}</span>
+                          )}
+                        </Link>
+                      )}
+                      <div className="text-[11px] text-muted-foreground">{paymentDisplayPayer(p)}</div>
+                    </div>
+                    <Badge variant="outline" className={`text-xs shrink-0 ${STATUS_COLOR[p.status]}`}>{p.status}</Badge>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground text-xs">
+                      予定 {p.planned_date || "—"}
+                    </span>
+                    <span className="font-semibold">
+                      {planned != null ? `¥${planned.toLocaleString()}` : "—"}
+                    </span>
+                  </div>
+                  {p.actual_date && (
+                    <div className="flex items-center justify-between text-sm text-emerald-700">
+                      <span className="text-xs">入金 {p.actual_date}</span>
+                      <span className="font-semibold">{p.actual_amount != null ? `¥${p.actual_amount.toLocaleString()}` : "—"}</span>
+                    </div>
+                  )}
+                  {canEdit && (
+                    <div className="flex gap-2 pt-1">
+                      {p.status !== "入金済" && (
+                        <Button size="sm" variant="outline" className="flex-1 h-9" onClick={() => markPaid(p)}>
+                          ✓ 入金済にする
+                        </Button>
+                      )}
+                      <Button size="sm" variant="outline" className="h-9 px-3" onClick={() => openEdit(p)} aria-label="編集">
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-9 px-3" onClick={() => { setDeletingId(p.id); setDeleteOpen(true); }} aria-label="削除">
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
         </TabsContent>
