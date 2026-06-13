@@ -116,8 +116,22 @@ export default function SalesPage() {
     return Array.from(ys).sort();
   }, [events]);
   const [calendarYear, setCalendarYear] = useState<number>(() => new Date().getFullYear());
-  // カレンダーの1日あたりの横幅(px)。+/- で拡大縮小し、細い催事バーの文字を読めるようにする
+  // カレンダーの1日あたりの横幅(px)。ピンチ操作 or +/- で拡大縮小し、細い催事バーの文字を読めるようにする
   const [calDayWidth, setCalDayWidth] = useState<number>(40);
+  // 2本指ピンチで幅を変える（文字サイズは変えずに1日の幅だけ拡大）
+  const pinchRef = useRef<{ dist: number; width: number } | null>(null);
+  const touchDist = (t: React.TouchList) =>
+    Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  const onCalTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) pinchRef.current = { dist: touchDist(e.touches), width: calDayWidth };
+  };
+  const onCalTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && pinchRef.current) {
+      const ratio = touchDist(e.touches) / pinchRef.current.dist;
+      setCalDayWidth(Math.max(24, Math.min(160, Math.round(pinchRef.current.width * ratio))));
+    }
+  };
+  const onCalTouchEnd = () => { pinchRef.current = null; };
   type CalEntry = { event: EventLite; sales: { excluded: number; included: number; hasData: boolean; source?: "daily" | "revenue" } };
   const calendarMonths = useMemo(() => {
     type MonthData = {
@@ -1032,9 +1046,9 @@ export default function SalesPage() {
 
           {/* タブ: カレンダー */}
           <TabsContent value="calendar" keepMounted className="space-y-4 print:!block print:!opacity-100">
-            <div className="flex items-center justify-between flex-wrap gap-2 print:hidden">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between print:hidden">
               <div className="flex items-center gap-2">
-                <CalendarIcon className="h-4 w-4 text-emerald-700" />
+                <CalendarIcon className="h-4 w-4 text-emerald-700 shrink-0" />
                 <h2 className="text-sm font-bold">{calendarYear}年 催事カレンダー（売上付き）</h2>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
@@ -1067,8 +1081,14 @@ export default function SalesPage() {
               const todayStr = new Date().toISOString().slice(0, 10);
               return (
                 <Card key={m.ym} className="overflow-hidden print:break-inside-avoid">
-                  <CardContent className="p-0 overflow-x-auto print:overflow-visible">
-                    {/* 1日あたりの幅(calDayWidth)×日数 + ラベル列で全体幅を決める。＋/−で拡大縮小 */}
+                  <CardContent
+                    className="p-0 overflow-x-auto print:overflow-visible"
+                    style={{ touchAction: "pan-x pan-y" }}
+                    onTouchStart={onCalTouchStart}
+                    onTouchMove={onCalTouchMove}
+                    onTouchEnd={onCalTouchEnd}
+                  >
+                    {/* 1日あたりの幅(calDayWidth)×日数 + ラベル列で全体幅を決める。2本指ピンチ or ＋/−で拡大縮小 */}
                     <div style={{ minWidth: m.daysInMonth * calDayWidth + 56 }}>
                       {/* 月タイトル + 日付ヘッダ */}
                       <div className="flex border-b bg-white">
