@@ -1019,7 +1019,8 @@ export default function SalesPage() {
         <p className="text-muted-foreground">読み込み中...</p>
       ) : (
         <Tabs defaultValue="calendar" className="w-full">
-          <TabsList className="w-full justify-start print:hidden">
+          {/* スマホは3列×2段で折り返す（AI戦略まで読めるように）。md以上は1段 */}
+          <TabsList className="w-full justify-start print:hidden grid grid-cols-3 md:grid-cols-5 gap-1 h-auto">
             <TabsTrigger value="calendar"><CalendarIcon className="h-3.5 w-3.5" />カレンダー</TabsTrigger>
             <TabsTrigger value="monthly"><BarChart3 className="h-3.5 w-3.5" />月次サマリ</TabsTrigger>
             <TabsTrigger value="venue"><Store className="h-3.5 w-3.5" />会場別</TabsTrigger>
@@ -1046,7 +1047,7 @@ export default function SalesPage() {
                 <Card key={m.ym} className="overflow-hidden print:break-inside-avoid">
                   <CardContent className="p-0 overflow-x-auto print:overflow-visible">
                     {/* スマホでは1日あたりの幅を広げてバー内の売上金額が見切れないようにする */}
-                    <div className="min-w-[960px] md:min-w-[600px]">
+                    <div className="min-w-[1200px] md:min-w-[600px]">
                       {/* 月タイトル + 日付ヘッダ */}
                       <div className="flex border-b bg-white">
                         <div className="w-14 shrink-0 border-r flex flex-col items-center justify-center py-1.5 bg-emerald-50">
@@ -1080,7 +1081,7 @@ export default function SalesPage() {
                         Array.from({ length: m.trackCount }, (_, trackIdx) => {
                           const trackEntries = m.entries.filter((en) => m.trackMap.get(en.event.id) === trackIdx);
                           return (
-                            <div key={trackIdx} className={`flex border-b last:border-b-0 ${trackIdx % 2 === 1 ? "bg-slate-50/50" : "bg-white"}`} style={{ minHeight: 64 }}>
+                            <div key={trackIdx} className={`flex border-b last:border-b-0 ${trackIdx % 2 === 1 ? "bg-slate-50/50" : "bg-white"}`} style={{ minHeight: 74 }}>
                               <div className="w-14 shrink-0 border-r flex items-center justify-center text-[10px] font-bold text-muted-foreground">
                                 {TRACK_LABELS[trackIdx] || String(trackIdx + 1)}
                               </div>
@@ -1118,14 +1119,15 @@ export default function SalesPage() {
                                       key={en.event.id}
                                       href={`/events/${en.event.id}`}
                                       className={`absolute top-0.5 rounded border-2 text-[11px] leading-snug px-1 py-0.5 overflow-hidden hover:opacity-80 transition-opacity z-[1] cursor-pointer print:no-underline ${barColor}`}
-                                      style={{ left: `${left}%`, width: `${width}%`, height: 60 }}
+                                      style={{ left: `${left}%`, width: `${width}%`, height: 70 }}
                                       title={`${venueLabel} (${en.event.start_date}〜${en.event.end_date}) ${salesLabel}`}
                                     >
                                       <div className="truncate font-semibold leading-tight text-[11px]">{venueLabel}</div>
                                       <div className="truncate text-[10px] leading-tight text-black/60">
                                         {en.event.start_date.slice(5)}〜{en.event.end_date.slice(5)}
                                       </div>
-                                      <div className="truncate text-[13px] leading-tight font-bold">
+                                      {/* 金額は折り返して全部読めるように（短い催事でも省略しない） */}
+                                      <div className="text-[13px] leading-[1.1] font-bold break-all">
                                         {salesLabel}
                                       </div>
                                     </Link>
