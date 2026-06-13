@@ -25,6 +25,14 @@ type Visit = {
   customers: Pick<Customer, "id" | "customer_no" | "name" | "kana" | "address"> | null;
 };
 
+type UndoLogRow = {
+  id: string;
+  customer_id: string;
+  notes: string | null;
+  deleted_at: string;
+  customers: Pick<Customer, "customer_no" | "name"> | null;
+};
+
 type Feedback =
   | { kind: "ok"; customer: Customer; memo?: string }
   | { kind: "dup"; customer: Customer }
@@ -36,7 +44,7 @@ type Props = { segments: SegmentMaster[] };
 export function VisitEntryTab({ segments }: Props) {
   // 来場登録は社員（viewer）がメインで入力する運用のため、admin/viewer とも入力可。
   // limited はページ自体にアクセス不可（lib/access.ts）。
-  const { role } = usePermission();
+  const { role, displayName } = usePermission();
   const canRegister = role === "admin" || role === "viewer";
   const supabase = createClient();
   const [events, setEvents] = useState<EventLite[]>([]);
@@ -65,6 +73,8 @@ export function VisitEntryTab({ segments }: Props) {
   const [memoText, setMemoText] = useState("");
   // カレンダー表示用: 催事ID → 来場数・名簿数（集計ビューから取得）
   const [eventStats, setEventStats] = useState<Map<string, { visits: number; roster: number }>>(new Map());
+  // この催事で最近取り消した来場記録（誤操作の復元用）
+  const [undoLog, setUndoLog] = useState<UndoLogRow[]>([]);
   const numberRef = useRef<HTMLInputElement>(null);
 
   // 催事一覧（新しい順）
@@ -118,7 +128,21 @@ export function VisitEntryTab({ segments }: Props) {
     setVisits((data as unknown as Visit[]) || []);
   }, [supabase]);
 
-  useEffect(() => { fetchVisits(eventId); }, [eventId, fetchVisits]);
+  const fetchUndoLog = useCallback(async (evtId: string) => {
+    if (!evtId) { setUndoLog([]); return; }
+    const { data } = await supabase
+      .from("event_visit_undo_log")
+      .select("id, customer_id, notes, deleted_at, customers(customer_no, name)")
+      .eq("event_id", evtId)
+      .order("deleted_at", { ascending: false })
+      .limit(10);
+    setUndoLog((data as unknown as UndoLogRow[]) || []);
+  }, [supabase]);
+
+  useEffect(() => {
+    fetchVisits(eventId);
+    fetchUndoLog(eventId);
+  }, [eventId, fetchVisits, fetchUndoLog]);
 
   // カレンダー用の集計（来場数・名簿数）。選択画面に戻るたびに最新化
   useEffect(() => {
@@ -309,8 +333,29 @@ export function VisitEntryTab({ segments }: Props) {
     // スマホでの誤タップ防止に確認を挟む
     const name = visit.customers?.name ?? "この方";
     if (!window.confirm(`${name} 様の来場記録を取り消しますか？`)) return;
+    // 復元できるように、何を消したかをログに残してから削除する
+    await supabase.from("event_visit_undo_log").insert({
+      event_id: eventId,
+      customer_id: visit.customer_id,
+      notes: visit.notes,
+      deleted_by: displayName || null,
+    });
     await supabase.from("event_visits").delete().eq("id", visit.id);
     fetchVisits(eventId);
+    fetchUndoLog(eventId);
+  };
+
+  /** 誤って取り消した来場記録を復元する */
+  const restoreVisit = async (log: UndoLogRow) => {
+    const { error } = await supabase
+      .from("event_visits")
+      .insert({ event_id: eventId, customer_id: log.customer_id, notes: log.notes });
+    // 23505 = すでに登録済み（再入力などで復元済み）→ ログだけ片付ける
+    if (!error || error.code === "23505") {
+      await supabase.from("event_visit_undo_log").delete().eq("id", log.id);
+      fetchVisits(eventId);
+      fetchUndoLog(eventId);
+    }
   };
 
   /** 来場メモ（「今回5箱購入・発送依頼」など、その回だけの記録）を保存 */
@@ -564,6 +609,34 @@ export function VisitEntryTab({ segments }: Props) {
         <Card>
           <CardContent className="py-6 text-center text-sm text-muted-foreground">
             来場登録の権限がありません
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 最近取り消した記録（誤操作の復元用） */}
+      {eventId && canRegister && undoLog.length > 0 && (
+        <Card>
+          <CardContent className="pt-4 space-y-2">
+            <div className="font-medium text-amber-800">最近取り消した記録（押し間違いはここから復元できます）</div>
+            <div className="space-y-1.5">
+              {undoLog.map((l) => (
+                <div key={l.id} className="flex items-center gap-3 px-3 py-1.5 border border-amber-200 bg-amber-50/50 rounded-md">
+                  <span className="font-mono text-xs text-muted-foreground shrink-0">
+                    #{l.customers?.customer_no ?? "?"}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-medium">{l.customers?.name ?? "（削除された顧客）"}</span>
+                    {l.notes && <span className="ml-2 text-xs text-muted-foreground">📝 {l.notes}</span>}
+                  </div>
+                  <span className="text-[10px] text-muted-foreground shrink-0 hidden sm:inline">
+                    {l.deleted_at.slice(5, 16).replace("T", " ")} 取消
+                  </span>
+                  <Button size="sm" variant="outline" onClick={() => restoreVisit(l)}>
+                    復元
+                  </Button>
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
       )}
