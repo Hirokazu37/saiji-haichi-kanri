@@ -1522,7 +1522,7 @@ export default function SalesPage() {
               />
             </div>
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto hidden md:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -1551,6 +1551,32 @@ export default function SalesPage() {
                 })}
               </TableBody>
             </Table>
+            {filteredEvents.length > 100 && (
+              <p className="text-[10px] text-muted-foreground py-2 text-center">最大100件まで表示。絞り込み検索を使ってください。</p>
+            )}
+          </div>
+
+          {/* スマホ: カード表示 */}
+          <div className="md:hidden divide-y">
+            {filteredEvents.slice(0, 100).map((e) => {
+              const sales = salesByEvent.get(e.id);
+              return (
+                <Link
+                  key={e.id}
+                  href={`/events/${e.id}`}
+                  className="flex items-center gap-3 py-2.5 active:bg-muted transition-colors"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium truncate">{e.store_name ? `${e.venue} ${e.store_name}` : e.venue}</div>
+                    <div className="text-[11px] text-muted-foreground">{e.start_date} 〜 {e.end_date}</div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="font-semibold tabular-nums">{sales?.included ? `¥${sales.included.toLocaleString()}` : "—"}</div>
+                    <div className="text-[10px] text-muted-foreground tabular-nums">税抜 {sales?.excluded ? `¥${sales.excluded.toLocaleString()}` : "—"}</div>
+                  </div>
+                </Link>
+              );
+            })}
             {filteredEvents.length > 100 && (
               <p className="text-[10px] text-muted-foreground py-2 text-center">最大100件まで表示。絞り込み検索を使ってください。</p>
             )}
