@@ -141,6 +141,8 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
   const [recentLogs, setRecentLogs] = useState<ImportLog[]>([]);
   // 催事モード: 取込人数でDM枚数を更新するか
   const [updateDmCount, setUpdateDmCount] = useState(true);
+  // 全件マスタ照合: このCSVに無い顧客を「削除候補」にする（産直くんの全得意先CSVのときだけON）
+  const [markMissingAsRemoved, setMarkMissingAsRemoved] = useState(false);
   const [importing, setImporting] = useState(false);
 
   // 開いたとき、催事にひも付いた区分があれば最初から選んでおく
@@ -161,6 +163,7 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
     setFixedSeg("");
     setSuggestNote("");
     setUpdateDmCount(true);
+    setMarkMissingAsRemoved(false);
   };
 
   // ダイアログを開いたら直近の取込履歴を読む
@@ -368,6 +371,36 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
         }
       }
 
+      // 全件マスタ照合: このCSVに無い顧客を「削除候補」に、再登場した顧客は「有効」に戻す
+      let removedCount = 0;
+      if (!event && markMissingAsRemoved) {
+        const csvNoSet = new Set(byNo.keys());
+        setProgress("産直くんの全件と照合中…");
+        const all: { id: string; customer_no: string; status: string }[] = [];
+        for (let from = 0; ; from += 1000) {
+          const { data, error: selErr } = await supabase
+            .from("customers")
+            .select("id, customer_no, status")
+            .order("customer_no")
+            .range(from, from + 999);
+          if (selErr) throw new Error(selErr.message);
+          const part = (data as { id: string; customer_no: string; status: string }[]) || [];
+          all.push(...part);
+          if (part.length < 1000) break;
+        }
+        const nowIso = new Date().toISOString();
+        const missingIds = all.filter((c) => !csvNoSet.has(c.customer_no) && c.status === "有効").map((c) => c.id);
+        const reappearedIds = all.filter((c) => csvNoSet.has(c.customer_no) && c.status === "削除候補").map((c) => c.id);
+        removedCount = missingIds.length;
+        for (const part of chunk(missingIds, 300)) {
+          const { error: upErr } = await supabase.from("customers").update({ status: "削除候補" }).in("id", part);
+          if (upErr) throw new Error(upErr.message);
+        }
+        for (const part of chunk(reappearedIds, 300)) {
+          await supabase.from("customers").update({ status: "有効", master_seen_at: nowIso }).in("id", part);
+        }
+      }
+
       setProgress("");
       // 取込履歴を記録（取り違えに後から気付けるように）
       await supabase.from("customer_import_logs").insert({
@@ -393,6 +426,7 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
       const notes = [
         dupNote > 0 ? `重複 ${dupNote} 行を1件にまとめ` : "",
         skipped > 0 ? `番号または氏名が空の ${skipped} 行はスキップ` : "",
+        removedCount > 0 ? `このCSVに無い ${removedCount} 件を「削除候補」に変更` : "",
       ].filter(Boolean).join("、");
       setResult(`${records.length.toLocaleString()}件を${segNote}取り込みました${notes ? `（${notes}）` : ""}`);
       onImported();
@@ -575,6 +609,23 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
                     className="h-4 w-4"
                   />
                   この催事のDM枚数を名簿の人数（{(rows.length - dupCount).toLocaleString()}人）で更新する
+                </label>
+              )}
+
+              {!event && (
+                <label className="flex items-start gap-2 text-sm cursor-pointer select-none rounded-md bg-rose-50 border border-rose-200 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    checked={markMissingAsRemoved}
+                    onChange={(e) => setMarkMissingAsRemoved(e.target.checked)}
+                    className="h-4 w-4 mt-0.5"
+                  />
+                  <span className="text-rose-900">
+                    このCSVに<span className="font-bold">無い顧客</span>を「削除候補」にする
+                    <span className="block text-xs text-rose-700">
+                      ※産直くんの<span className="font-bold">全得意先CSV</span>を取り込むときだけONにしてください。区分別の名簿CSVでONにすると、他店の顧客まで削除候補になってしまいます。
+                    </span>
+                  </span>
                 </label>
               )}
 
