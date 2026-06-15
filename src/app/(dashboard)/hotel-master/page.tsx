@@ -264,7 +264,7 @@ export default function HotelMasterPage() {
       {/* テーブル */}
       <Card>
         <CardContent className="p-0 overflow-x-auto">
-          <Table>
+          <Table className="min-w-[900px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-1" />

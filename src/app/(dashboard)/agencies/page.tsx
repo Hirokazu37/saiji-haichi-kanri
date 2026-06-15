@@ -678,7 +678,7 @@ export default function AgenciesPage() {
 
       {/* 一覧 */}
       <div className="rounded-md border overflow-x-auto">
-        <Table>
+        <Table className="min-w-[880px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-1" />

@@ -150,7 +150,7 @@ export default function PayerMasterPage() {
         </div>
       ) : (
         <div className="rounded-md border overflow-x-auto">
-          <Table>
+          <Table className="min-w-[640px]">
             <TableHeader>
               <TableRow>
                 <TableHead>名前</TableHead>

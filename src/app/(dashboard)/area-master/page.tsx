@@ -275,7 +275,7 @@ export default function AreaMasterPage() {
         <p className="text-muted-foreground">エリアが登録されていません。「新規登録」から追加してください。</p>
       ) : (
         <div className="rounded-md border overflow-x-auto">
-          <Table>
+          <Table className="min-w-[800px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10"></TableHead>

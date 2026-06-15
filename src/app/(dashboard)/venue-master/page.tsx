@@ -828,7 +828,7 @@ export default function VenueMasterPage() {
       {/* 一覧テーブル */}
       <Card>
         <CardContent className="p-0 overflow-x-auto">
-          <Table>
+          <Table className="min-w-[1100px]">
             <TableHeader>
               <TableRow>
                 {canEdit && <TableHead className="w-8" />}

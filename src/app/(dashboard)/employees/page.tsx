@@ -192,7 +192,7 @@ export default function EmployeesPage() {
         </p>
       ) : (
         <div className="rounded-md border overflow-x-auto">
-          <Table>
+          <Table className="min-w-[720px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10"></TableHead>

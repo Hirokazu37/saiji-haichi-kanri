@@ -263,8 +263,8 @@ export default function DMListPage() {
       </div>
 
       <Card>
-        <CardContent className="p-0 overflow-x-auto">
-          <Table>
+        <CardContent className="p-0">
+          <Table className="min-w-[1000px]">
             <TableHeader>
               <TableRow>
                 <TableHead>催事</TableHead>

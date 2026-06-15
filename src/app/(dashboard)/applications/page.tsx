@@ -85,7 +85,7 @@ export default function ApplicationsListPage() {
 
       <Card>
         <CardContent className="p-0 overflow-x-auto">
-          <Table>
+          <Table className="min-w-[760px]">
             <TableHeader>
               <TableRow>
                 <TableHead>催事</TableHead>

@@ -250,7 +250,7 @@ export default function DmSegmentsPage() {
                 {filtered.filter((s) => s.kbn_no === kbn).length}件
               </span>
             </div>
-            <Table>
+            <Table className="min-w-[720px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-20">コード</TableHead>

@@ -304,7 +304,7 @@ export default function UsersPage() {
         <p className="text-muted-foreground">ユーザーが登録されていません</p>
       ) : (
         <div className="border rounded-lg overflow-x-auto">
-          <Table>
+          <Table className="min-w-[820px]">
             <TableHeader>
               <TableRow>
                 <TableHead>ユーザー名</TableHead>
