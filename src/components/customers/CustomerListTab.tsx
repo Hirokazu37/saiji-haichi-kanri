@@ -177,6 +177,27 @@ export function CustomerListTab({ segments }: Props) {
     ));
   };
 
+  /** その顧客の所属百貨店名（DM区分名）の配列 */
+  const storeNamesOf = (c: Customer): string[] =>
+    (custSegs.get(c.id) || []).map((s) => segNameMap.get(segKey(s.kbn_no, s.code)) || `区分${s.kbn_no}-${s.code}`);
+
+  /** 所属百貨店をコンパクトなバッジで（多い場合は先頭2件＋残り件数） */
+  const storeBadges = (c: Customer) => {
+    const names = storeNamesOf(c);
+    if (names.length === 0) return <span className="text-xs text-muted-foreground">—</span>;
+    const shown = names.slice(0, 2);
+    return (
+      <span className="flex flex-wrap gap-1 items-center" title={names.join("、")}>
+        {shown.map((n, i) => (
+          <span key={i} className="inline-block px-1.5 py-0.5 text-[10px] rounded bg-sky-50 border border-sky-200 text-sky-800 whitespace-nowrap">
+            {n}
+          </span>
+        ))}
+        {names.length > 2 && <span className="text-[10px] text-muted-foreground">+{names.length - 2}</span>}
+      </span>
+    );
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex flex-col md:flex-row gap-2 md:items-center">
@@ -232,17 +253,18 @@ export function CustomerListTab({ segments }: Props) {
                 <TableRow>
                   <TableHead>番号</TableHead>
                   <TableHead>氏名</TableHead>
-                  <TableHead>カナ</TableHead>
+                  <TableHead>所属（百貨店）</TableHead>
+                  <TableHead className="hidden lg:table-cell">カナ</TableHead>
                   <TableHead>来場</TableHead>
-                  <TableHead>最終来場</TableHead>
+                  <TableHead className="hidden lg:table-cell">最終来場</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading && (
-                  <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-6">読み込み中…</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-6">読み込み中…</TableCell></TableRow>
                 )}
                 {!loading && customers.length === 0 && (
-                  <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-6">該当する顧客がいません</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-6">該当する顧客がいません</TableCell></TableRow>
                 )}
                 {!loading && customers.map((c) => {
                   const last = lastVisitOf(c);
@@ -256,9 +278,10 @@ export function CustomerListTab({ segments }: Props) {
                           <span className={`ml-1.5 inline-block px-1.5 py-0.5 text-[10px] rounded-full border align-middle ${statusColor(c.status)}`}>{c.status}</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{c.kana || "—"}</TableCell>
+                      <TableCell>{storeBadges(c)}</TableCell>
+                      <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{c.kana || "—"}</TableCell>
                       <TableCell>{visitBadge(count)}</TableCell>
-                      <TableCell className="text-xs">{last || "—"}</TableCell>
+                      <TableCell className="hidden lg:table-cell text-xs">{last || "—"}</TableCell>
                     </TableRow>
                   );
                 })}
@@ -291,6 +314,9 @@ export function CustomerListTab({ segments }: Props) {
                       <div className="text-xs text-muted-foreground truncate">
                         #{c.customer_no}{c.kana ? ` ／ ${c.kana}` : ""}
                       </div>
+                      {storeNamesOf(c).length > 0 && (
+                        <div className="mt-1">{storeBadges(c)}</div>
+                      )}
                       {last && <div className="text-[11px] text-muted-foreground mt-0.5">最終来場 {last}</div>}
                     </div>
                     <div className="shrink-0">{visitBadge(count)}</div>
