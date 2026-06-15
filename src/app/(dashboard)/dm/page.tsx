@@ -103,15 +103,6 @@ export default function DMListPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const toggleDmStatus = (evtId: string, current: string | null) => {
-    const next = current === "印刷済み" ? "未着手" : "印刷済み";
-    setEvents((prev) => prev.map((e) => e.id === evtId ? { ...e, dm_status: next } : e));
-    supabase.from("events").update({ dm_status: next }).eq("id", evtId).then(() => {
-      setSavedId(evtId);
-      setTimeout(() => setSavedId((prev) => prev === evtId ? null : prev), 1500);
-    });
-  };
-
   /** この催事のDMをどの区分（名簿）に出したかをトグルで記録 */
   const toggleEventSegment = async (evtId: string, s: SegmentRow) => {
     const key = `${s.kbn_no}-${s.code}`;
@@ -264,14 +255,13 @@ export default function DMListPage() {
 
       <Card>
         <CardContent className="p-0">
-          <Table className="min-w-[1000px]">
+          <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>催事</TableHead>
                 <TableHead className="hidden lg:table-cell">区分</TableHead>
                 <TableHead>催事名</TableHead>
                 <TableHead className="hidden md:table-cell">会期</TableHead>
-                <TableHead>印刷済み</TableHead>
                 <TableHead>ステータス</TableHead>
                 <TableHead>枚数</TableHead>
                 <TableHead>名簿CSV</TableHead>
@@ -314,7 +304,9 @@ export default function DMListPage() {
                         })}
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{e.name || "—"}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      <div className="max-w-[140px] truncate" title={e.name || undefined}>{e.name || "—"}</div>
+                    </TableCell>
                     <TableCell className="text-sm hidden md:table-cell">
                       {e.start_date} 〜 {e.end_date}
                       {isPast ? (
@@ -347,30 +339,12 @@ export default function DMListPage() {
                     </TableCell>
                     <TableCell>
                       {canEdit ? (
-                        <button
-                          type="button"
-                          className={`relative inline-flex h-6 w-24 items-center rounded-full transition-colors ${isDone ? "bg-green-700" : "bg-gray-300"}`}
-                          onClick={() => toggleDmStatus(e.id, e.dm_status)}
-                        >
-                          <span className={`absolute text-[10px] font-medium ${isDone ? "left-2 text-white" : "right-2 text-gray-600"}`}>
-                            {isDone ? "印刷済み" : "未完了"}
-                          </span>
-                          <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${isDone ? "translate-x-[72px]" : "translate-x-0.5"}`} />
-                        </button>
-                      ) : (
-                        <span className={`text-xs font-medium ${isDone ? "text-green-700" : "text-gray-500"}`}>
-                          {isDone ? "印刷済み" : "未完了"}
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {canEdit ? (
                         <div className="flex gap-1">
                           {["未着手", "校正中", "印刷済み"].map((s) => (
                             <button
                               key={s}
                               type="button"
-                              className={`px-2 py-1 text-xs rounded border transition-colors ${e.dm_status === s ? "bg-green-700 text-white border-green-700 font-bold" : "bg-white text-gray-500 border-gray-300 hover:bg-green-50 hover:text-green-700"}`}
+                              className={`px-1.5 py-1 text-xs rounded border transition-colors ${e.dm_status === s ? "bg-green-700 text-white border-green-700 font-bold" : "bg-white text-gray-500 border-gray-300 hover:bg-green-50 hover:text-green-700"}`}
                               onClick={() => updateField(e.id, "dm_status", e.dm_status === s ? null : s)}
                             >
                               {s}
