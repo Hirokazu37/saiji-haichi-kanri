@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
@@ -10,15 +11,19 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import { X, Plus, Search } from "lucide-react";
 
 export type KarteVenue = { id: string; venue_name: string; store_name: string | null; notes: string | null };
 export type KarteSeg = { kbn_no: number; code: number; segment_name: string };
 
-type EventRow = { id: string; name: string | null; start_date: string; end_date: string; revenue: number | null; dm_count: number | null };
+type EventRow = { id: string; name: string | null; start_date: string; end_date: string; revenue: number | null; dm_count: number | null; venue: string; store_name: string | null };
 type DailyRow = { event_id: string; amount: number; tax_type: "excluded" | "included"; tax_rate: number | null };
+type AliasRow = { id: string; alias_venue: string; alias_store: string | null };
 
 const toIncluded = (amount: number, taxType: "excluded" | "included", rate: number | null) =>
   taxType === "included" ? amount : Math.round(amount * (1 + (rate ?? 0.08)));
+
+const evKey = (venue: string, store: string | null) => `${venue}|${store || ""}`;
 
 type Props = {
   open: boolean;
@@ -26,16 +31,24 @@ type Props = {
   venue: KarteVenue | null;
   segments: KarteSeg[];
   canEdit: boolean;
+  /** 全百貨店マスターの会場キー（名寄せ候補から、既に他店に登録済みの会場を除くため） */
+  allMasterKeys: Set<string>;
   onNotesSaved: (notes: string | null) => void;
 };
 
-export function VenueKarteDialog({ open, onOpenChange, venue, segments, canEdit, onNotesSaved }: Props) {
+export function VenueKarteDialog({ open, onOpenChange, venue, segments, canEdit, allMasterKeys, onNotesSaved }: Props) {
   const supabase = createClient();
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<{ ev: EventRow; sales: number; visits: number }[]>([]);
   const [custTotal, setCustTotal] = useState(0);
+  const [aliases, setAliases] = useState<AliasRow[]>([]);
   const [notes, setNotes] = useState("");
   const [notesSaved, setNotesSaved] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  // 名寄せ候補ピッカー
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [candidates, setCandidates] = useState<{ venue: string; store: string | null }[]>([]);
+  const [pickerQuery, setPickerQuery] = useState("");
 
   // 開いたら notes を初期化（レンダー中の prop 追従パターン）
   const [prevId, setPrevId] = useState<string | null>(null);
@@ -43,25 +56,36 @@ export function VenueKarteDialog({ open, onOpenChange, venue, segments, canEdit,
     setPrevId(venue.id);
     setNotes(venue.notes || "");
     setNotesSaved(false);
+    setPickerOpen(false);
   }
 
   useEffect(() => {
     if (!open || !venue) return;
     (async () => {
       setLoading(true);
-      // 1. この店の催事（会場名＋店舗名で一致）
+      // 別表記（名寄せ）を取得
+      const { data: aliasData } = await supabase
+        .from("venue_aliases")
+        .select("id, alias_venue, alias_store")
+        .eq("venue_id", venue.id);
+      const aliasList = (aliasData as AliasRow[]) || [];
+      setAliases(aliasList);
+
+      // この店として集計する会場キーの集合（本来の名称＋別表記）
+      const matchKeys = new Set<string>([
+        evKey(venue.venue_name, venue.store_name),
+        ...aliasList.map((a) => evKey(a.alias_venue, a.alias_store)),
+      ]);
+      const venueNames = Array.from(new Set([venue.venue_name, ...aliasList.map((a) => a.alias_venue)]));
+
       const { data: evData } = await supabase
         .from("events")
-        .select("id, name, start_date, end_date, revenue, dm_count")
-        .eq("venue", venue.venue_name)
+        .select("id, name, start_date, end_date, revenue, dm_count, venue, store_name")
+        .in("venue", venueNames)
         .order("start_date", { ascending: false });
-      // store_name でさらに絞る（events 側に store_name がある前提）
-      const events = ((evData as (EventRow & { store_name?: string | null })[]) || []).filter(
-        (e) => (e.store_name || "") === (venue.store_name || "")
-      ) as EventRow[];
+      const events = ((evData as EventRow[]) || []).filter((e) => matchKeys.has(evKey(e.venue, e.store_name)));
       const ids = events.map((e) => e.id);
 
-      // 2. 日別売上
       const dailyByEvent = new Map<string, number>();
       const visitByEvent = new Map<string, number>();
       if (ids.length > 0) {
@@ -76,31 +100,60 @@ export function VenueKarteDialog({ open, onOpenChange, venue, segments, canEdit,
           visitByEvent.set(v.event_id, v.visit_count);
         }
       }
+      setRows(events.map((ev) => ({ ev, sales: dailyByEvent.get(ev.id) ?? (ev.revenue || 0), visits: visitByEvent.get(ev.id) ?? 0 })));
 
-      setRows(
-        events.map((ev) => ({
-          ev,
-          sales: dailyByEvent.get(ev.id) ?? (ev.revenue || 0),
-          visits: visitByEvent.get(ev.id) ?? 0,
-        }))
-      );
-
-      // 3. この店の区分に属する顧客数（合計）
       if (segments.length > 0) {
-        const { data: sum } = await supabase
-          .from("segment_customer_summary")
-          .select("kbn_no, code, customer_count");
+        const { data: sum } = await supabase.from("segment_customer_summary").select("kbn_no, code, customer_count");
         const set = new Set(segments.map((s) => `${s.kbn_no}-${s.code}`));
-        const total = ((sum as { kbn_no: number; code: number; customer_count: number }[]) || [])
-          .filter((r) => set.has(`${r.kbn_no}-${r.code}`))
-          .reduce((a, r) => a + r.customer_count, 0);
-        setCustTotal(total);
+        setCustTotal(
+          ((sum as { kbn_no: number; code: number; customer_count: number }[]) || [])
+            .filter((r) => set.has(`${r.kbn_no}-${r.code}`))
+            .reduce((a, r) => a + r.customer_count, 0)
+        );
       } else {
         setCustTotal(0);
       }
       setLoading(false);
     })();
-  }, [open, venue, segments, supabase]);
+  }, [open, venue, segments, supabase, refreshKey]);
+
+  // 名寄せ候補（どの店にも紐づいていない会場名）を読み込む
+  const loadCandidates = async () => {
+    const [evRes, alRes] = await Promise.all([
+      supabase.from("events").select("venue, store_name"),
+      supabase.from("venue_aliases").select("alias_venue, alias_store"),
+    ]);
+    // どこかのマスター名 or どこかの店の別表記に既に一致するものは候補から除外
+    const taken = new Set<string>(allMasterKeys);
+    for (const a of (alRes.data as { alias_venue: string; alias_store: string | null }[]) || []) {
+      taken.add(evKey(a.alias_venue, a.alias_store));
+    }
+    const seen = new Set<string>();
+    const list: { venue: string; store: string | null }[] = [];
+    for (const e of (evRes.data as { venue: string; store_name: string | null }[]) || []) {
+      const k = evKey(e.venue, e.store_name);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      if (taken.has(k)) continue;
+      list.push({ venue: e.venue, store: e.store_name });
+    }
+    list.sort((a, b) => `${a.venue}${a.store || ""}`.localeCompare(`${b.venue}${b.store || ""}`, "ja"));
+    setCandidates(list);
+  };
+
+  const openPicker = async () => { setPickerQuery(""); await loadCandidates(); setPickerOpen(true); };
+
+  const addAlias = async (v: string, s: string | null) => {
+    if (!venue) return;
+    await supabase.from("venue_aliases").insert({ venue_id: venue.id, alias_venue: v, alias_store: s });
+    setPickerOpen(false);
+    setRefreshKey((k) => k + 1);
+  };
+
+  const removeAlias = async (id: string) => {
+    await supabase.from("venue_aliases").delete().eq("id", id);
+    setRefreshKey((k) => k + 1);
+  };
 
   const saveNotes = async () => {
     if (!venue) return;
@@ -116,6 +169,9 @@ export function VenueKarteDialog({ open, onOpenChange, venue, segments, canEdit,
   const totalSales = rows.reduce((a, r) => a + r.sales, 0);
   const salesEvents = rows.filter((r) => r.sales > 0);
   const avgSales = salesEvents.length > 0 ? Math.round(totalSales / salesEvents.length) : 0;
+  const filteredCandidates = candidates.filter(
+    (c) => pickerQuery.trim() === "" || `${c.venue}${c.store || ""}`.includes(pickerQuery.trim())
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -131,7 +187,6 @@ export function VenueKarteDialog({ open, onOpenChange, venue, segments, canEdit,
             </DialogHeader>
 
             <div className="space-y-4 min-w-0">
-              {/* サマリ */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 <div className="rounded-md border p-2">
                   <div className="text-[11px] text-muted-foreground">催事回数</div>
@@ -151,7 +206,6 @@ export function VenueKarteDialog({ open, onOpenChange, venue, segments, canEdit,
                 </div>
               </div>
 
-              {/* DM区分 */}
               {segments.length > 0 && (
                 <div className="flex flex-wrap gap-1 items-center">
                   <span className="text-xs text-muted-foreground mr-1">DM区分:</span>
@@ -163,7 +217,6 @@ export function VenueKarteDialog({ open, onOpenChange, venue, segments, canEdit,
                 </div>
               )}
 
-              {/* 過去の催事 */}
               <div>
                 <div className="text-sm font-medium mb-1">過去の催事（新しい順）</div>
                 <div className="overflow-x-auto border rounded-md max-w-full">
@@ -182,7 +235,7 @@ export function VenueKarteDialog({ open, onOpenChange, venue, segments, canEdit,
                         <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-6">読み込み中…</TableCell></TableRow>
                       )}
                       {!loading && rows.length === 0 && (
-                        <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-6">この店の催事記録がありません（会場名の表記ゆれの可能性もあります）</TableCell></TableRow>
+                        <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-6">この店の催事記録がありません。会場名の表記ゆれがある場合は下の「別表記の名寄せ」で追加してください。</TableCell></TableRow>
                       )}
                       {!loading && rows.map(({ ev, sales, visits }) => {
                         const rate = ev.dm_count && visits > 0 ? ((visits / ev.dm_count) * 100).toFixed(1) : null;
@@ -204,7 +257,50 @@ export function VenueKarteDialog({ open, onOpenChange, venue, segments, canEdit,
                 </div>
               </div>
 
-              {/* メモ・振り返り */}
+              {/* 別表記の名寄せ */}
+              {canEdit && (
+                <div className="rounded-md border bg-muted/30 p-2 space-y-2">
+                  <div className="text-sm font-medium">別表記の名寄せ（過去の会場名の表記ゆれをこの店にまとめる）</div>
+                  <div className="flex flex-wrap gap-1 items-center">
+                    {aliases.length === 0 && <span className="text-xs text-muted-foreground">別表記なし</span>}
+                    {aliases.map((a) => (
+                      <span key={a.id} className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] rounded bg-white border">
+                        {a.alias_venue}{a.alias_store ? ` ${a.alias_store}` : ""}
+                        <button type="button" onClick={() => removeAlias(a.id)} className="text-muted-foreground hover:text-destructive" aria-label="削除">
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                  <Button size="sm" variant="outline" onClick={openPicker}>
+                    <Plus className="h-3.5 w-3.5 mr-1" />別表記を追加
+                  </Button>
+                  {pickerOpen && (
+                    <div className="rounded-md border bg-white p-2 space-y-2">
+                      <div className="relative">
+                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                        <Input value={pickerQuery} onChange={(e) => setPickerQuery(e.target.value)} placeholder="会場名で検索" className="pl-7 h-8" />
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">どの店にも紐づいていない過去の会場名から、この店のものを選んでください</div>
+                      <div className="max-h-52 overflow-y-auto divide-y">
+                        {filteredCandidates.length === 0 && <div className="text-xs text-muted-foreground py-3 text-center">候補がありません</div>}
+                        {filteredCandidates.slice(0, 100).map((c, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => addAlias(c.venue, c.store)}
+                            className="w-full text-left px-2 py-1.5 text-sm hover:bg-muted flex items-center justify-between gap-2"
+                          >
+                            <span className="truncate">{c.venue}{c.store ? ` ${c.store}` : ""}</span>
+                            <span className="text-[10px] text-primary shrink-0">この店に追加</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div>
                 <div className="text-sm font-medium mb-1">メモ・振り返り（交渉条件・担当・課題など）</div>
                 {canEdit ? (

@@ -1351,6 +1351,7 @@ export default function VenueMasterPage() {
         onOpenChange={(o) => { if (!o) setKarte(null); }}
         venue={karte ? { id: karte.id, venue_name: karte.venue_name, store_name: karte.store_name, notes: karte.notes } : null}
         segments={karte ? dmSegments.filter((s) => s.venue_id === karte.id).map((s) => ({ kbn_no: s.kbn_no, code: s.code, segment_name: s.segment_name })) : []}
+        allMasterKeys={new Set(venues.map((v) => `${v.venue_name}|${v.store_name || ""}`))}
         canEdit={canEdit}
         onNotesSaved={(notes) => {
           setVenues((prev) => prev.map((x) => (karte && x.id === karte.id ? { ...x, notes } : x)));
