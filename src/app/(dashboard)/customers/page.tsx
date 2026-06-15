@@ -8,11 +8,14 @@ import { CustomerListTab } from "@/components/customers/CustomerListTab";
 import { VisitEntryTab } from "@/components/customers/VisitEntryTab";
 import { ExtractTab } from "@/components/customers/ExtractTab";
 import { SegmentSummaryTab } from "@/components/customers/SegmentSummaryTab";
-import type { SegmentMaster } from "@/components/customers/types";
+import { segKey, type SegmentMaster } from "@/components/customers/types";
 
 export default function CustomersPage() {
   const supabase = createClient();
   const [segments, setSegments] = useState<SegmentMaster[]>([]);
+  const [tab, setTab] = useState("visits");
+  // 顧客一覧の区分(百貨店)フィルタ。百貨店サマリからの遷移でも設定する
+  const [listSegFilter, setListSegFilter] = useState("__all__");
 
   // 区分マスターは3タブ共通で使うのでここで一度だけ読む
   useEffect(() => {
@@ -33,7 +36,7 @@ export default function CustomersPage() {
         </p>
       </div>
 
-      <Tabs defaultValue="visits">
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="w-full md:w-auto">
           <TabsTrigger value="visits">
             <ClipboardCheck className="h-3.5 w-3.5" />
@@ -57,13 +60,16 @@ export default function CustomersPage() {
           <VisitEntryTab segments={segments} />
         </TabsContent>
         <TabsContent value="list">
-          <CustomerListTab segments={segments} />
+          <CustomerListTab segments={segments} segFilter={listSegFilter} onSegFilterChange={setListSegFilter} />
         </TabsContent>
         <TabsContent value="extract">
           <ExtractTab segments={segments} />
         </TabsContent>
         <TabsContent value="summary">
-          <SegmentSummaryTab segments={segments} />
+          <SegmentSummaryTab
+            segments={segments}
+            onOpenStore={(kbn, code) => { setListSegFilter(segKey(kbn, code)); setTab("list"); }}
+          />
         </TabsContent>
       </Tabs>
     </div>

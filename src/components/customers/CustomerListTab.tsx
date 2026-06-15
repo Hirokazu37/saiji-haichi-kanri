@@ -13,6 +13,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { Combobox, type ComboboxItem } from "@/components/ui/combobox";
 import { Upload, Search, Info } from "lucide-react";
 import Link from "next/link";
 import { usePermission } from "@/hooks/usePermission";
@@ -27,9 +28,22 @@ type VisitWithEvent = {
   events: { id: string; name: string | null; venue: string; store_name: string | null; start_date: string } | null;
 };
 
-type Props = { segments: SegmentMaster[] };
+const ALL = "__all__";
+const CUSTOMER_FIELDS = "id, customer_no, name, kana, postal_code, address, phone, dm_active, notes, imported_at, status";
+function chunk<T>(arr: T[], size: number): T[][] {
+  const r: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) r.push(arr.slice(i, i + size));
+  return r;
+}
 
-export function CustomerListTab({ segments }: Props) {
+type Props = {
+  segments: SegmentMaster[];
+  /** 区分(百貨店)フィルタ。"__all__" で全顧客、"kbn-code" でその区分 */
+  segFilter: string;
+  onSegFilterChange: (v: string) => void;
+};
+
+export function CustomerListTab({ segments, segFilter, onSegFilterChange }: Props) {
   // CSV取込も社員（viewer）が行う運用のため admin/viewer とも可
   const { role } = usePermission();
   const canImport = role === "admin" || role === "viewer";
@@ -37,6 +51,8 @@ export function CustomerListTab({ segments }: Props) {
   const [query, setQuery] = useState("");
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [totalCount, setTotalCount] = useState<number | null>(null);
+  // 区分フィルタ時の、その区分の顧客数（テキスト絞り込み前）
+  const [segCount, setSegCount] = useState<number | null>(null);
   const [custSegs, setCustSegs] = useState<Map<string, CustomerSegment[]>>(new Map());
   const [visits, setVisits] = useState<Map<string, VisitWithEvent[]>>(new Map());
   const [loading, setLoading] = useState(false);
@@ -64,45 +80,80 @@ export function CustomerListTab({ segments }: Props) {
     setTotalCount(count ?? 0);
   }, [supabase]);
 
-  const search = useCallback(async (q: string) => {
+  const search = useCallback(async (q: string, seg: string) => {
     setLoading(true);
-    let builder = supabase
-      .from("customers")
-      .select("id, customer_no, name, kana, postal_code, address, phone, dm_active, notes, imported_at, status")
-      .order("customer_no")
-      .limit(100);
     const t = q.trim();
-    if (t !== "") {
-      const esc = t.replace(/[%,]/g, "");
-      builder = builder.or(`customer_no.ilike.%${esc}%,name.ilike.%${esc}%,kana.ilike.%${esc}%`);
+    let list: Customer[] = [];
+
+    if (seg !== ALL) {
+      // 区分(店)で絞り込み: その区分の顧客を全件取得して並べ替え可能にする
+      const [kbnStr, codeStr] = seg.split("-");
+      const kbn = Number(kbnStr), code = Number(codeStr);
+      const ids: string[] = [];
+      for (let from = 0; ; from += 1000) {
+        const { data } = await supabase
+          .from("customer_segments")
+          .select("customer_id")
+          .eq("kbn_no", kbn).eq("code", code)
+          .range(from, from + 999);
+        const part = (data as { customer_id: string }[]) || [];
+        ids.push(...part.map((r) => r.customer_id));
+        if (part.length < 1000) break;
+      }
+      setSegCount(ids.length);
+      for (const cids of chunk(ids, 300)) {
+        const { data } = await supabase.from("customers").select(CUSTOMER_FIELDS).in("id", cids);
+        list.push(...((data as Customer[]) || []));
+      }
+      if (t !== "") {
+        const tl = t.toLowerCase();
+        list = list.filter(
+          (c) =>
+            c.customer_no.toLowerCase().includes(tl) ||
+            (c.name || "").toLowerCase().includes(tl) ||
+            (c.kana || "").toLowerCase().includes(tl)
+        );
+      }
+      list.sort((a, b) => a.customer_no.localeCompare(b.customer_no, "ja", { numeric: true }));
+    } else {
+      // 全顧客: 重いので先頭100件 + テキスト検索
+      setSegCount(null);
+      let builder = supabase.from("customers").select(CUSTOMER_FIELDS).order("customer_no").limit(100);
+      if (t !== "") {
+        const esc = t.replace(/[%,]/g, "");
+        builder = builder.or(`customer_no.ilike.%${esc}%,name.ilike.%${esc}%,kana.ilike.%${esc}%`);
+      }
+      const { data } = await builder;
+      list = (data as Customer[]) || [];
     }
-    const { data } = await builder;
-    const list = (data as Customer[]) || [];
     setCustomers(list);
 
+    // 表示分の区分・来場をまとめて取得（件数が多い区分でもチャンクで取得）
     if (list.length > 0) {
       const ids = list.map((c) => c.id);
-      const [segRes, visRes] = await Promise.all([
-        supabase.from("customer_segments").select("customer_id, kbn_no, code").in("customer_id", ids),
-        supabase
-          .from("event_visits")
-          .select("customer_id, visited_on, created_at, notes, events(id, name, venue, store_name, start_date)")
-          .in("customer_id", ids),
-      ]);
       const sm = new Map<string, CustomerSegment[]>();
-      for (const s of (segRes.data as CustomerSegment[]) || []) {
-        if (!sm.has(s.customer_id)) sm.set(s.customer_id, []);
-        sm.get(s.customer_id)!.push(s);
-      }
-      setCustSegs(sm);
       const vm = new Map<string, VisitWithEvent[]>();
-      for (const v of (visRes.data as unknown as VisitWithEvent[]) || []) {
-        if (!vm.has(v.customer_id)) vm.set(v.customer_id, []);
-        vm.get(v.customer_id)!.push(v);
+      for (const cids of chunk(ids, 300)) {
+        const [segRes, visRes] = await Promise.all([
+          supabase.from("customer_segments").select("customer_id, kbn_no, code").in("customer_id", cids),
+          supabase
+            .from("event_visits")
+            .select("customer_id, visited_on, created_at, notes, events(id, name, venue, store_name, start_date)")
+            .in("customer_id", cids),
+        ]);
+        for (const s of (segRes.data as CustomerSegment[]) || []) {
+          if (!sm.has(s.customer_id)) sm.set(s.customer_id, []);
+          sm.get(s.customer_id)!.push(s);
+        }
+        for (const v of (visRes.data as unknown as VisitWithEvent[]) || []) {
+          if (!vm.has(v.customer_id)) vm.set(v.customer_id, []);
+          vm.get(v.customer_id)!.push(v);
+        }
       }
       for (const arr of vm.values()) {
         arr.sort((a, b) => (b.events?.start_date || "").localeCompare(a.events?.start_date || ""));
       }
+      setCustSegs(sm);
       setVisits(vm);
     } else {
       setCustSegs(new Map());
@@ -114,10 +165,10 @@ export function CustomerListTab({ segments }: Props) {
   useEffect(() => {
     const timer = setTimeout(() => {
       fetchTotal();
-      search(query);
+      search(query, segFilter);
     }, 300);
     return () => clearTimeout(timer);
-  }, [query, search, fetchTotal]);
+  }, [query, segFilter, search, fetchTotal]);
 
   const openDetail = (c: Customer) => {
     setDetail(c);
@@ -230,6 +281,17 @@ export function CustomerListTab({ segments }: Props) {
     );
   };
 
+  const segItems: ComboboxItem[] = [
+    { value: ALL, label: "すべての顧客" },
+    ...segments.map((s) => ({
+      value: segKey(s.kbn_no, s.code),
+      label: s.segment_name,
+      group: `区分${s.kbn_no}`,
+      sublabel: `${s.kbn_no}-${s.code}`,
+    })),
+  ];
+  const selectedSegName = segFilter === ALL ? null : (segNameMap.get(segFilter) || segFilter);
+
   const renderSortHead = (k: SortKey, label: string, className?: string) => (
     <TableHead className={className}>
       <button
@@ -248,6 +310,15 @@ export function CustomerListTab({ segments }: Props) {
   return (
     <div className="space-y-3">
       <div className="flex flex-col md:flex-row gap-2 md:items-center">
+        <Combobox
+          items={segItems}
+          value={segFilter}
+          onChange={(v) => onSegFilterChange(v || ALL)}
+          allowCustom={false}
+          placeholder="百貨店（区分）で絞り込み"
+          searchPlaceholder="百貨店名で検索"
+          className="w-full md:w-64"
+        />
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -259,7 +330,9 @@ export function CustomerListTab({ segments }: Props) {
         </div>
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">
-            登録顧客数: {totalCount === null ? "…" : totalCount.toLocaleString()}人
+            {selectedSegName
+              ? `${selectedSegName}: ${segCount === null ? "…" : segCount.toLocaleString()}人`
+              : `登録顧客数: ${totalCount === null ? "…" : totalCount.toLocaleString()}人`}
           </span>
           {canImport && (
             <Button variant="outline" onClick={() => setImportOpen(true)}>
@@ -372,9 +445,9 @@ export function CustomerListTab({ segments }: Props) {
               })}
             </div>
 
-            {!loading && customers.length === 100 && (
+            {!loading && segFilter === ALL && customers.length === 100 && (
               <div className="px-4 py-2 text-xs text-muted-foreground border-t">
-                先頭100件を表示しています。検索で絞り込んでください。
+                先頭100件を表示しています。百貨店（区分）で絞り込むと、その店の全件を並べ替えできます。
               </div>
             )}
           </CardContent>
@@ -485,7 +558,7 @@ export function CustomerListTab({ segments }: Props) {
       <CustomerImportDialog
         open={importOpen}
         onOpenChange={setImportOpen}
-        onImported={() => { fetchTotal(); search(query); }}
+        onImported={() => { fetchTotal(); search(query, segFilter); }}
         segments={segments}
       />
     </div>

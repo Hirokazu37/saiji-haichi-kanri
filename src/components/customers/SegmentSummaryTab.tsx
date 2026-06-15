@@ -12,10 +12,14 @@ import { segKey, type SegmentMaster } from "./types";
 
 type SummaryRow = { kbn_no: number; code: number; customer_count: number; visited_count: number };
 
-type Props = { segments: SegmentMaster[] };
+type Props = {
+  segments: SegmentMaster[];
+  /** 店をクリックしたとき、その区分の顧客一覧へ遷移する */
+  onOpenStore?: (kbn: number, code: number) => void;
+};
 
 /** 百貨店（DM区分）ごとの顧客数・来場・反応率サマリ */
-export function SegmentSummaryTab({ segments }: Props) {
+export function SegmentSummaryTab({ segments, onOpenStore }: Props) {
   const supabase = createClient();
   const [rows, setRows] = useState<SummaryRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -119,9 +123,16 @@ export function SegmentSummaryTab({ segments }: Props) {
                 <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-6">データがありません</TableCell></TableRow>
               )}
               {!loading && merged.map((r) => (
-                <TableRow key={`${r.kbn_no}-${r.code}`}>
+                <TableRow
+                  key={`${r.kbn_no}-${r.code}`}
+                  className={onOpenStore ? "cursor-pointer" : ""}
+                  onClick={onOpenStore ? () => onOpenStore(r.kbn_no, r.code) : undefined}
+                >
                   <TableCell className="font-mono text-xs text-muted-foreground">{r.kbn_no}-{r.code}</TableCell>
-                  <TableCell className="font-medium">{r.name}</TableCell>
+                  <TableCell className="font-medium">
+                    {r.name}
+                    {onOpenStore && <span className="ml-1 text-[10px] text-primary">顧客一覧 ›</span>}
+                  </TableCell>
                   <TableCell className="text-right tabular-nums">{r.customer_count.toLocaleString()}</TableCell>
                   <TableCell className="text-right tabular-nums">{r.visited_count.toLocaleString()}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold">
@@ -139,7 +150,11 @@ export function SegmentSummaryTab({ segments }: Props) {
               <div className="text-center text-muted-foreground py-6 text-sm">データがありません</div>
             )}
             {!loading && merged.map((r) => (
-              <div key={`${r.kbn_no}-${r.code}`} className="px-4 py-3">
+              <div
+                key={`${r.kbn_no}-${r.code}`}
+                className={`px-4 py-3 ${onOpenStore ? "active:bg-muted cursor-pointer" : ""}`}
+                onClick={onOpenStore ? () => onOpenStore(r.kbn_no, r.code) : undefined}
+              >
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <div className="font-medium truncate">{r.name}</div>
