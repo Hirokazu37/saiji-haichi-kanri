@@ -11,6 +11,17 @@ export type Customer = {
   dm_active: boolean;
   notes: string | null;
   imported_at: string | null;
+  status: string; // 有効 / 宛先不明 / 削除候補
+};
+
+/** 顧客の状態 */
+export const CUSTOMER_STATUSES = ["有効", "宛先不明", "削除候補"] as const;
+export const statusColor = (s: string): string => {
+  switch (s) {
+    case "宛先不明": return "bg-amber-100 text-amber-800 border-amber-300";
+    case "削除候補": return "bg-rose-100 text-rose-800 border-rose-300";
+    default: return "bg-emerald-100 text-emerald-800 border-emerald-300";
+  }
 };
 
 export type CustomerSegment = {

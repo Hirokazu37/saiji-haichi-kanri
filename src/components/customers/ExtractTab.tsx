@@ -58,12 +58,16 @@ type Props = { segments: SegmentMaster[] };
 export function ExtractTab({ segments }: Props) {
   const supabase = createClient() as SupabaseClient;
   const [segValue, setSegValue] = useState(ALL); // "kbn-code" or ALL
+  // 判定方式: years=N年以上来場なし / recent=この店の直近N回の催事すべてに来場なし
+  const [mode, setMode] = useState<"years" | "recent">("recent");
   const [years, setYears] = useState("3");
+  const [recentN, setRecentN] = useState("3");
   const [scope, setScope] = useState<"all" | "venue">("all");
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
   const [results, setResults] = useState<ResultRow[] | null>(null);
+  const [resultNote, setResultNote] = useState("");
 
   const segItems: ComboboxItem[] = useMemo(
     () => [
@@ -83,15 +87,42 @@ export function ExtractTab({ segments }: Props) {
     [segments, segValue]
   );
 
-  const run = async () => {
-    setRunning(true); setError(""); setResults(null);
-    try {
-      const n = Math.max(0, Number(years) || 0);
-      const cutoff = new Date();
-      cutoff.setFullYear(cutoff.getFullYear() - n);
-      const cutoffStr = cutoff.toISOString().slice(0, 10);
+  /** 選択中の区分(店)に紐づく催事IDを返す（DMひも付け優先、無ければ会場名一致） */
+  const fetchStoreEventIds = async (): Promise<Set<string> | null> => {
+    if (!selectedSeg) return null;
+    const { data: links } = await supabase
+      .from("event_dm_segments")
+      .select("event_id")
+      .eq("kbn_no", selectedSeg.kbn_no)
+      .eq("code", selectedSeg.code);
+    const linkedIds = ((links as { event_id: string }[]) || []).map((l) => l.event_id);
+    if (linkedIds.length > 0) return new Set(linkedIds);
+    if (selectedSeg.venue_id) {
+      const { data: venue } = await supabase
+        .from("venue_master")
+        .select("venue_name, store_name")
+        .eq("id", selectedSeg.venue_id)
+        .single();
+      if (venue) {
+        const { data } = await supabase
+          .from("events")
+          .select("id, venue, store_name")
+          .eq("venue", venue.venue_name);
+        const ids = ((data as { id: string; venue: string; store_name: string | null }[]) || [])
+          .filter((e) => (e.store_name || "") === (venue.store_name || ""))
+          .map((e) => e.id);
+        return new Set(ids);
+      }
+    }
+    return new Set();
+  };
 
-      // 1. 対象顧客
+  const run = async () => {
+    setRunning(true); setError(""); setResults(null); setResultNote("");
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+
+      // 1. 対象顧客（送付対象＝状態が「有効」の人のみ。宛先不明・削除候補は除外）
       let customers: Customer[] = [];
       if (selectedSeg) {
         setProgress("区分の顧客を取得中…");
@@ -114,13 +145,19 @@ export function ExtractTab({ segments }: Props) {
           setProgress(`区分の顧客を取得中… ${customers.length.toLocaleString()}人`);
         }
       } else {
+        if (mode === "recent") {
+          setError("「直近◯回」での抽出は、対象のDM区分（百貨店）を選んでください。");
+          setRunning(false); setProgress("");
+          return;
+        }
         customers = await fetchAll<Customer>(
           (from, to) => supabase.from("customers").select("*").order("customer_no").range(from, to),
           (cnt) => setProgress(`顧客を取得中… ${cnt.toLocaleString()}人`)
         );
       }
+      customers = customers.filter((c) => c.status === "有効");
 
-      // 2. 来場記録（催事情報つき）
+      // 2. 来場記録
       setProgress("来場記録を取得中…");
       const visits = await fetchAll<VisitRow>((from, to) =>
         supabase
@@ -129,50 +166,71 @@ export function ExtractTab({ segments }: Props) {
           .range(from, to)
       );
 
-      // 区分の催事のみで判定する場合:
-      //   ① DMハガキ画面で「この催事のDM名簿」としてひも付けた催事を優先（正確）
-      //   ② ひも付けがまだ無ければ、区分の百貨店名で会場一致にフォールバック
-      let scopedVisits = visits;
-      if (selectedSeg && scope === "venue") {
-        const { data: links } = await supabase
-          .from("event_dm_segments")
-          .select("event_id")
-          .eq("kbn_no", selectedSeg.kbn_no)
-          .eq("code", selectedSeg.code);
-        const linkedIds = new Set(((links as { event_id: string }[]) || []).map((l) => l.event_id));
-        if (linkedIds.size > 0) {
-          scopedVisits = visits.filter((v) => linkedIds.has(v.event_id));
-        } else if (selectedSeg.venue_id) {
-          const { data: venue } = await supabase
-            .from("venue_master")
-            .select("venue_name, store_name")
-            .eq("id", selectedSeg.venue_id)
-            .single();
-          if (venue) {
-            scopedVisits = visits.filter(
-              (v) =>
-                v.events &&
-                v.events.venue === venue.venue_name &&
-                (v.events.store_name || "") === (venue.store_name || "")
-            );
+      let rows: ResultRow[];
+
+      if (mode === "recent") {
+        // この店の催事を新しい順に N 件取り、そのすべてに来場が無い顧客を抽出
+        const n = Math.max(1, Number(recentN) || 1);
+        setProgress("この店の催事を取得中…");
+        const storeIds = await fetchStoreEventIds();
+        // この店の催事を events から取得（来場が0回の催事も対象に含めるため）
+        const allStoreEvents: { id: string; start_date: string }[] = [];
+        if (storeIds && storeIds.size > 0) {
+          for (const part of chunk(Array.from(storeIds), 300)) {
+            const { data } = await supabase.from("events").select("id, start_date").in("id", part);
+            allStoreEvents.push(...((data as { id: string; start_date: string }[]) || []));
           }
         }
-      }
+        const recent = allStoreEvents
+          .filter((e) => e.start_date <= today)
+          .sort((a, b) => b.start_date.localeCompare(a.start_date))
+          .slice(0, n);
+        const recentIds = new Set(recent.map((e) => e.id));
+        const visitedRecent = new Set(
+          visits.filter((v) => recentIds.has(v.event_id)).map((v) => v.customer_id)
+        );
+        // 表示用の最終来場日（この店の催事への）
+        const lastByCustomer = new Map<string, string>();
+        for (const v of visits) {
+          if (!storeIds || !storeIds.has(v.event_id)) continue;
+          const d = v.visited_on || v.events?.start_date;
+          if (!d) continue;
+          const cur = lastByCustomer.get(v.customer_id);
+          if (!cur || d > cur) lastByCustomer.set(v.customer_id, d);
+        }
+        rows = customers
+          .map((c) => ({ ...c, lastVisit: lastByCustomer.get(c.id) || null }))
+          .filter((c) => !visitedRecent.has(c.id))
+          .sort((a, b) => a.customer_no.localeCompare(b.customer_no, "ja", { numeric: true }));
+        setResultNote(
+          `${selectedSeg?.segment_name} の直近${recent.length}回の催事すべてに来場なし` +
+          (recent.length < n ? `（この店の催事はまだ${recent.length}回ぶんしか記録がありません）` : "")
+        );
+      } else {
+        // N年以上来場なし
+        const yrs = Math.max(0, Number(years) || 0);
+        const cutoff = new Date();
+        cutoff.setFullYear(cutoff.getFullYear() - yrs);
+        const cutoffStr = cutoff.toISOString().slice(0, 10);
 
-      // 3. 顧客ごとの最終来場日
-      const lastByCustomer = new Map<string, string>();
-      for (const v of scopedVisits) {
-        const d = v.visited_on || v.events?.start_date;
-        if (!d) continue;
-        const cur = lastByCustomer.get(v.customer_id);
-        if (!cur || d > cur) lastByCustomer.set(v.customer_id, d);
+        let scopedVisits = visits;
+        if (selectedSeg && scope === "venue") {
+          const storeIds = await fetchStoreEventIds();
+          if (storeIds) scopedVisits = visits.filter((v) => storeIds.has(v.event_id));
+        }
+        const lastByCustomer = new Map<string, string>();
+        for (const v of scopedVisits) {
+          const d = v.visited_on || v.events?.start_date;
+          if (!d) continue;
+          const cur = lastByCustomer.get(v.customer_id);
+          if (!cur || d > cur) lastByCustomer.set(v.customer_id, d);
+        }
+        rows = customers
+          .map((c) => ({ ...c, lastVisit: lastByCustomer.get(c.id) || null }))
+          .filter((c) => !c.lastVisit || c.lastVisit < cutoffStr)
+          .sort((a, b) => a.customer_no.localeCompare(b.customer_no, "ja", { numeric: true }));
+        setResultNote(`${selectedSeg ? selectedSeg.segment_name : "全顧客"} ／ ${yrs}年以上来場なし`);
       }
-
-      // 4. 抽出: 最終来場が cutoff より前、または記録なし
-      const rows: ResultRow[] = customers
-        .map((c) => ({ ...c, lastVisit: lastByCustomer.get(c.id) || null }))
-        .filter((c) => !c.lastVisit || c.lastVisit < cutoffStr)
-        .sort((a, b) => a.customer_no.localeCompare(b.customer_no, "ja", { numeric: true }));
 
       setResults(rows);
       setProgress("");
@@ -220,44 +278,71 @@ export function ExtractTab({ segments }: Props) {
               />
             </div>
             <div className="space-y-1.5">
-              <Label>来場がない期間</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  type="number"
-                  min={0}
-                  max={20}
-                  value={years}
-                  onChange={(e) => setYears(e.target.value)}
-                  className="w-24"
-                />
-                <span className="text-sm">年以上（記録なしも含む）</span>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label>来場の数え方</Label>
-              <Select
-                value={scope}
-                onValueChange={(v) => setScope((v as "all" | "venue") || "all")}
-                disabled={!selectedSeg}
-              >
+              <Label>判定方式</Label>
+              <Select value={mode} onValueChange={(v) => setMode((v as "years" | "recent") || "recent")}>
                 <SelectTrigger className="w-full">
                   <SelectValue>
-                    {scope === "all" ? "どの催事への来場も数える" : "この区分のDMを出した催事だけ数える"}
+                    {mode === "recent" ? "直近◯回の催事すべてに来場なし" : "◯年以上来場なし"}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">どの催事への来場も数える</SelectItem>
-                  <SelectItem value="venue">この区分のDMを出した催事だけ数える</SelectItem>
+                  <SelectItem value="recent">直近◯回の催事すべてに来場なし（店の頻度に対応）</SelectItem>
+                  <SelectItem value="years">◯年以上来場なし</SelectItem>
                 </SelectContent>
               </Select>
-              {!selectedSeg ? (
-                <div className="text-[11px] text-muted-foreground">
-                  区分を選ぶと区分単位の判定が選べます
-                </div>
+              <div className="text-[11px] text-muted-foreground">
+                {mode === "recent"
+                  ? "年複数回の店は短期間、年1回の店は長期間で自然に判定されます（区分の選択が必要）"
+                  : "全店共通の年数で判定します"}
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              {mode === "recent" ? (
+                <>
+                  <Label>来場なしの回数</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min={1}
+                      max={20}
+                      value={recentN}
+                      onChange={(e) => setRecentN(e.target.value)}
+                      className="w-24"
+                    />
+                    <span className="text-sm">回連続（この店の直近の催事）</span>
+                  </div>
+                </>
               ) : (
-                <div className="text-[11px] text-muted-foreground">
-                  DMハガキ画面で催事に区分をひも付けるとより正確になります
-                </div>
+                <>
+                  <Label>来場がない期間</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min={0}
+                      max={20}
+                      value={years}
+                      onChange={(e) => setYears(e.target.value)}
+                      className="w-24"
+                    />
+                    <span className="text-sm">年以上（記録なしも含む）</span>
+                  </div>
+                  {selectedSeg && (
+                    <Select
+                      value={scope}
+                      onValueChange={(v) => setScope((v as "all" | "venue") || "all")}
+                    >
+                      <SelectTrigger className="w-full mt-1">
+                        <SelectValue>
+                          {scope === "all" ? "どの催事への来場も数える" : "この区分の催事だけ数える"}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">どの催事への来場も数える</SelectItem>
+                        <SelectItem value="venue">この区分の催事だけ数える</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -279,9 +364,9 @@ export function ExtractTab({ segments }: Props) {
             <div className="flex flex-col md:flex-row md:items-center gap-2">
               <div className="flex-1 font-medium">
                 抽出結果: <span className="text-lg">{results.length.toLocaleString()}</span> 人
-                <span className="text-sm text-muted-foreground ml-2">
-                  （{selectedSeg ? selectedSeg.segment_name : "全顧客"} ／ {years}年以上来場なし）
-                </span>
+                {resultNote && (
+                  <span className="text-sm text-muted-foreground ml-2">（{resultNote}）</span>
+                )}
               </div>
               <Button variant="outline" onClick={handleDownload} disabled={results.length === 0}>
                 <Download className="h-4 w-4 mr-1" />

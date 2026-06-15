@@ -17,7 +17,7 @@ import { Upload, Search, Info } from "lucide-react";
 import Link from "next/link";
 import { usePermission } from "@/hooks/usePermission";
 import { CustomerImportDialog } from "./CustomerImportDialog";
-import { segKey, type Customer, type CustomerSegment, type SegmentMaster } from "./types";
+import { segKey, statusColor, CUSTOMER_STATUSES, type Customer, type CustomerSegment, type SegmentMaster } from "./types";
 
 type VisitWithEvent = {
   customer_id: string;
@@ -63,7 +63,7 @@ export function CustomerListTab({ segments }: Props) {
     setLoading(true);
     let builder = supabase
       .from("customers")
-      .select("id, customer_no, name, kana, postal_code, address, phone, dm_active, notes, imported_at")
+      .select("id, customer_no, name, kana, postal_code, address, phone, dm_active, notes, imported_at, status")
       .order("customer_no")
       .limit(100);
     const t = q.trim();
@@ -118,6 +118,16 @@ export function CustomerListTab({ segments }: Props) {
     setDetail(c);
     setDetailNotes(c.notes || "");
     setNotesSaved(false);
+  };
+
+  /** 顧客の状態（有効/宛先不明/削除候補）を変更。送付・抽出の対象から外す判断に使う */
+  const saveStatus = async (status: string) => {
+    if (!detail) return;
+    const { error } = await supabase.from("customers").update({ status }).eq("id", detail.id);
+    if (!error) {
+      setCustomers((prev) => prev.map((c) => (c.id === detail.id ? { ...c, status } : c)));
+      setDetail((prev) => (prev ? { ...prev, status } : prev));
+    }
   };
 
   /** 顧客メモを保存（大量購入・送り常連などの特記事項。来場登録の確認画面に毎回表示される） */
@@ -240,7 +250,12 @@ export function CustomerListTab({ segments }: Props) {
                   return (
                     <TableRow key={c.id} className="cursor-pointer" onClick={() => openDetail(c)}>
                       <TableCell className="font-mono text-xs">{c.customer_no}</TableCell>
-                      <TableCell className="font-medium">{c.name}</TableCell>
+                      <TableCell className="font-medium">
+                        {c.name}
+                        {c.status !== "有効" && (
+                          <span className={`ml-1.5 inline-block px-1.5 py-0.5 text-[10px] rounded-full border align-middle ${statusColor(c.status)}`}>{c.status}</span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-xs text-muted-foreground">{c.kana || "—"}</TableCell>
                       <TableCell>{visitBadge(count)}</TableCell>
                       <TableCell className="text-xs">{last || "—"}</TableCell>
@@ -267,7 +282,12 @@ export function CustomerListTab({ segments }: Props) {
                     className="w-full flex items-center gap-3 px-4 py-3 text-left active:bg-muted transition-colors"
                   >
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate">{c.name}</div>
+                      <div className="font-medium truncate">
+                        {c.name}
+                        {c.status !== "有効" && (
+                          <span className={`ml-1.5 inline-block px-1.5 py-0.5 text-[10px] rounded-full border align-middle ${statusColor(c.status)}`}>{c.status}</span>
+                        )}
+                      </div>
                       <div className="text-xs text-muted-foreground truncate">
                         #{c.customer_no}{c.kana ? ` ／ ${c.kana}` : ""}
                       </div>
@@ -304,6 +324,29 @@ export function CustomerListTab({ segments }: Props) {
                   <span className="text-muted-foreground">カナ</span><span>{detail.kana || "—"}</span>
                   <span className="text-muted-foreground">来場回数</span>
                   <span>{visitBadge(visits.get(detail.id)?.length ?? 0)}</span>
+                </div>
+                <div>
+                  <div className="text-muted-foreground mb-1">
+                    状態（宛先不明・削除候補はDM送付・抽出から除外されます）
+                  </div>
+                  {canImport ? (
+                    <div className="flex gap-1.5 flex-wrap">
+                      {CUSTOMER_STATUSES.map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => saveStatus(s)}
+                          className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${
+                            detail.status === s ? statusColor(s) + " font-bold" : "bg-white text-muted-foreground border-input hover:bg-muted"
+                          }`}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className={`inline-block px-2 py-0.5 text-xs rounded-full border ${statusColor(detail.status)}`}>{detail.status}</span>
+                  )}
                 </div>
                 <div>
                   <div className="text-muted-foreground mb-1">DM区分</div>
