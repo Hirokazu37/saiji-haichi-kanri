@@ -149,7 +149,7 @@ export default function PayerMasterPage() {
           帳合先が登録されていません。「帳合先を追加」から登録してください。
         </div>
       ) : (
-        <div className="rounded-md border">
+        <div className="rounded-md border overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>

@@ -191,7 +191,7 @@ export default function EmployeesPage() {
           社員が登録されていません。「社員追加」から登録してください。
         </p>
       ) : (
-        <div className="rounded-md border">
+        <div className="rounded-md border overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>

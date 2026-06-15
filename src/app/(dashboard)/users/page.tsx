@@ -303,7 +303,7 @@ export default function UsersPage() {
       ) : users.length === 0 ? (
         <p className="text-muted-foreground">ユーザーが登録されていません</p>
       ) : (
-        <div className="border rounded-lg overflow-hidden">
+        <div className="border rounded-lg overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>

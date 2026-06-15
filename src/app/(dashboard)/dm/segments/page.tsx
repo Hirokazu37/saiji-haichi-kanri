@@ -242,7 +242,7 @@ export default function DmSegmentsPage() {
 
       {kbnGroups.map((kbn) => (
         <Card key={kbn}>
-          <CardContent className="p-0">
+          <CardContent className="p-0 overflow-x-auto">
             <div className={`px-4 py-2 border-b font-semibold text-sm flex items-center gap-2 ${kbnColor(kbn).header}`}>
               <span className={`inline-block h-2.5 w-2.5 rounded-full shrink-0 ${kbnColor(kbn).dot}`} />
               区分{kbn}
