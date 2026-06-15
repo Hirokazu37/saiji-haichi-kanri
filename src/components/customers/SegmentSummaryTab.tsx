@@ -18,7 +18,7 @@ type Props = {
   onOpenStore?: (kbn: number, code: number) => void;
 };
 
-/** 百貨店（DM区分）ごとの顧客数・来場・反応率サマリ */
+/** 百貨店（DM区分）ごとの顧客数・来場・DMヒット率サマリ */
 export function SegmentSummaryTab({ segments, onOpenStore }: Props) {
   const supabase = createClient();
   const [rows, setRows] = useState<SummaryRow[]>([]);
@@ -97,7 +97,7 @@ export function SegmentSummaryTab({ segments, onOpenStore }: Props) {
               type="button"
               onClick={() => setSortKey("rate")}
               className={`px-2 h-8 border-l ${sortKey === "rate" ? "bg-primary text-primary-foreground font-bold" : "bg-white"}`}
-            >反応率順</button>
+            >DMヒット率順</button>
           </div>
         </div>
       </div>
@@ -112,7 +112,7 @@ export function SegmentSummaryTab({ segments, onOpenStore }: Props) {
                 <TableHead>百貨店</TableHead>
                 <TableHead className="text-right">顧客数</TableHead>
                 <TableHead className="text-right">来場あり</TableHead>
-                <TableHead className="text-right">反応率</TableHead>
+                <TableHead className="text-right">DMヒット率</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -161,7 +161,7 @@ export function SegmentSummaryTab({ segments, onOpenStore }: Props) {
                     <div className="font-mono text-[11px] text-muted-foreground">区分 {r.kbn_no}-{r.code}</div>
                   </div>
                   <div className="text-right shrink-0">
-                    <div className="font-semibold">反応率 {r.customer_count > 0 ? `${r.rate.toFixed(1)}%` : "—"}</div>
+                    <div className="font-semibold">DMヒット率 {r.customer_count > 0 ? `${r.rate.toFixed(1)}%` : "—"}</div>
                     <div className="text-[11px] text-muted-foreground">
                       顧客 {r.customer_count.toLocaleString()} ／ 来場 {r.visited_count.toLocaleString()}
                     </div>

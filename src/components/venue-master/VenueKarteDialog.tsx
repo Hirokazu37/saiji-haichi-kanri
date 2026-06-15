@@ -227,7 +227,7 @@ export function VenueKarteDialog({ open, onOpenChange, venue, segments, canEdit,
                         <TableHead className="text-right">売上(税込)</TableHead>
                         <TableHead className="text-right">DM</TableHead>
                         <TableHead className="text-right">来場</TableHead>
-                        <TableHead className="text-right">反応率</TableHead>
+                        <TableHead className="text-right">DMヒット率</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>

@@ -480,7 +480,7 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
           )}
           <div className="text-sm text-muted-foreground">
             {event
-              ? "この催事のDMに使った名簿CSV（産直くんで区分抽出したもの）を選んでください。名簿のお客様がこの催事にひも付き、来場登録時の照合や反応率に使われます。"
+              ? "この催事のDMに使った名簿CSV（産直くんで区分抽出したもの）を選んでください。名簿のお客様がこの催事にひも付き、来場登録時の照合やDMヒット率に使われます。"
               : "産直くん11からエクスポートした得意先のCSVを選んでください（Shift_JIS / UTF-8 どちらでも可）。同じ顧客番号は上書き更新されるので、何度でも取り込み直せます。"}
           </div>
 

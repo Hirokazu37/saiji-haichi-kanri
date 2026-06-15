@@ -350,7 +350,7 @@ export function CustomerListTab({ segments, segFilter, onSegFilterChange }: Prop
           <Link href="/dm" className="font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-900">
             「DMハガキ」画面
           </Link>
-          {" "}の各催事の「名簿」ボタンから行ってください（催事にひも付き、来場の照合や反応率に使われます）。
+          {" "}の各催事の「名簿」ボタンから行ってください（催事にひも付き、来場の照合やDMヒット率に使われます）。
           この画面の「マスタ一括取込」は補助用です（初回の一括登録／区分の付け直しなど）。
         </div>
       </div>

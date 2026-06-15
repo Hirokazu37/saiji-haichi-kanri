@@ -445,7 +445,7 @@ export function VisitEntryTab({ segments }: Props) {
                   ／ 登録済みの来場: {visits.length}人
                   {(() => {
                     const base = selectedEvent.dm_count || rosterCount;
-                    return base ? `（反応率 ${((visits.length / base) * 100).toFixed(1)}%）` : "";
+                    return base ? `（DMヒット率 ${((visits.length / base) * 100).toFixed(1)}%）` : "";
                   })()}
                 </div>
               </div>
