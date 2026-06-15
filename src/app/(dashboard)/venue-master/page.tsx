@@ -40,6 +40,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { prefectures } from "@/lib/prefectures";
 import { getAreaForPrefecture, getRegionColor, regionColors } from "@/lib/areas";
 import { usePermission } from "@/hooks/usePermission";
+import { VenueKarteDialog } from "@/components/venue-master/VenueKarteDialog";
 
 type VenueMaster = {
   id: string;
@@ -106,6 +107,8 @@ export default function VenueMasterPage() {
   const [mannequinLinks, setMannequinLinks] = useState<VenueMannequinLink[]>([]);
   const [payers, setPayers] = useState<PayerMasterItem[]>([]);
   const [dmSegments, setDmSegments] = useState<DmSegmentItem[]>([]);
+  // 店舗カルテ（行クリックで開く）
+  const [karte, setKarte] = useState<VenueMaster | null>(null);
   const [selectedSegmentIds, setSelectedSegmentIds] = useState<Set<string>>(new Set());
   const [segmentSearch, setSegmentSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -564,7 +567,10 @@ export default function VenueMasterPage() {
         <TableCell className="text-xs text-muted-foreground">{venueRegion}</TableCell>
         <TableCell className="text-sm hidden md:table-cell">{v.prefecture || "—"}</TableCell>
         <TableCell>
-          <div className="font-medium">{v.venue_name}{v.store_name ? <span className="text-muted-foreground font-normal ml-1">{v.store_name}</span> : null}</div>
+          <button type="button" onClick={() => setKarte(v)} className="text-left hover:underline" title="店舗カルテ（売上・DM・顧客の履歴）を開く">
+            <div className="font-medium">{v.venue_name}{v.store_name ? <span className="text-muted-foreground font-normal ml-1">{v.store_name}</span> : null}</div>
+            <span className="text-[10px] text-primary">カルテを見る ›</span>
+          </button>
         </TableCell>
         <TableCell className="hidden md:table-cell">
           <div className="flex flex-wrap gap-1">
@@ -1338,6 +1344,19 @@ export default function VenueMasterPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* 店舗カルテ */}
+      <VenueKarteDialog
+        open={karte !== null}
+        onOpenChange={(o) => { if (!o) setKarte(null); }}
+        venue={karte ? { id: karte.id, venue_name: karte.venue_name, store_name: karte.store_name, notes: karte.notes } : null}
+        segments={karte ? dmSegments.filter((s) => s.venue_id === karte.id).map((s) => ({ kbn_no: s.kbn_no, code: s.code, segment_name: s.segment_name })) : []}
+        canEdit={canEdit}
+        onNotesSaved={(notes) => {
+          setVenues((prev) => prev.map((x) => (karte && x.id === karte.id ? { ...x, notes } : x)));
+          setKarte((prev) => (prev ? { ...prev, notes } : prev));
+        }}
+      />
     </div>
   );
 }
