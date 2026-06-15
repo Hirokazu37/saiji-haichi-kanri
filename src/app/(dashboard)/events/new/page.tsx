@@ -166,6 +166,8 @@ function NewEventPageInner() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   // 複製: ?from=<id> が指定されたら元の催事データで初期化
+  // ※ 売上実績(event_daily_revenue)・revenue は意図的にコピーしない。
+  //   複製先は未来の新規催事であり、過去の架空売上が入らないようにするため。
   useEffect(() => {
     if (!duplicateFromId) return;
     let cancelled = false;

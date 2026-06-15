@@ -268,9 +268,15 @@ export default function EventDetailPage({
         excludedTotal += toExcluded(n, v.tax_rate);
       }
     }
-    const revenueToSave = hasAnyDaily
-      ? includedTotal
-      : form.revenue.trim() ? parseInt(form.revenue) : null;
+    // 開催前(未来)の催事には売上実績(event_daily_revenue)を一切書き込まない。
+    // 架空の実績が未来催事に入るのを防ぐガード。
+    const today = new Date().toISOString().slice(0, 10);
+    const isFutureEvent = !!form.start_date && form.start_date > today;
+    const revenueToSave = isFutureEvent
+      ? (form.revenue.trim() ? parseInt(form.revenue) : null)
+      : hasAnyDaily
+        ? includedTotal
+        : form.revenue.trim() ? parseInt(form.revenue) : null;
 
     // 入金元設定を分解
     const payerSource = form.payer_source;
@@ -305,8 +311,9 @@ export default function EventDetailPage({
       errors.push(`催事情報の保存に失敗: ${evtUpdate.error.message}`);
     }
 
-    // 日別売上テーブルを差分更新
+    // 日別売上テーブルを差分更新（開催前の未来催事では一切触らない）
     // 現在DBにある行を取得 → 新しいMapと突き合わせて upsert / delete
+    if (!isFutureEvent) {
     const { data: existingDaily, error: dailyReadErr } = await supabase
       .from("event_daily_revenue")
       .select("id, date, amount")
@@ -366,6 +373,7 @@ export default function EventDetailPage({
         errors.push(`日別売上の保存に失敗: ${upRes.error.message}`);
       }
     }
+    } // end if (!isFutureEvent)
 
     // 入金管理: 売上が入ったら event_payments の planned_amount が空の行に自動で金額を埋める。
     // また、event_payments 自体が無い催事（古い催事）にはレコードを自動作成する。
@@ -923,6 +931,15 @@ export default function EventDetailPage({
 
           {/* 日別売上 */}
           {(() => {
+            // 開催前（未来）の催事は売上実績を入力させない（架空の実績防止）
+            const todayStr = new Date().toISOString().slice(0, 10);
+            if (form.start_date && form.start_date > todayStr) {
+              return (
+                <div className="text-xs rounded px-2.5 py-2 border bg-muted/40 text-muted-foreground">
+                  開催前のため、売上実績はまだ入力できません（会期開始後に入力欄が表示されます）。
+                </div>
+              );
+            }
             // 会期の日付配列を作る
             const days: string[] = [];
             if (form.start_date && form.end_date) {
