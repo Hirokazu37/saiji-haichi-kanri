@@ -45,6 +45,11 @@ export function CustomerListTab({ segments }: Props) {
   // 顧客メモ（「大量に買ってくださる」「送り常連」などの特記事項）の編集
   const [detailNotes, setDetailNotes] = useState("");
   const [notesSaved, setNotesSaved] = useState(false);
+  // 並べ替え（ヘッダークリック）
+  type SortKey = "no" | "name" | "store" | "kana" | "visits" | "last";
+  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "no", dir: "asc" });
+  const toggleSort = (key: SortKey) =>
+    setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
 
   const segNameMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -177,6 +182,33 @@ export function CustomerListTab({ segments }: Props) {
     ));
   };
 
+  // 並べ替えを適用した表示用リスト（取得済みの最大100件を対象に並べ替え）
+  const sortedCustomers = useMemo(() => {
+    const dir = sort.dir === "asc" ? 1 : -1;
+    const firstStore = (c: Customer) => {
+      const segs = custSegs.get(c.id) || [];
+      if (!segs.length) return "";
+      return segNameMap.get(segKey(segs[0].kbn_no, segs[0].code)) || "";
+    };
+    const lastV = (c: Customer) => {
+      const vs = visits.get(c.id);
+      if (!vs || !vs.length) return "";
+      return vs[0].visited_on || vs[0].events?.start_date || "";
+    };
+    return [...customers].sort((a, b) => {
+      let r = 0;
+      switch (sort.key) {
+        case "no": r = a.customer_no.localeCompare(b.customer_no, "ja", { numeric: true }); break;
+        case "name": r = (a.name || "").localeCompare(b.name || "", "ja"); break;
+        case "kana": r = (a.kana || "").localeCompare(b.kana || "", "ja"); break;
+        case "store": r = firstStore(a).localeCompare(firstStore(b), "ja"); break;
+        case "visits": r = (visits.get(a.id)?.length ?? 0) - (visits.get(b.id)?.length ?? 0); break;
+        case "last": r = lastV(a).localeCompare(lastV(b)); break;
+      }
+      return r * dir;
+    });
+  }, [customers, sort, visits, custSegs, segNameMap]);
+
   /** その顧客の所属百貨店名（DM区分名）の配列 */
   const storeNamesOf = (c: Customer): string[] =>
     (custSegs.get(c.id) || []).map((s) => segNameMap.get(segKey(s.kbn_no, s.code)) || `区分${s.kbn_no}-${s.code}`);
@@ -197,6 +229,21 @@ export function CustomerListTab({ segments }: Props) {
       </span>
     );
   };
+
+  const renderSortHead = (k: SortKey, label: string, className?: string) => (
+    <TableHead className={className}>
+      <button
+        type="button"
+        onClick={() => toggleSort(k)}
+        className="inline-flex items-center gap-1 hover:text-foreground select-none"
+      >
+        {label}
+        <span className="text-[10px] text-muted-foreground">
+          {sort.key === k ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}
+        </span>
+      </button>
+    </TableHead>
+  );
 
   return (
     <div className="space-y-3">
@@ -251,12 +298,12 @@ export function CustomerListTab({ segments }: Props) {
             <Table className="hidden md:table">
               <TableHeader>
                 <TableRow>
-                  <TableHead>番号</TableHead>
-                  <TableHead>氏名</TableHead>
-                  <TableHead>所属（百貨店）</TableHead>
-                  <TableHead className="hidden lg:table-cell">カナ</TableHead>
-                  <TableHead>来場</TableHead>
-                  <TableHead className="hidden lg:table-cell">最終来場</TableHead>
+                  {renderSortHead("no", "番号")}
+                  {renderSortHead("name", "氏名")}
+                  {renderSortHead("store", "所属（百貨店）")}
+                  {renderSortHead("kana", "カナ", "hidden lg:table-cell")}
+                  {renderSortHead("visits", "来場")}
+                  {renderSortHead("last", "最終来場", "hidden lg:table-cell")}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -266,7 +313,7 @@ export function CustomerListTab({ segments }: Props) {
                 {!loading && customers.length === 0 && (
                   <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-6">該当する顧客がいません</TableCell></TableRow>
                 )}
-                {!loading && customers.map((c) => {
+                {!loading && sortedCustomers.map((c) => {
                   const last = lastVisitOf(c);
                   const count = visits.get(c.id)?.length ?? 0;
                   return (
