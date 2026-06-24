@@ -29,6 +29,15 @@ const SPACE_OPTIONS: { value: Space; name: string }[] = [
 const SPACE_MARGIN: Record<Space, string> = { wide: "3mm 0", normal: "1.2mm 0", tight: "0.2mm 0" };
 const normSpace = (v: unknown): Space => (v === "wide" || v === "tight" ? v : "normal");
 
+type VPos = "top" | "center" | "bottom";
+const VPOS_OPTIONS: { value: VPos; name: string }[] = [
+  { value: "top", name: "上" },
+  { value: "center", name: "中央" },
+  { value: "bottom", name: "下（宛名の下）" },
+];
+const VPOS_JUSTIFY: Record<VPos, string> = { top: "flex-start", center: "center", bottom: "flex-end" };
+const normVPos = (v: unknown): VPos => (v === "center" || v === "bottom" ? v : "top");
+
 // 見た目（サイズ・太さ）基準のスタイル。fs=ポイント
 type StyleDef = { value: string; name: string; fs: number; fw: number; color?: string; boxed?: boolean };
 const STYLES: StyleDef[] = [
@@ -86,6 +95,7 @@ export default function PostcardMessagePage() {
   const [events, setEvents] = useState<Evt[]>([]);
   const [eventId, setEventId] = useState("");
   const [blocks, setBlocks] = useState<Block[]>([]);
+  const [vpos, setVpos] = useState<VPos>("top");
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -114,6 +124,7 @@ export default function PostcardMessagePage() {
       const { data } = await supabase.from("event_postcards").select("*").eq("event_id", eventId).maybeSingle();
       if (cancelled) return;
       setSaved(false);
+      setVpos(normVPos(data?.vpos));
       if (data?.blocks && Array.isArray(data.blocks) && data.blocks.length > 0) {
         setBlocks((data.blocks as Block[]).map((b) => ({
           id: b.id || newId(),
@@ -142,7 +153,7 @@ export default function PostcardMessagePage() {
 
   const save = async () => {
     if (!eventId) return;
-    const { error } = await supabase.from("event_postcards").upsert({ event_id: eventId, blocks }, { onConflict: "event_id" });
+    const { error } = await supabase.from("event_postcards").upsert({ event_id: eventId, blocks, vpos }, { onConflict: "event_id" });
     if (!error) { setSaved(true); setTimeout(() => setSaved(false), 2000); }
   };
 
@@ -160,7 +171,7 @@ export default function PostcardMessagePage() {
   const add = () => setBlocks((prev) => [...prev, { id: newId(), style: "normal", align: "center", space: "normal", label: "", text: "" }]);
 
   const renderPostcard = () => (
-    <div className="pc-msg">
+    <div className="pc-msg" style={{ justifyContent: VPOS_JUSTIFY[vpos] }}>
       <div className="pc-anno">
         {blocks.filter((b) => b.text.trim() || b.label.trim()).map((b) => {
           const s = STYLE_MAP[normStyle(b.style)];
@@ -184,8 +195,8 @@ export default function PostcardMessagePage() {
   return (
     <div className="space-y-4 pb-8">
       <style>{`
-        /* 上半分は宛名用に空け、案内文面はカード下部の赤枠に配置 */
-        .pc-msg { box-sizing: border-box; height: 100%; padding: 0 7mm 16mm; display: flex; flex-direction: column; justify-content: flex-end; color: #1a1a1a; }
+        /* 案内文面（赤枠）。縦位置は vpos で切替（上/中央/下） */
+        .pc-msg { box-sizing: border-box; height: 100%; padding: 9mm 7mm; display: flex; flex-direction: column; color: #1a1a1a; }
         .pc-anno { border: 1.2pt solid #cc0000; padding: 5mm 4mm 4mm; }
         .pc-msg ruby rt { font-size: 0.5em; }
         @media print {
@@ -217,6 +228,18 @@ export default function PostcardMessagePage() {
           <Label className="text-xs mb-1 block">対象の催事</Label>
           <Combobox items={eventItems} value={eventId} onChange={setEventId} allowCustom={false} placeholder="催事を選択" searchPlaceholder="会場名などで検索" />
         </div>
+
+        {eventId && (
+          <div className="flex items-center gap-2">
+            <Label className="text-xs text-muted-foreground shrink-0">文面の縦位置</Label>
+            <Select value={vpos} onValueChange={(v) => v && setVpos(v as VPos)}>
+              <SelectTrigger className="h-8 text-xs w-[160px]"><SelectValue>{VPOS_OPTIONS.find((o) => o.value === vpos)?.name}</SelectValue></SelectTrigger>
+              <SelectContent>
+                {VPOS_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         {eventId && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
