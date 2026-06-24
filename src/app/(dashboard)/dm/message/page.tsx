@@ -9,15 +9,25 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Combobox, type ComboboxItem } from "@/components/ui/combobox";
-import { ArrowLeft, Printer, Info, Save } from "lucide-react";
+import { ArrowLeft, Printer, Info, Save, ArrowUp, ArrowDown, Trash2, Plus } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
 import { renderRuby } from "@/lib/ruby";
 import { PrintPortal } from "@/components/PrintPortal";
 
 type Evt = { id: string; name: string | null; venue: string; store_name: string | null; start_date: string; end_date: string };
-type Form = { lead: string; venue_label: string; title: string; hall: string; period_text: string; hours: string; body: string };
+type BlockStyle = "lead" | "title" | "venue" | "normal";
+type Block = { id: string; style: BlockStyle; label: string; text: string };
 
-const EMPTY: Form = { lead: "出店のご案内", venue_label: "", title: "", hall: "", period_text: "", hours: "午前10時〜午後8時", body: "" };
+const STYLE_OPTIONS: { value: BlockStyle; label: string }[] = [
+  { value: "lead", label: "見出し（小・色付き）" },
+  { value: "title", label: "催事名（大）" },
+  { value: "venue", label: "店名（中・太）" },
+  { value: "normal", label: "通常" },
+];
+const STYLE_CLASS: Record<BlockStyle, string> = { lead: "blk-lead", title: "blk-title", venue: "blk-venue", normal: "blk-normal" };
+
+const newId = () =>
+  typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `b${Math.random().toString(36).slice(2)}`;
 
 const WD = ["日", "月", "火", "水", "木", "金", "土"];
 function periodFromDates(start: string, end: string): string {
@@ -29,13 +39,24 @@ function periodFromDates(start: string, end: string): string {
   return `${f(start)}〜${f(end)}`;
 }
 
+function defaultBlocks(evt: Evt | undefined): Block[] {
+  const venue = evt ? `${evt.venue}${evt.store_name ? ` ${evt.store_name}` : ""}` : "";
+  return [
+    { id: newId(), style: "lead", label: "", text: "出店のご案内" },
+    { id: newId(), style: "title", label: "", text: evt?.name || "" },
+    { id: newId(), style: "venue", label: "", text: venue },
+    { id: newId(), style: "normal", label: "会期", text: evt ? periodFromDates(evt.start_date, evt.end_date) : "" },
+    { id: newId(), style: "normal", label: "営業時間", text: "午前10時〜午後8時" },
+  ];
+}
+
 export default function PostcardMessagePage() {
   const { role } = usePermission();
   const canEdit = role === "admin" || role === "viewer";
   const supabase = createClient();
   const [events, setEvents] = useState<Evt[]>([]);
   const [eventId, setEventId] = useState("");
-  const [form, setForm] = useState<Form>(EMPTY);
+  const [blocks, setBlocks] = useState<Block[]>([]);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -64,24 +85,21 @@ export default function PostcardMessagePage() {
       const { data } = await supabase.from("event_postcards").select("*").eq("event_id", eventId).maybeSingle();
       if (cancelled) return;
       setSaved(false);
-      if (data) {
-        setForm({
-          lead: data.lead || "出店のご案内",
-          venue_label: data.venue_label || "",
-          title: data.title || "",
-          hall: data.hall || "",
-          period_text: data.period_text || "",
-          hours: data.hours || "午前10時〜午後8時",
-          body: data.body || "",
-        });
+      if (data?.blocks && Array.isArray(data.blocks) && data.blocks.length > 0) {
+        setBlocks((data.blocks as Block[]).map((b) => ({ ...b, id: b.id || newId() })));
+      } else if (data) {
+        // 旧フォーマット（固定列）からブロックへ移行
+        const venue = evt ? `${evt.venue}${evt.store_name ? ` ${evt.store_name}` : ""}` : "";
+        setBlocks([
+          { id: newId(), style: "lead", label: "", text: data.lead || "出店のご案内" },
+          { id: newId(), style: "title", label: "", text: data.title || evt?.name || "" },
+          { id: newId(), style: "venue", label: "", text: data.venue_label || venue },
+          { id: newId(), style: "normal", label: "会期", text: data.period_text || "" },
+          { id: newId(), style: "normal", label: "営業時間", text: data.hours || "" },
+          ...(data.body ? [{ id: newId(), style: "normal" as BlockStyle, label: "", text: data.body }] : []),
+        ]);
       } else {
-        // 初回はイベント情報から下書きを用意
-        setForm({
-          ...EMPTY,
-          venue_label: evt ? `${evt.venue}${evt.store_name ? ` ${evt.store_name}` : ""}` : "",
-          title: evt?.name || "",
-          period_text: evt ? periodFromDates(evt.start_date, evt.end_date) : "",
-        });
+        setBlocks(defaultBlocks(evt));
       }
     })();
     return () => { cancelled = true; };
@@ -89,24 +107,31 @@ export default function PostcardMessagePage() {
 
   const save = async () => {
     if (!eventId) return;
-    const { error } = await supabase.from("event_postcards").upsert({ event_id: eventId, ...form }, { onConflict: "event_id" });
+    const { error } = await supabase.from("event_postcards").upsert({ event_id: eventId, blocks }, { onConflict: "event_id" });
     if (!error) { setSaved(true); setTimeout(() => setSaved(false), 2000); }
   };
 
-  const set = (k: keyof Form, v: string) => setForm((p) => ({ ...p, [k]: v }));
+  const update = (id: string, patch: Partial<Block>) =>
+    setBlocks((prev) => prev.map((b) => (b.id === id ? { ...b, ...patch } : b)));
+  const move = (idx: number, dir: -1 | 1) =>
+    setBlocks((prev) => {
+      const next = [...prev];
+      const j = idx + dir;
+      if (j < 0 || j >= next.length) return prev;
+      [next[idx], next[j]] = [next[j], next[idx]];
+      return next;
+    });
+  const remove = (id: string) => setBlocks((prev) => prev.filter((b) => b.id !== id));
+  const add = () => setBlocks((prev) => [...prev, { id: newId(), style: "normal", label: "", text: "" }]);
 
-  // 1枚分の文面プレビュー（コンポーネントではなく関数で返す）
   const renderPostcard = () => (
     <div className="pc-msg">
-      {form.lead && <div className="pc-lead">{renderRuby(form.lead)}</div>}
-      {form.title && <div className="pc-title">{renderRuby(form.title)}</div>}
-      <div className="pc-meta">
-        {form.venue_label && <div className="pc-venue">{renderRuby(form.venue_label)}</div>}
-        {form.hall && <div>会場：{renderRuby(form.hall)}</div>}
-        {form.period_text && <div>会期：{renderRuby(form.period_text)}</div>}
-        {form.hours && <div>営業時間：{renderRuby(form.hours)}</div>}
-      </div>
-      {form.body && <div className="pc-body">{renderRuby(form.body)}</div>}
+      {blocks.filter((b) => b.text.trim() || b.label.trim()).map((b) => (
+        <div key={b.id} className={STYLE_CLASS[b.style]}>
+          {b.label.trim() && <span className="blk-label">{b.label}：</span>}
+          {renderRuby(b.text)}
+        </div>
+      ))}
     </div>
   );
 
@@ -115,12 +140,12 @@ export default function PostcardMessagePage() {
   return (
     <div className="space-y-4 pb-8">
       <style>{`
-        .pc-msg { box-sizing: border-box; height: 100%; padding: 10mm 9mm; display: flex; flex-direction: column; gap: 3mm; color: #1a1a1a; }
-        .pc-lead { font-size: 12pt; letter-spacing: 4px; color: #b45309; border-bottom: 1.5pt solid #b45309; padding-bottom: 1.5mm; align-self: flex-start; }
-        .pc-title { font-size: 19pt; font-weight: 800; line-height: 1.25; }
-        .pc-meta { font-size: 10.5pt; line-height: 1.7; }
-        .pc-venue { font-weight: 700; font-size: 12pt; }
-        .pc-body { font-size: 9.5pt; line-height: 1.6; margin-top: auto; white-space: pre-wrap; }
+        .pc-msg { box-sizing: border-box; height: 100%; padding: 10mm 9mm; display: flex; flex-direction: column; gap: 2.5mm; color: #1a1a1a; }
+        .blk-lead { font-size: 12pt; letter-spacing: 4px; color: #b45309; border-bottom: 1.5pt solid #b45309; padding-bottom: 1.5mm; align-self: flex-start; }
+        .blk-title { font-size: 19pt; font-weight: 800; line-height: 1.25; }
+        .blk-venue { font-size: 12pt; font-weight: 700; }
+        .blk-normal { font-size: 10.5pt; line-height: 1.6; }
+        .blk-label { }
         .pc-msg ruby rt { font-size: 0.5em; }
         @media print {
           @page { size: A4 portrait; margin: 0; }
@@ -142,8 +167,8 @@ export default function PostcardMessagePage() {
         <div className="flex items-start gap-2 rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-sm text-blue-800">
           <Info className="h-4 w-4 mt-0.5 shrink-0 text-blue-600" />
           <div>
-            催事ごとに案内文面を作り、A4・4面で印刷します（4枚とも同じ文面）。宛名＋QRの「おもて面」とセットで使います。
-            <span className="block mt-0.5">ルビ（ふりがな）は <span className="font-mono bg-white px-1 rounded">｜漢字《かんじ》</span> の形で入力すると、漢字の上に小さく表示されます。</span>
+            行を自由に足して、↑↓で並べ替え、改行もできます。ラベル（「会期」→「日程」など）も書き換え可能です。
+            <span className="block mt-0.5">ルビは <span className="font-mono bg-white px-1 rounded">｜漢字《かんじ》</span> の形で入力。空欄の行は印刷されません。</span>
           </div>
         </div>
 
@@ -154,27 +179,39 @@ export default function PostcardMessagePage() {
 
         {eventId && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* 入力 */}
+            {/* ブロック編集 */}
             <Card>
-              <CardContent className="pt-4 space-y-2.5">
-                {([
-                  ["lead", "見出し"],
-                  ["venue_label", "百貨店名・店"],
-                  ["title", "催事名"],
-                  ["hall", "会場・階"],
-                  ["period_text", "会期"],
-                  ["hours", "営業時間"],
-                ] as const).map(([k, label]) => (
-                  <div key={k} className="space-y-1">
-                    <Label className="text-xs">{label}</Label>
-                    <Input value={form[k]} onChange={(e) => set(k, e.target.value)} />
+              <CardContent className="pt-4 space-y-3">
+                {blocks.map((b, i) => (
+                  <div key={b.id} className="rounded-md border p-2.5 space-y-2 bg-muted/20">
+                    <div className="flex items-center gap-1.5">
+                      <select
+                        value={b.style}
+                        onChange={(e) => update(b.id, { style: e.target.value as BlockStyle })}
+                        className="h-8 rounded-md border border-input bg-white px-2 text-xs flex-1"
+                      >
+                        {STYLE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => move(i, -1)} disabled={i === 0} title="上へ"><ArrowUp className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => move(i, 1)} disabled={i === blocks.length - 1} title="下へ"><ArrowDown className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => remove(b.id)} title="削除"><Trash2 className="h-4 w-4" /></Button>
+                    </div>
+                    <Input
+                      value={b.label}
+                      onChange={(e) => update(b.id, { label: e.target.value })}
+                      placeholder="ラベル（任意・例: 会期／日程）"
+                      className="h-8 text-sm"
+                    />
+                    <Textarea
+                      value={b.text}
+                      onChange={(e) => update(b.id, { text: e.target.value })}
+                      rows={2}
+                      placeholder="本文（改行可・ルビ可）"
+                    />
                   </div>
                 ))}
-                <div className="space-y-1">
-                  <Label className="text-xs">本文・ごあいさつ</Label>
-                  <Textarea value={form.body} onChange={(e) => set("body", e.target.value)} rows={4} />
-                </div>
-                <div className="flex items-center gap-2 pt-1">
+                <Button variant="outline" size="sm" onClick={add}><Plus className="h-4 w-4 mr-1" />行を追加</Button>
+                <div className="flex items-center gap-2 pt-1 border-t mt-1">
                   <Button onClick={save}><Save className="h-4 w-4 mr-1" />保存</Button>
                   {saved && <span className="text-xs text-green-600 font-medium">✓ 保存しました</span>}
                   <Button variant="outline" onClick={() => window.print()}><Printer className="h-4 w-4 mr-1" />4面印刷</Button>
