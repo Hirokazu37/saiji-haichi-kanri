@@ -197,7 +197,7 @@ export default function PostcardMessagePage() {
       <style>{`
         /* 案内文面（赤枠）。縦位置は vpos で切替（上/中央/下） */
         .pc-msg { box-sizing: border-box; height: 100%; padding: 9mm 7mm; display: flex; flex-direction: column; color: #1a1a1a; }
-        .pc-anno { border: 1.2pt solid #cc0000; padding: 5mm 4mm 4mm; }
+        .pc-anno { padding: 5mm 4mm 4mm; transform: translateY(-15mm); }
         .pc-msg ruby rt { font-size: 0.5em; }
         @media print {
           @page { size: A4 portrait; margin: 0; }
