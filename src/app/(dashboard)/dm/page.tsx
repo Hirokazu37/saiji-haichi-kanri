@@ -200,9 +200,14 @@ export default function DMListPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-2xl font-bold">DMハガキ一覧</h1>
-        <Link href="/dm/segments" className={buttonVariants({ variant: "outline", size: "sm" })}>
-          DM区分マスター
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link href="/dm/postcards" className={buttonVariants({ variant: "outline", size: "sm" })}>
+            QR付きはがき印刷
+          </Link>
+          <Link href="/dm/segments" className={buttonVariants({ variant: "outline", size: "sm" })}>
+            DM区分マスター
+          </Link>
+        </div>
       </div>
       <p className="text-xs text-muted-foreground">
         ※ 会期終了済の催事はデフォルトで非表示。確認したいときは「過去も見る」を ON にしてください。<br />
