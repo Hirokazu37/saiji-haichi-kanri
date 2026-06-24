@@ -165,6 +165,11 @@
   table { font-size: 9px; }
   [data-slot="card"] { break-inside: avoid; }
 
+  /* はがき印刷など: ポータル使用時はアプリ本体を外し、用紙いっぱいに出す */
+  body.has-print-portal > *:not(.print-portal) { display: none !important; }
+  body.has-print-portal { width: auto !important; }
+  body.has-print-portal::after { content: none !important; display: none !important; }
+
   /* 社外秘ウォーターマーク */
   body::after {
     content: "社外秘";

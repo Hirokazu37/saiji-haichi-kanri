@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { FileSpreadsheet, Printer, Info, ArrowLeft } from "lucide-react";
 import { parseCsvFile } from "@/lib/csv";
 import { usePermission } from "@/hooks/usePermission";
+import { PrintPortal } from "@/components/PrintPortal";
 
 const NONE = "__none__";
 
@@ -186,20 +187,16 @@ export default function PostcardPrintPage() {
         )}
       </div>
 
-      {/* 印刷レイアウト */}
+      {/* 印刷レイアウト — body直下にポータルで出す */}
       {cards && (
+        <PrintPortal>
         <div className="postcard-print">
           <style>{`
             .postcard-print { display: none; }
             @media print {
               @page { size: A4 portrait; margin: 0; }
               body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-              /* グローバルの社外秘ウォーターマークを無効化 */
-              body::after { content: none !important; display: none !important; }
-              /* 印刷対象だけ表示（他は隠す） */
-              body * { visibility: hidden !important; }
-              .postcard-print, .postcard-print * { visibility: visible !important; }
-              .postcard-print { display: block !important; position: absolute !important; left: 0; top: 0; margin: 0; }
+              .postcard-print { display: block !important; margin: 0; }
               .pc-sheet { width: 210mm; height: 297mm; display: grid; grid-template-columns: 105mm 105mm; grid-template-rows: 148.5mm 148.5mm; page-break-after: always; }
               .pc-card { position: relative; box-sizing: border-box; padding: 12mm 10mm; overflow: hidden; }
               .pc-postal { font-size: 14pt; letter-spacing: 2px; }
@@ -224,6 +221,7 @@ export default function PostcardPrintPage() {
             </div>
           ))}
         </div>
+        </PrintPortal>
       )}
     </div>
   );

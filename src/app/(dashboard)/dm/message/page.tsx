@@ -12,6 +12,7 @@ import { Combobox, type ComboboxItem } from "@/components/ui/combobox";
 import { ArrowLeft, Printer, Info, Save } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
 import { renderRuby } from "@/lib/ruby";
+import { PrintPortal } from "@/components/PrintPortal";
 
 type Evt = { id: string; name: string | null; venue: string; store_name: string | null; start_date: string; end_date: string };
 type Form = { lead: string; venue_label: string; title: string; hall: string; period_text: string; hours: string; body: string };
@@ -124,12 +125,7 @@ export default function PostcardMessagePage() {
         @media print {
           @page { size: A4 portrait; margin: 0; }
           body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          /* グローバルの社外秘ウォーターマークを無効化 */
-          body::after { content: none !important; display: none !important; }
-          /* 印刷対象だけ表示（他は隠す） */
-          body * { visibility: hidden !important; }
-          .pc-print, .pc-print * { visibility: visible !important; }
-          .pc-print { display: block !important; position: absolute !important; left: 0; top: 0; margin: 0; }
+          .pc-print { display: block !important; margin: 0; }
           .pc-sheet { width: 210mm; height: 297mm; display: grid; grid-template-columns: 105mm 105mm; grid-template-rows: 148.5mm 148.5mm; }
           .pc-sheet > .pc-cell { border: 0.3pt dashed #ccc; overflow: hidden; box-sizing: border-box; }
         }
@@ -197,15 +193,17 @@ export default function PostcardMessagePage() {
         )}
       </div>
 
-      {/* 印刷（4面・全て同じ文面） */}
+      {/* 印刷（4面・全て同じ文面）— body直下にポータルで出す */}
       {eventId && (
-        <div className="pc-print">
-          <div className="pc-sheet">
-            {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="pc-cell">{renderPostcard()}</div>
-            ))}
+        <PrintPortal>
+          <div className="pc-print">
+            <div className="pc-sheet">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="pc-cell">{renderPostcard()}</div>
+              ))}
+            </div>
           </div>
-        </div>
+        </PrintPortal>
       )}
     </div>
   );
