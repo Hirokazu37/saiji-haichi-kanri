@@ -91,11 +91,12 @@ export default function LoginPage() {
               <Input
                 id="username"
                 type="text"
-                placeholder="hirokazu"
+                placeholder="user"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
                 autoComplete="username"
+                className="h-11 text-base"
               />
             </div>
             <div className="space-y-2">
@@ -107,12 +108,13 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 autoComplete="current-password"
+                className="h-11 text-base"
               />
             </div>
             {error && (
               <p className="text-sm text-destructive" role="alert">{error}</p>
             )}
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" className="w-full h-11 text-base" disabled={loading}>
               {loading ? "ログイン中..." : "ログイン"}
             </Button>
           </form>
