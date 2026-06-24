@@ -15,16 +15,17 @@ import { renderRuby } from "@/lib/ruby";
 import { PrintPortal } from "@/components/PrintPortal";
 
 type Evt = { id: string; name: string | null; venue: string; store_name: string | null; start_date: string; end_date: string };
-type BlockStyle = "lead" | "title" | "venue" | "normal";
+type BlockStyle = "lead" | "title" | "venue" | "normal" | "small";
 type Block = { id: string; style: BlockStyle; label: string; text: string };
 
 const STYLE_OPTIONS: { value: BlockStyle; label: string }[] = [
-  { value: "lead", label: "見出し（小・色付き）" },
+  { value: "lead", label: "見出し（囲み）" },
   { value: "title", label: "催事名（大）" },
   { value: "venue", label: "店名（中・太）" },
   { value: "normal", label: "通常" },
+  { value: "small", label: "小・注記" },
 ];
-const STYLE_CLASS: Record<BlockStyle, string> = { lead: "blk-lead", title: "blk-title", venue: "blk-venue", normal: "blk-normal" };
+const STYLE_CLASS: Record<BlockStyle, string> = { lead: "blk-lead", title: "blk-title", venue: "blk-venue", normal: "blk-normal", small: "blk-small" };
 
 const newId = () =>
   typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `b${Math.random().toString(36).slice(2)}`;
@@ -43,10 +44,10 @@ function defaultBlocks(evt: Evt | undefined): Block[] {
   const venue = evt ? `${evt.venue}${evt.store_name ? ` ${evt.store_name}` : ""}` : "";
   return [
     { id: newId(), style: "lead", label: "", text: "出店のご案内" },
-    { id: newId(), style: "title", label: "", text: evt?.name || "" },
-    { id: newId(), style: "venue", label: "", text: venue },
-    { id: newId(), style: "normal", label: "会期", text: evt ? periodFromDates(evt.start_date, evt.end_date) : "" },
-    { id: newId(), style: "normal", label: "営業時間", text: "午前10時〜午後8時" },
+    { id: newId(), style: "title", label: "", text: evt?.name ? `「${evt.name}」` : "" },
+    { id: newId(), style: "normal", label: "期間", text: evt ? periodFromDates(evt.start_date, evt.end_date) : "" },
+    { id: newId(), style: "normal", label: "会場", text: venue },
+    { id: newId(), style: "small", label: "", text: "午前10時〜午後8時" },
   ];
 }
 
@@ -126,12 +127,14 @@ export default function PostcardMessagePage() {
 
   const renderPostcard = () => (
     <div className="pc-msg">
-      {blocks.filter((b) => b.text.trim() || b.label.trim()).map((b) => (
-        <div key={b.id} className={STYLE_CLASS[b.style]}>
-          {b.label.trim() && <span className="blk-label">{b.label}：</span>}
-          {renderRuby(b.text)}
-        </div>
-      ))}
+      <div className="pc-anno">
+        {blocks.filter((b) => b.text.trim() || b.label.trim()).map((b) => (
+          <div key={b.id} className={STYLE_CLASS[b.style]}>
+            {b.label.trim() && <span className="blk-label">{b.label} </span>}
+            {renderRuby(b.text)}
+          </div>
+        ))}
+      </div>
     </div>
   );
 
@@ -140,11 +143,15 @@ export default function PostcardMessagePage() {
   return (
     <div className="space-y-4 pb-8">
       <style>{`
-        .pc-msg { box-sizing: border-box; height: 100%; padding: 10mm 9mm; display: flex; flex-direction: column; gap: 2.5mm; color: #1a1a1a; }
-        .blk-lead { font-size: 12pt; letter-spacing: 4px; color: #b45309; border-bottom: 1.5pt solid #b45309; padding-bottom: 1.5mm; align-self: flex-start; }
-        .blk-title { font-size: 19pt; font-weight: 800; line-height: 1.25; }
-        .blk-venue { font-size: 12pt; font-weight: 700; }
-        .blk-normal { font-size: 10.5pt; line-height: 1.6; }
+        /* 上半分は宛名用に空け、案内文面はカード下部の赤枠に中央寄せ */
+        .pc-msg { box-sizing: border-box; height: 100%; padding: 0 7mm 16mm; display: flex; flex-direction: column; justify-content: flex-end; color: #1a1a1a; }
+        .pc-anno { border: 1.2pt solid #cc0000; padding: 5mm 4mm 4mm; display: flex; flex-direction: column; align-items: center; gap: 2.5mm; text-align: center; }
+        .pc-anno > * { max-width: 100%; }
+        .blk-lead { border: 1pt solid #222; padding: 1.5mm 7mm; font-size: 13pt; letter-spacing: 3px; }
+        .blk-title { font-size: 15pt; font-weight: 700; line-height: 1.3; }
+        .blk-venue { font-size: 12pt; font-weight: 700; line-height: 1.4; }
+        .blk-normal { font-size: 12pt; line-height: 1.5; }
+        .blk-small { font-size: 9pt; line-height: 1.4; }
         .blk-label { }
         .pc-msg ruby rt { font-size: 0.5em; }
         @media print {
