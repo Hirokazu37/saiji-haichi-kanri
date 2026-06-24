@@ -3,29 +3,37 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Combobox, type ComboboxItem } from "@/components/ui/combobox";
-import { ArrowLeft, Printer, Info, Save, ArrowUp, ArrowDown, Trash2, Plus } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ArrowLeft, Printer, Info, Save, ArrowUp, ArrowDown, Trash2, Plus, AlignLeft, AlignCenter, AlignRight } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
 import { renderRuby } from "@/lib/ruby";
 import { PrintPortal } from "@/components/PrintPortal";
 
 type Evt = { id: string; name: string | null; venue: string; store_name: string | null; start_date: string; end_date: string };
-type BlockStyle = "lead" | "title" | "venue" | "normal" | "small";
-type Block = { id: string; style: BlockStyle; label: string; text: string };
+type Align = "left" | "center" | "right";
+type Block = { id: string; style: string; align: Align; label: string; text: string };
 
-const STYLE_OPTIONS: { value: BlockStyle; label: string }[] = [
-  { value: "lead", label: "見出し（囲み）" },
-  { value: "title", label: "催事名（大）" },
-  { value: "venue", label: "店名（中・太）" },
-  { value: "normal", label: "通常" },
-  { value: "small", label: "小・注記" },
+// 見た目（サイズ・太さ）基準のスタイル。fs=ポイント
+type StyleDef = { value: string; name: string; fs: number; fw: number; color?: string; boxed?: boolean };
+const STYLES: StyleDef[] = [
+  { value: "box", name: "囲み（タイトル枠）", fs: 13, fw: 600, boxed: true },
+  { value: "xl", name: "特大・太字", fs: 16, fw: 800 },
+  { value: "lg", name: "大・太字", fs: 13.5, fw: 700 },
+  { value: "md", name: "中", fs: 12.5, fw: 600 },
+  { value: "normal", name: "標準", fs: 12, fw: 400 },
+  { value: "sm", name: "小・注記", fs: 9.5, fw: 400, color: "#555" },
 ];
-const STYLE_CLASS: Record<BlockStyle, string> = { lead: "blk-lead", title: "blk-title", venue: "blk-venue", normal: "blk-normal", small: "blk-small" };
+const STYLE_MAP: Record<string, StyleDef> = Object.fromEntries(STYLES.map((s) => [s.value, s]));
+// 旧スタイル名 → 新スタイル
+const MIGRATE: Record<string, string> = { lead: "box", title: "xl", venue: "lg", normal: "normal", small: "sm" };
+const normStyle = (v: string) => (STYLE_MAP[v] ? v : MIGRATE[v] || "normal");
 
 const newId = () =>
   typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `b${Math.random().toString(36).slice(2)}`;
@@ -40,14 +48,25 @@ function periodFromDates(start: string, end: string): string {
   return `${f(start)}〜${f(end)}`;
 }
 
+function spanStyle(s: StyleDef): React.CSSProperties {
+  return {
+    fontSize: `${s.fs}pt`,
+    fontWeight: s.fw,
+    color: s.color,
+    lineHeight: 1.5,
+    letterSpacing: s.boxed ? "3px" : undefined,
+    ...(s.boxed ? { display: "inline-block", border: "1pt solid #222", padding: "1.5mm 7mm" } : {}),
+  };
+}
+
 function defaultBlocks(evt: Evt | undefined): Block[] {
   const venue = evt ? `${evt.venue}${evt.store_name ? ` ${evt.store_name}` : ""}` : "";
   return [
-    { id: newId(), style: "lead", label: "", text: "出店のご案内" },
-    { id: newId(), style: "title", label: "", text: evt?.name ? `「${evt.name}」` : "" },
-    { id: newId(), style: "normal", label: "期間", text: evt ? periodFromDates(evt.start_date, evt.end_date) : "" },
-    { id: newId(), style: "normal", label: "会場", text: venue },
-    { id: newId(), style: "small", label: "", text: "午前10時〜午後8時" },
+    { id: newId(), style: "box", align: "center", label: "", text: "出店のご案内" },
+    { id: newId(), style: "xl", align: "center", label: "", text: evt?.name ? `「${evt.name}」` : "" },
+    { id: newId(), style: "normal", align: "center", label: "期間", text: evt ? periodFromDates(evt.start_date, evt.end_date) : "" },
+    { id: newId(), style: "normal", align: "center", label: "会場", text: venue },
+    { id: newId(), style: "sm", align: "center", label: "", text: "午前10時〜午後8時" },
   ];
 }
 
@@ -87,17 +106,22 @@ export default function PostcardMessagePage() {
       if (cancelled) return;
       setSaved(false);
       if (data?.blocks && Array.isArray(data.blocks) && data.blocks.length > 0) {
-        setBlocks((data.blocks as Block[]).map((b) => ({ ...b, id: b.id || newId() })));
+        setBlocks((data.blocks as Block[]).map((b) => ({
+          id: b.id || newId(),
+          style: normStyle(b.style),
+          align: (b.align as Align) || "center",
+          label: b.label || "",
+          text: b.text || "",
+        })));
       } else if (data) {
-        // 旧フォーマット（固定列）からブロックへ移行
         const venue = evt ? `${evt.venue}${evt.store_name ? ` ${evt.store_name}` : ""}` : "";
         setBlocks([
-          { id: newId(), style: "lead", label: "", text: data.lead || "出店のご案内" },
-          { id: newId(), style: "title", label: "", text: data.title || evt?.name || "" },
-          { id: newId(), style: "venue", label: "", text: data.venue_label || venue },
-          { id: newId(), style: "normal", label: "会期", text: data.period_text || "" },
-          { id: newId(), style: "normal", label: "営業時間", text: data.hours || "" },
-          ...(data.body ? [{ id: newId(), style: "normal" as BlockStyle, label: "", text: data.body }] : []),
+          { id: newId(), style: "box", align: "center", label: "", text: data.lead || "出店のご案内" },
+          { id: newId(), style: "xl", align: "center", label: "", text: data.title || evt?.name || "" },
+          { id: newId(), style: "normal", align: "center", label: "期間", text: data.period_text || "" },
+          { id: newId(), style: "normal", align: "center", label: "会場", text: data.venue_label || venue },
+          { id: newId(), style: "sm", align: "center", label: "", text: data.hours || "" },
+          ...(data.body ? [{ id: newId(), style: "normal", align: "center" as Align, label: "", text: data.body }] : []),
         ]);
       } else {
         setBlocks(defaultBlocks(evt));
@@ -123,36 +147,36 @@ export default function PostcardMessagePage() {
       return next;
     });
   const remove = (id: string) => setBlocks((prev) => prev.filter((b) => b.id !== id));
-  const add = () => setBlocks((prev) => [...prev, { id: newId(), style: "normal", label: "", text: "" }]);
+  const add = () => setBlocks((prev) => [...prev, { id: newId(), style: "normal", align: "center", label: "", text: "" }]);
 
   const renderPostcard = () => (
     <div className="pc-msg">
       <div className="pc-anno">
-        {blocks.filter((b) => b.text.trim() || b.label.trim()).map((b) => (
-          <div key={b.id} className={STYLE_CLASS[b.style]}>
-            {b.label.trim() && <span className="blk-label">{b.label} </span>}
-            {renderRuby(b.text)}
-          </div>
-        ))}
+        {blocks.filter((b) => b.text.trim() || b.label.trim()).map((b) => {
+          const s = STYLE_MAP[normStyle(b.style)];
+          return (
+            <div key={b.id} style={{ textAlign: b.align, margin: "1.2mm 0" }}>
+              <span style={spanStyle(s)}>
+                {b.label.trim() && <span>{b.label} </span>}
+                {renderRuby(b.text)}
+              </span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
+
+  const ALIGN_ICON = { left: AlignLeft, center: AlignCenter, right: AlignRight };
 
   if (!canEdit) return <p className="text-sm text-muted-foreground">この機能を使う権限がありません。</p>;
 
   return (
     <div className="space-y-4 pb-8">
       <style>{`
-        /* 上半分は宛名用に空け、案内文面はカード下部の赤枠に中央寄せ */
+        /* 上半分は宛名用に空け、案内文面はカード下部の赤枠に配置 */
         .pc-msg { box-sizing: border-box; height: 100%; padding: 0 7mm 16mm; display: flex; flex-direction: column; justify-content: flex-end; color: #1a1a1a; }
-        .pc-anno { border: 1.2pt solid #cc0000; padding: 5mm 4mm 4mm; display: flex; flex-direction: column; align-items: center; gap: 2.5mm; text-align: center; }
-        .pc-anno > * { max-width: 100%; }
-        .blk-lead { border: 1pt solid #222; padding: 1.5mm 7mm; font-size: 13pt; letter-spacing: 3px; }
-        .blk-title { font-size: 15pt; font-weight: 700; line-height: 1.3; }
-        .blk-venue { font-size: 12pt; font-weight: 700; line-height: 1.4; }
-        .blk-normal { font-size: 12pt; line-height: 1.5; }
-        .blk-small { font-size: 9pt; line-height: 1.4; }
-        .blk-label { }
+        .pc-anno { border: 1.2pt solid #cc0000; padding: 5mm 4mm 4mm; }
         .pc-msg ruby rt { font-size: 0.5em; }
         @media print {
           @page { size: A4 portrait; margin: 0; }
@@ -174,7 +198,7 @@ export default function PostcardMessagePage() {
         <div className="flex items-start gap-2 rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-sm text-blue-800">
           <Info className="h-4 w-4 mt-0.5 shrink-0 text-blue-600" />
           <div>
-            行を自由に足して、↑↓で並べ替え、改行もできます。ラベル（「会期」→「日程」など）も書き換え可能です。
+            各行で見た目（サイズ・太さ）と<span className="font-semibold">左/中央/右の揃え</span>を選べます。↑↓で並べ替え、改行も自由です。
             <span className="block mt-0.5">ルビは <span className="font-mono bg-white px-1 rounded">｜漢字《かんじ》</span> の形で入力。空欄の行は印刷されません。</span>
           </div>
         </div>
@@ -191,30 +215,38 @@ export default function PostcardMessagePage() {
               <CardContent className="pt-4 space-y-3">
                 {blocks.map((b, i) => (
                   <div key={b.id} className="rounded-md border p-2.5 space-y-2 bg-muted/20">
+                    {/* 1行目: スタイル選択 + 上下/削除 */}
                     <div className="flex items-center gap-1.5">
-                      <select
-                        value={b.style}
-                        onChange={(e) => update(b.id, { style: e.target.value as BlockStyle })}
-                        className="h-8 rounded-md border border-input bg-white px-2 text-xs flex-1"
-                      >
-                        {STYLE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </select>
+                      <Select value={normStyle(b.style)} onValueChange={(v) => v && update(b.id, { style: v })}>
+                        <SelectTrigger className="h-8 text-xs flex-1"><SelectValue>{STYLE_MAP[normStyle(b.style)]?.name}</SelectValue></SelectTrigger>
+                        <SelectContent>
+                          {STYLES.map((s) => (
+                            <SelectItem key={s.value} value={s.value}>
+                              <span style={{ fontSize: `${s.fs}pt`, fontWeight: s.fw, color: s.color }}>{s.name}</span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => move(i, -1)} disabled={i === 0} title="上へ"><ArrowUp className="h-4 w-4" /></Button>
                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => move(i, 1)} disabled={i === blocks.length - 1} title="下へ"><ArrowDown className="h-4 w-4" /></Button>
                       <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => remove(b.id)} title="削除"><Trash2 className="h-4 w-4" /></Button>
                     </div>
-                    <Input
-                      value={b.label}
-                      onChange={(e) => update(b.id, { label: e.target.value })}
-                      placeholder="ラベル（任意・例: 会期／日程）"
-                      className="h-8 text-sm"
-                    />
-                    <Textarea
-                      value={b.text}
-                      onChange={(e) => update(b.id, { text: e.target.value })}
-                      rows={2}
-                      placeholder="本文（改行可・ルビ可）"
-                    />
+                    {/* 2行目: 揃え + ラベル */}
+                    <div className="flex items-center gap-1.5">
+                      <div className="inline-flex rounded-md border overflow-hidden shrink-0">
+                        {(["left", "center", "right"] as Align[]).map((a) => {
+                          const Icon = ALIGN_ICON[a];
+                          return (
+                            <button key={a} type="button" onClick={() => update(b.id, { align: a })} title={a === "left" ? "左寄せ" : a === "center" ? "中央寄せ" : "右寄せ"}
+                              className={cn("h-8 w-9 flex items-center justify-center", b.align === a ? "bg-primary text-primary-foreground" : "bg-white hover:bg-muted")}>
+                              <Icon className="h-4 w-4" />
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <Input value={b.label} onChange={(e) => update(b.id, { label: e.target.value })} placeholder="ラベル（任意・例: 期間／日程）" className="h-8 text-sm flex-1" />
+                    </div>
+                    <Textarea value={b.text} onChange={(e) => update(b.id, { text: e.target.value })} rows={2} placeholder="本文（改行可・ルビ可）" />
                   </div>
                 ))}
                 <Button variant="outline" size="sm" onClick={add}><Plus className="h-4 w-4 mr-1" />行を追加</Button>
