@@ -201,8 +201,11 @@ export default function DMListPage() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-2xl font-bold">DMハガキ一覧</h1>
         <div className="flex items-center gap-2">
+          <Link href="/dm/message" className={buttonVariants({ variant: "outline", size: "sm" })}>
+            文面の作成・印刷
+          </Link>
           <Link href="/dm/postcards" className={buttonVariants({ variant: "outline", size: "sm" })}>
-            QR付きはがき印刷
+            QR付きはがき印刷（宛名）
           </Link>
           <Link href="/dm/segments" className={buttonVariants({ variant: "outline", size: "sm" })}>
             DM区分マスター
