@@ -18,7 +18,16 @@ import { PrintPortal } from "@/components/PrintPortal";
 
 type Evt = { id: string; name: string | null; venue: string; store_name: string | null; start_date: string; end_date: string };
 type Align = "left" | "center" | "right";
-type Block = { id: string; style: string; align: Align; label: string; text: string };
+type Space = "wide" | "normal" | "tight";
+type Block = { id: string; style: string; align: Align; space: Space; label: string; text: string };
+
+const SPACE_OPTIONS: { value: Space; name: string }[] = [
+  { value: "wide", name: "ひろめ" },
+  { value: "normal", name: "標準" },
+  { value: "tight", name: "つめる" },
+];
+const SPACE_MARGIN: Record<Space, string> = { wide: "3mm 0", normal: "1.2mm 0", tight: "0.2mm 0" };
+const normSpace = (v: unknown): Space => (v === "wide" || v === "tight" ? v : "normal");
 
 // 見た目（サイズ・太さ）基準のスタイル。fs=ポイント
 type StyleDef = { value: string; name: string; fs: number; fw: number; color?: string; boxed?: boolean };
@@ -62,11 +71,11 @@ function spanStyle(s: StyleDef): React.CSSProperties {
 function defaultBlocks(evt: Evt | undefined): Block[] {
   const venue = evt ? `${evt.venue}${evt.store_name ? ` ${evt.store_name}` : ""}` : "";
   return [
-    { id: newId(), style: "box", align: "center", label: "", text: "出店のご案内" },
-    { id: newId(), style: "xl", align: "center", label: "", text: evt?.name ? `「${evt.name}」` : "" },
-    { id: newId(), style: "normal", align: "center", label: "期間", text: evt ? periodFromDates(evt.start_date, evt.end_date) : "" },
-    { id: newId(), style: "normal", align: "center", label: "会場", text: venue },
-    { id: newId(), style: "sm", align: "center", label: "", text: "午前10時〜午後8時" },
+    { id: newId(), style: "box", align: "center", space: "normal", label: "", text: "出店のご案内" },
+    { id: newId(), style: "xl", align: "center", space: "normal", label: "", text: evt?.name ? `「${evt.name}」` : "" },
+    { id: newId(), style: "normal", align: "center", space: "normal", label: "期間", text: evt ? periodFromDates(evt.start_date, evt.end_date) : "" },
+    { id: newId(), style: "normal", align: "center", space: "normal", label: "会場", text: venue },
+    { id: newId(), style: "sm", align: "center", space: "normal", label: "", text: "午前10時〜午後8時" },
   ];
 }
 
@@ -110,18 +119,19 @@ export default function PostcardMessagePage() {
           id: b.id || newId(),
           style: normStyle(b.style),
           align: (b.align as Align) || "center",
+          space: normSpace(b.space),
           label: b.label || "",
           text: b.text || "",
         })));
       } else if (data) {
         const venue = evt ? `${evt.venue}${evt.store_name ? ` ${evt.store_name}` : ""}` : "";
         setBlocks([
-          { id: newId(), style: "box", align: "center", label: "", text: data.lead || "出店のご案内" },
-          { id: newId(), style: "xl", align: "center", label: "", text: data.title || evt?.name || "" },
-          { id: newId(), style: "normal", align: "center", label: "期間", text: data.period_text || "" },
-          { id: newId(), style: "normal", align: "center", label: "会場", text: data.venue_label || venue },
-          { id: newId(), style: "sm", align: "center", label: "", text: data.hours || "" },
-          ...(data.body ? [{ id: newId(), style: "normal", align: "center" as Align, label: "", text: data.body }] : []),
+          { id: newId(), style: "box", align: "center", space: "normal", label: "", text: data.lead || "出店のご案内" },
+          { id: newId(), style: "xl", align: "center", space: "normal", label: "", text: data.title || evt?.name || "" },
+          { id: newId(), style: "normal", align: "center", space: "normal", label: "期間", text: data.period_text || "" },
+          { id: newId(), style: "normal", align: "center", space: "normal", label: "会場", text: data.venue_label || venue },
+          { id: newId(), style: "sm", align: "center", space: "normal", label: "", text: data.hours || "" },
+          ...(data.body ? [{ id: newId(), style: "normal", align: "center" as Align, space: "normal" as Space, label: "", text: data.body }] : []),
         ]);
       } else {
         setBlocks(defaultBlocks(evt));
@@ -147,7 +157,7 @@ export default function PostcardMessagePage() {
       return next;
     });
   const remove = (id: string) => setBlocks((prev) => prev.filter((b) => b.id !== id));
-  const add = () => setBlocks((prev) => [...prev, { id: newId(), style: "normal", align: "center", label: "", text: "" }]);
+  const add = () => setBlocks((prev) => [...prev, { id: newId(), style: "normal", align: "center", space: "normal", label: "", text: "" }]);
 
   const renderPostcard = () => (
     <div className="pc-msg">
@@ -155,7 +165,7 @@ export default function PostcardMessagePage() {
         {blocks.filter((b) => b.text.trim() || b.label.trim()).map((b) => {
           const s = STYLE_MAP[normStyle(b.style)];
           return (
-            <div key={b.id} style={{ textAlign: b.align, margin: "1.2mm 0" }}>
+            <div key={b.id} style={{ textAlign: b.align, margin: SPACE_MARGIN[normSpace(b.space)] }}>
               <span style={spanStyle(s)}>
                 {b.label.trim() && <span>{b.label} </span>}
                 {renderRuby(b.text)}
@@ -244,7 +254,13 @@ export default function PostcardMessagePage() {
                           );
                         })}
                       </div>
-                      <Input value={b.label} onChange={(e) => update(b.id, { label: e.target.value })} placeholder="ラベル（任意・例: 期間／日程）" className="h-8 text-sm flex-1" />
+                      <Select value={normSpace(b.space)} onValueChange={(v) => v && update(b.id, { space: v as Space })}>
+                        <SelectTrigger className="h-8 text-xs w-[88px] shrink-0"><SelectValue>{SPACE_OPTIONS.find((o) => o.value === normSpace(b.space))?.name}</SelectValue></SelectTrigger>
+                        <SelectContent>
+                          {SPACE_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                      <Input value={b.label} onChange={(e) => update(b.id, { label: e.target.value })} placeholder="ラベル（任意）" className="h-8 text-sm flex-1" />
                     </div>
                     <Textarea value={b.text} onChange={(e) => update(b.id, { text: e.target.value })} rows={2} placeholder="本文（改行可・ルビ可）" />
                   </div>
