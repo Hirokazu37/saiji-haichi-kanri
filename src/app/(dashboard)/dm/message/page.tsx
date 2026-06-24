@@ -123,12 +123,15 @@ export default function PostcardMessagePage() {
         .pc-msg ruby rt { font-size: 0.5em; }
         @media print {
           @page { size: A4 portrait; margin: 0; }
-          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          nav, aside, header { display: none !important; }
-          .print\\:hidden { display: none !important; }
-          .pc-print { display: block !important; }
+          body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          /* グローバルの社外秘ウォーターマークを無効化 */
+          body::after { content: none !important; display: none !important; }
+          /* 印刷対象だけ表示（他は隠す） */
+          body * { visibility: hidden !important; }
+          .pc-print, .pc-print * { visibility: visible !important; }
+          .pc-print { display: block !important; position: absolute !important; left: 0; top: 0; margin: 0; }
           .pc-sheet { width: 210mm; height: 297mm; display: grid; grid-template-columns: 105mm 105mm; grid-template-rows: 148.5mm 148.5mm; }
-          .pc-sheet > .pc-cell { border: 0.3pt dashed #ccc; overflow: hidden; }
+          .pc-sheet > .pc-cell { border: 0.3pt dashed #ccc; overflow: hidden; box-sizing: border-box; }
         }
         .pc-print { display: none; }
       `}</style>
