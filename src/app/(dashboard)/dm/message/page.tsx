@@ -31,9 +31,9 @@ const normSpace = (v: unknown): Space => (v === "wide" || v === "tight" ? v : "n
 
 type VPos = "top" | "center" | "bottom";
 const VPOS_OPTIONS: { value: VPos; name: string }[] = [
-  { value: "top", name: "上" },
+  { value: "top", name: "上寄せ" },
   { value: "center", name: "中央" },
-  { value: "bottom", name: "下（宛名の下）" },
+  { value: "bottom", name: "下寄せ" },
 ];
 const VPOS_JUSTIFY: Record<VPos, string> = { top: "flex-start", center: "center", bottom: "flex-end" };
 const normVPos = (v: unknown): VPos => (v === "center" || v === "bottom" ? v : "top");
@@ -171,8 +171,8 @@ export default function PostcardMessagePage() {
   const add = () => setBlocks((prev) => [...prev, { id: newId(), style: "normal", align: "center", space: "normal", label: "", text: "" }]);
 
   const renderPostcard = () => (
-    <div className="pc-msg" style={{ justifyContent: VPOS_JUSTIFY[vpos] }}>
-      <div className="pc-anno">
+    <div className="pc-msg">
+      <div className="pc-anno" style={{ justifyContent: VPOS_JUSTIFY[vpos] }}>
         {blocks.filter((b) => b.text.trim() || b.label.trim()).map((b) => {
           const s = STYLE_MAP[normStyle(b.style)];
           return (
@@ -195,9 +195,9 @@ export default function PostcardMessagePage() {
   return (
     <div className="space-y-4 pb-8">
       <style>{`
-        /* 案内文面（赤枠）。縦位置は vpos で切替（上/中央/下） */
-        .pc-msg { box-sizing: border-box; height: 100%; padding: 9mm 7mm; display: flex; flex-direction: column; color: #1a1a1a; }
-        .pc-anno { padding: 5mm 4mm 4mm; transform: translateY(-15mm); }
+        /* 案内文面ボックス: 横98mm×縦42mm、下から25mm。縦位置(vpos)は枠内の寄せ */
+        .pc-msg { box-sizing: border-box; height: 100%; position: relative; color: #1a1a1a; }
+        .pc-anno { position: absolute; left: 0; right: 0; bottom: 25mm; margin: 0 auto; width: 98mm; height: 42mm; padding: 2mm 3mm; box-sizing: border-box; display: flex; flex-direction: column; }
         .pc-msg ruby rt { font-size: 0.5em; }
         @media print {
           @page { size: A4 portrait; margin: 0; }
@@ -231,7 +231,7 @@ export default function PostcardMessagePage() {
 
         {eventId && (
           <div className="flex items-center gap-2">
-            <Label className="text-xs text-muted-foreground shrink-0">文面の縦位置</Label>
+            <Label className="text-xs text-muted-foreground shrink-0">枠内の縦寄せ</Label>
             <Select value={vpos} onValueChange={(v) => v && setVpos(v as VPos)}>
               <SelectTrigger className="h-8 text-xs w-[160px]"><SelectValue>{VPOS_OPTIONS.find((o) => o.value === vpos)?.name}</SelectValue></SelectTrigger>
               <SelectContent>
