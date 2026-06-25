@@ -504,6 +504,11 @@ export default function PostcardMessagePage() {
               <Label className="text-sm font-medium">この百貨店の設定（癖・標準レイアウト）</Label>
               {hasTemplate && <span className="text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5">標準を記憶済み</span>}
             </div>
+            {storeNote.trim() && (
+              <div className="rounded-md bg-amber-100 border border-amber-300 px-3 py-2 text-sm text-amber-900 font-medium">
+                💡 この店舗の注意点：{storeNote}
+              </div>
+            )}
             <Textarea
               value={storeNote}
               onChange={(e) => setStoreNote(e.target.value)}
@@ -521,7 +526,7 @@ export default function PostcardMessagePage() {
         )}
 
         {eventId && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
             {/* ブロック編集 */}
             <Card>
               <CardContent className="pt-4 space-y-3">
@@ -541,7 +546,7 @@ export default function PostcardMessagePage() {
                       </Select>
                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => move(i, -1)} disabled={i === 0} title="上へ"><ArrowUp className="h-4 w-4" /></Button>
                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => move(i, 1)} disabled={i === blocks.length - 1} title="下へ"><ArrowDown className="h-4 w-4" /></Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => remove(b.id)} title="削除"><Trash2 className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 ml-2 text-destructive hover:bg-destructive/10" onClick={() => { if (window.confirm("この行を削除しますか？")) remove(b.id); }} title="この行を削除"><Trash2 className="h-4 w-4" /></Button>
                     </div>
                     {/* 2行目: 揃え + ラベル */}
                     <div className="flex items-center gap-1.5">
@@ -576,8 +581,8 @@ export default function PostcardMessagePage() {
               </CardContent>
             </Card>
 
-            {/* プレビュー（1枚・文面のみ） */}
-            <div className="space-y-1">
+            {/* プレビュー（1枚・文面のみ）— スクロールしても追従 */}
+            <div className="space-y-1 lg:sticky lg:top-4 self-start">
               <Label className="text-xs text-muted-foreground">プレビュー（文面のみ）</Label>
               <div className="relative overflow-hidden border rounded-md bg-white shadow-sm mx-auto" style={{ width: "105mm", height: "148.5mm" }}>
                 {renderPostcard()}
@@ -591,11 +596,11 @@ export default function PostcardMessagePage() {
           <div className="space-y-2">
             <div className="flex items-center gap-2 flex-wrap">
               <Label className="text-sm font-medium mr-1">校正プレビュー（実物イメージ）</Label>
+              <Button size="sm" onClick={sendMail}>
+                <Mail className="h-4 w-4 mr-1" />メールで校正依頼
+              </Button>
               <Button variant="outline" size="sm" onClick={savePdf}>
                 <FileText className="h-4 w-4 mr-1" />PDFを保存（パソコンに）
-              </Button>
-              <Button variant="outline" size="sm" onClick={sendMail}>
-                <Mail className="h-4 w-4 mr-1" />メールで校正依頼
               </Button>
               <Button variant="outline" size="sm" onClick={downloadFax}>
                 <FileText className="h-4 w-4 mr-1" />FAX送信状（Word）
