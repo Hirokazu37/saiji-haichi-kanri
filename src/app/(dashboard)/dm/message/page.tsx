@@ -468,10 +468,10 @@ export default function PostcardMessagePage() {
 
         <div className="space-y-2">
           <Label className="text-xs block">対象の催事（カレンダーから選択）</Label>
-          <div className="max-w-2xl">
+          <div className="max-w-2xl mx-auto">
             <EventCalendar events={events as EventLite[]} selectedId={eventId} onSelect={setEventId} />
           </div>
-          <div className="flex flex-col md:flex-row gap-1 md:items-center">
+          <div className="flex flex-col md:flex-row gap-1 md:items-center justify-center">
             <span className="text-xs text-muted-foreground shrink-0">検索して選ぶ場合：</span>
             <Combobox items={eventItems} value={eventId} onChange={(v) => { if (v) setEventId(v); }} allowCustom={false} placeholder="会場名などで検索" searchPlaceholder="会場名などで検索" className="max-w-md" />
           </div>
