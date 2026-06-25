@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Fragment } from "react";
 import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { FileSpreadsheet, Printer, Info } from "lucide-react";
+import { FileSpreadsheet, Printer, Info, Save } from "lucide-react";
 import { parseCsvFile } from "@/lib/csv";
+import { cn } from "@/lib/utils";
 import { PrintPortal } from "@/components/PrintPortal";
 
 const NONE = "__none__";
@@ -79,6 +80,9 @@ export function QrAddressPrint({ frontOverlay }: { frontOverlay?: React.ReactNod
     return [{ dx: 0, dy: 0 }, { dx: 0, dy: 0 }, { dx: 0, dy: 0 }, { dx: 0, dy: 0 }];
   });
   const [posSaved, setPosSaved] = useState(false);
+  // プレビューの表示面（文面=うら / 宛名=おもて）と、まとめ印刷のモード
+  const [previewSide, setPreviewSide] = useState<"back" | "front">(frontOverlay ? "back" : "front");
+  const [printMode, setPrintMode] = useState<"combined" | "duplex">("combined");
   const setQuad = (i: number, axis: "dx" | "dy", v: number) =>
     setQuadOffsets((prev) => prev.map((q, idx) => (idx === i ? { ...q, [axis]: v } : q)));
   const savePositions = () => {
@@ -217,57 +221,54 @@ export function QrAddressPrint({ frontOverlay }: { frontOverlay?: React.ReactNod
         </Card>
       )}
 
+      {/* 面ごとの位置微調整（テンプレの枠に合わせる） */}
       {cards && (
-        <div className="space-y-2">
+        <div className="space-y-1">
           <div className="flex items-center justify-center gap-2 flex-wrap">
-            {frontOverlay && (
-              <Button onClick={() => printWith("pp-both")}>
-                <Printer className="h-4 w-4 mr-1" />宛名＋文面をまとめて印刷
-              </Button>
-            )}
-            <Button variant={frontOverlay ? "outline" : "default"} onClick={() => printWith("pp-address")}>
-              <Printer className="h-4 w-4 mr-1" />宛名のみ印刷（{cards.length}枚 / {pages.length}ページ）
-            </Button>
-            <span className="text-xs text-muted-foreground w-full text-center">
-              印刷ダイアログで「余白なし」「等倍(100%)」に設定し、A4厚紙に印刷して4分割してください。
-            </span>
+            <span className="text-xs text-muted-foreground">位置を面ごとに微調整（mm／＋横=右・＋縦=下）</span>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={savePositions} title="この位置を保存（この端末）"><Save className="h-4 w-4" /></Button>
+            {posSaved && <span className="text-xs text-emerald-700 font-medium">✓ 保存</span>}
           </div>
-          {/* 面ごとの位置微調整（テンプレの枠に合わせる） */}
-          <div className="space-y-1">
-            <div className="flex items-center justify-center gap-2 flex-wrap">
-              <span className="text-xs text-muted-foreground">位置を面ごとに微調整（mm／＋横=右・＋縦=下）</span>
-              <Button variant="outline" size="sm" className="h-7" onClick={savePositions}>位置を保存</Button>
-              {posSaved && <span className="text-xs text-emerald-700 font-medium">✓ 保存</span>}
-            </div>
-            <div className="grid grid-cols-2 gap-2 max-w-md mx-auto">
-              {QUAD_LABELS.map((lbl, i) => (
-                <div key={i} className="flex items-center gap-1 border rounded-md px-2 py-1 text-xs">
-                  <span className="w-8 font-medium shrink-0">{lbl}</span>
-                  <span>横</span>
-                  <input type="number" step={0.5} value={quadOffsets[i].dx} onChange={(e) => setQuad(i, "dx", parseFloat(e.target.value) || 0)} className="h-7 w-14 rounded border border-input bg-white px-1" />
-                  <span>縦</span>
-                  <input type="number" step={0.5} value={quadOffsets[i].dy} onChange={(e) => setQuad(i, "dy", parseFloat(e.target.value) || 0)} className="h-7 w-14 rounded border border-input bg-white px-1" />
-                </div>
-              ))}
-            </div>
+          <div className="grid grid-cols-2 gap-2 max-w-md mx-auto">
+            {QUAD_LABELS.map((lbl, i) => (
+              <div key={i} className="flex items-center gap-1 border rounded-md px-2 py-1 text-xs">
+                <span className="w-8 font-medium shrink-0">{lbl}</span>
+                <span>横</span>
+                <input type="number" step={0.5} value={quadOffsets[i].dx} onChange={(e) => setQuad(i, "dx", parseFloat(e.target.value) || 0)} className="h-7 w-14 rounded border border-input bg-white px-1" />
+                <span>縦</span>
+                <input type="number" step={0.5} value={quadOffsets[i].dy} onChange={(e) => setQuad(i, "dy", parseFloat(e.target.value) || 0)} className="h-7 w-14 rounded border border-input bg-white px-1" />
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {/* 仕上がりプレビュー（4面まとめて） — 面ごとの位置調整を同時に確認 */}
+      {/* 仕上がりプレビュー（4面） — タブで うら面(文面)/おもて面(宛名) 切替 */}
       {cards && cards.length > 0 && (
         <div className="space-y-1">
-          <div className="text-xs text-muted-foreground text-center">{frontOverlay ? "宛名＋文面プレビュー" : "宛名プレビュー"}（4面・印刷1ページ目）。下の面ごと微調整が反映されます</div>
+          {frontOverlay && (
+            <div className="flex items-center justify-center gap-1">
+              {([["back", "📄 うら面（文面）"], ["front", "👤 おもて面（宛名）"]] as const).map(([v, lbl]) => (
+                <button key={v} type="button" onClick={() => setPreviewSide(v)}
+                  className={cn("h-8 px-3 text-xs rounded-md border", previewSide === v ? "bg-primary text-primary-foreground" : "bg-white text-muted-foreground hover:bg-muted")}>
+                  {lbl}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="text-xs text-muted-foreground text-center">
+            {!frontOverlay ? "宛名プレビュー" : previewSide === "back" ? "うら面（文面）プレビュー" : "おもて面（宛名）プレビュー"}（4面・1ページ目）。位置微調整が反映されます
+          </div>
           <div className="overflow-auto">
             <div className="w-fit mx-auto" style={{ zoom: 0.6 } as React.CSSProperties}>
               <div className="grid grid-cols-2 border-l border-t" style={{ width: "210mm" }}>
                 {[0, 1, 2, 3].map((q) => {
                   const c = (pages[0] || [])[q];
+                  const showFront = frontOverlay && previewSide === "back";
                   return (
                     <div key={q} className="relative bg-white border-r border-b overflow-hidden" style={{ width: "105mm", height: "148.5mm" }}>
                       <span className="absolute top-0 left-0 z-10 bg-white/80 px-1 text-muted-foreground" style={{ fontSize: "9pt" }}>{QUAD_LABELS[q]}</span>
-                      {frontOverlay}
-                      {c ? cardInner(c, q) : <span className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">（データなし）</span>}
+                      {showFront ? frontOverlay : (c ? cardInner(c, q) : <span className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">（データなし）</span>)}
                     </div>
                   );
                 })}
@@ -277,17 +278,53 @@ export function QrAddressPrint({ frontOverlay }: { frontOverlay?: React.ReactNod
         </div>
       )}
 
+      {/* まとめて印刷 */}
+      {cards && (
+        <div className="rounded-md border bg-muted/20 p-3 space-y-2 max-w-xl mx-auto">
+          <div className="text-sm font-bold text-center">🖨️ まとめて印刷</div>
+          {frontOverlay ? (
+            <>
+              <div className="text-xs text-muted-foreground text-center">名簿CSV（{cards.length}件）から、文面（うら）と宛名（おもて）をセットで出力します。</div>
+              <div className="flex flex-col gap-1 items-start max-w-sm mx-auto text-sm">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" name="qr-print-mode" checked={printMode === "combined"} onChange={() => setPrintMode("combined")} />
+                  4面まとめて（A4厚紙・片面に文面＋宛名）
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" name="qr-print-mode" checked={printMode === "duplex"} onChange={() => setPrintMode("duplex")} />
+                  両面印刷用（文面ページ → 宛名ページの順）
+                </label>
+              </div>
+              <div className="flex justify-center">
+                <Button onClick={() => printWith(printMode === "duplex" ? "pp-duplex" : "pp-both")}>
+                  <Printer className="h-4 w-4 mr-1" />文面＋宛名をまとめて印刷
+                </Button>
+              </div>
+            </>
+          ) : (
+            <div className="text-xs text-muted-foreground text-center">この画面では宛名のみ印刷できます（文面とのセット印刷は「文面の作成・印刷」画面から）。</div>
+          )}
+          <div className="flex justify-center">
+            <Button variant="outline" size="sm" onClick={() => printWith("pp-address")}>
+              <Printer className="h-4 w-4 mr-1" />宛名のみ印刷（{cards.length}枚 / {pages.length}ページ）
+            </Button>
+          </div>
+          <div className="text-[11px] text-muted-foreground text-center">印刷ダイアログで「余白なし」「等倍(100%)」に。PDFに保存も可。</div>
+        </div>
+      )}
+
       {/* 印刷レイアウト — body直下にポータルで出す（body.pp-address のときだけ印刷） */}
       {cards && (
         <PrintPortal>
           <div className="qr-print">
             <style>{`
-              .qr-print, .qr-print-both { display: none; }
+              .qr-print, .qr-print-both, .qr-print-duplex { display: none; }
               @media print {
                 @page { size: A4 portrait; margin: 0; }
                 body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                 body.pp-address .qr-print { display: block !important; margin: 0; }
                 body.pp-both .qr-print-both { display: block !important; margin: 0; }
+                body.pp-duplex .qr-print-duplex { display: block !important; margin: 0; }
                 .qr-sheet { width: 210mm; height: 297mm; display: grid; grid-template-columns: 105mm 105mm; grid-template-rows: 148.5mm 148.5mm; page-break-after: always; }
                 /* 差出人=左上／郵便枠=右上 はテンプレ側。郵便番号は右上の枠、宛名はその下 */
                 .qr-card { position: relative; box-sizing: border-box; overflow: hidden; }
@@ -320,6 +357,25 @@ export function QrAddressPrint({ frontOverlay }: { frontOverlay?: React.ReactNod
                     </div>
                   ))}
                 </div>
+              ))}
+            </div>
+          )}
+          {/* 両面印刷用: 文面ページ → 宛名ページ の順（同じ4面位置） */}
+          {frontOverlay && (
+            <div className="qr-print-duplex">
+              {pages.map((page, pi) => (
+                <Fragment key={pi}>
+                  <div className="qr-sheet">
+                    {page.map((c) => (
+                      <div key={`f-${c.no}`} className="qr-card">{frontOverlay}</div>
+                    ))}
+                  </div>
+                  <div className="qr-sheet">
+                    {page.map((c, ci) => (
+                      <div key={`a-${c.no}`} className="qr-card">{printAddr(c, ci % 4)}</div>
+                    ))}
+                  </div>
+                </Fragment>
               ))}
             </div>
           )}
