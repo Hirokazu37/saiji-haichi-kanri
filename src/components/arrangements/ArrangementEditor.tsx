@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo, forwardRef, useImperativeHandle } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -493,6 +494,27 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
     isDirty: () => dirty,
   }));
 
+  // --- 統一ステータスバッジ（スクロールで手配漏れが一目で分かるように） ---
+  const STATUS_BADGE: Record<string, string> = {
+    "未手配": "bg-red-50 text-red-700 border-red-200",
+    "未提出": "bg-red-50 text-red-700 border-red-200",
+    "未着手": "bg-red-50 text-red-700 border-red-200",
+    "手配済": "bg-green-50 text-green-700 border-green-200",
+    "提出済": "bg-green-50 text-green-700 border-green-200",
+    "印刷済み": "bg-green-50 text-green-700 border-green-200",
+    "校正中": "bg-amber-50 text-amber-700 border-amber-200",
+    "不要": "bg-gray-100 text-gray-600 border-gray-200",
+    "なし": "bg-gray-100 text-gray-500 border-gray-200",
+    "未配置": "bg-gray-100 text-gray-500 border-gray-200",
+  };
+  const statusBadge = (label: string) => (
+    <span className={cn("text-[11px] font-bold px-2 py-0.5 rounded-full border shrink-0", STATUS_BADGE[label] || "bg-gray-100 text-gray-600 border-gray-200")}>{label}</span>
+  );
+  const hotelAgg = dedupedStaff.length === 0 ? "未配置" : dedupedStaff.every((s) => s.hotel_status === "手配済" || s.hotel_status === "不要") ? "手配済" : "未手配";
+  const transportAgg = dedupedStaff.length === 0 ? "未配置" : dedupedStaff.every((s) => s.transport_outbound_status === "手配済" && s.transport_return_status === "手配済") ? "手配済" : "未手配";
+  const mannequinAgg = mannequins.length === 0 ? "なし" : mannequins.every((m) => m.arrangement_status === "手配済") ? "手配済" : "未手配";
+  const dmAgg = dmStatus || "なし";
+
   const venueLabel = storeName ? `${venue} ${storeName}` : venue;
   const destinations = [
     { label: "本社（安岡蒲鉾）", type: "return" as const },
@@ -505,27 +527,28 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
       {/* 出店申込書 */}
       <Card className="border-l-4 border-l-green-500 bg-green-50/50">
         <CardContent className="pt-4 pb-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4 text-green-600" />
               <span className="text-sm font-bold text-green-800">出店申込書</span>
+              {statusBadge(appStatus)}
             </div>
-            <button
-              type="button"
-              className={`relative inline-flex h-6 w-24 items-center rounded-full transition-colors ${appStatus === "提出済" ? "bg-green-700" : "bg-gray-300"}`}
-              onClick={() => {
-                const next = appStatus === "提出済" ? "未提出" : "提出済";
-                setAppStatus(next);
-                if (next === "提出済" && !appSubmittedDate) setAppSubmittedDate(new Date().toISOString().slice(0, 10));
-                if (next === "未提出") setAppSubmittedDate("");
-                markDirty();
-              }}
-            >
-              <span className={`absolute text-[10px] font-medium ${appStatus === "提出済" ? "left-2 text-white" : "right-2 text-gray-600"}`}>
-                {appStatus === "提出済" ? "提出済" : "未提出"}
-              </span>
-              <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${appStatus === "提出済" ? "translate-x-[72px]" : "translate-x-0.5"}`} />
-            </button>
+            <div className="inline-flex rounded-md border bg-white shadow-sm shrink-0 overflow-hidden">
+              {(["未提出", "提出済"] as const).map((opt) => {
+                const active = appStatus === opt;
+                return (
+                  <button key={opt} type="button"
+                    className={`px-3 h-7 text-xs font-medium transition-colors ${active ? (opt === "提出済" ? "bg-green-700 text-white" : "bg-gray-200 text-gray-800") : "text-gray-500 hover:bg-gray-50"}`}
+                    onClick={() => {
+                      setAppStatus(opt);
+                      if (opt === "提出済" && !appSubmittedDate) setAppSubmittedDate(new Date().toISOString().slice(0, 10));
+                      if (opt === "未提出") setAppSubmittedDate("");
+                      markDirty();
+                    }}
+                  >{opt}</button>
+                );
+              })}
+            </div>
           </div>
           <div className="flex items-center gap-3 mt-3">
             <div className="flex items-center gap-2">
@@ -552,6 +575,7 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
             <div className="flex items-center gap-2">
               <Hotel className="h-4 w-4 text-blue-600" />
               <span className="text-sm font-bold text-blue-800">ホテル</span>
+              {statusBadge(hotelAgg)}
               {hotelLinked.length > 0 && <span className="text-[11px] text-blue-700/70">この百貨店の常連 {hotelLinked.length}件</span>}
             </div>
             {hotelArea.length > 0 && (
@@ -626,6 +650,7 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
           <div className="flex items-center gap-2">
             <Train className="h-4 w-4 text-orange-600" />
             <span className="text-sm font-bold text-orange-800">交通</span>
+            {statusBadge(transportAgg)}
           </div>
           {dedupedStaff.length > 0 ? (
             <div className="space-y-2">
@@ -681,6 +706,7 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
             <div className="flex items-center gap-2">
               <Mail className="h-4 w-4 text-purple-600" />
               <span className="text-sm font-bold text-purple-800">DMハガキ</span>
+              {statusBadge(dmAgg)}
             </div>
             <div className="flex gap-1">
               {["なし", "未着手", "校正中", "印刷済み"].map((s) => {
@@ -709,6 +735,7 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
             <div className="flex items-center gap-2">
               <UserCheck className="h-4 w-4 text-pink-600" />
               <span className="text-sm font-bold text-pink-800">マネキン</span>
+              {statusBadge(mannequinAgg)}
             </div>
             <div className="flex items-center gap-1 flex-wrap">
               <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setPickerSearch(""); setShowOtherAreas(false); setPersonPickerOpen(true); }}>

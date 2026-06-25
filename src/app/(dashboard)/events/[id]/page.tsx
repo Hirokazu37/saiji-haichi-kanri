@@ -672,7 +672,7 @@ export default function EventDetailPage({
   if (!event) return <p className="text-destructive">催事が見つかりません。</p>;
 
   return (
-    <div className="space-y-6 max-w-3xl mx-auto">
+    <div className="space-y-6 max-w-3xl mx-auto md:pb-24">
       {/* ヘッダー */}
       <div className="flex items-start justify-between">
         <div className="space-y-1">
@@ -1101,6 +1101,14 @@ export default function EventDetailPage({
       {canEdit && (
         <div className="flex justify-center pt-4 pb-8 border-t">
           <SaveButton className="min-w-[240px] text-base" />
+        </div>
+      )}
+
+      {/* 画面下部に固定の保存バー（PC幅のみ。モバイルは上下のボタンを使用） */}
+      {canEdit && (
+        <div className="hidden md:flex fixed bottom-0 left-60 right-0 z-30 items-center justify-end gap-3 border-t bg-background/95 backdrop-blur px-6 py-3 print:hidden">
+          <span className="text-xs text-muted-foreground">編集したらこのバーから保存できます</span>
+          <SaveButton />
         </div>
       )}
 
