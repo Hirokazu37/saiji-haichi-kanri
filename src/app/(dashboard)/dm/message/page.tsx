@@ -108,6 +108,7 @@ export default function PostcardMessagePage() {
   const [kind, setKind] = useState<Kind>("sokubai");
   const [saved, setSaved] = useState(false);
   const proofRef = useRef<HTMLDivElement>(null);
+  const [attachInfo, setAttachInfo] = useState<string | null>(null);
 
   const printWith = (cls: string) => {
     document.body.classList.add(cls);
@@ -240,8 +241,9 @@ export default function PostcardMessagePage() {
 
     // 原稿PDFを作って、可能なら共有シート（メール）に添付。非対応ならPDFを保存しメーラーを開く
     const file = await renderProofPdf();
+    if (!file) { setAttachInfo("原稿PDFの生成に失敗しました。少し待って再度お試しください。"); return; }
     const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
-    if (file && nav.canShare && nav.canShare({ files: [file] })) {
+    if (nav.canShare && nav.canShare({ files: [file] })) {
       try {
         await nav.share({ files: [file], title: subject, text: body });
         return;
@@ -249,17 +251,29 @@ export default function PostcardMessagePage() {
         /* キャンセル等は下のフォールバックへ */
       }
     }
-    if (file) {
-      const url = URL.createObjectURL(file);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = file.name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    }
+    // PC等: メールに自動添付できないので、PDFを保存してから下書きを開く（添付は手動）
+    downloadFile(file);
+    setAttachInfo(`原稿PDFを保存しました：「${file.name}」。ブラウザの保存先（通常は「ダウンロード」フォルダ）にあります。開いたメールにこのPDFを添付して送信してください。`);
     window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
+
+  const downloadFile = (file: File) => {
+    const url = URL.createObjectURL(file);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = file.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  // 原稿PDFだけを保存（メールやFAXに添付する用）
+  const savePdf = async () => {
+    const file = await renderProofPdf();
+    if (!file) { setAttachInfo("原稿PDFの生成に失敗しました。少し待って再度お試しください。"); return; }
+    downloadFile(file);
+    setAttachInfo(`原稿PDFを保存しました：「${file.name}」。ブラウザの保存先（通常は「ダウンロード」フォルダ）にあります。`);
   };
 
   const downloadFax = () => {
@@ -467,6 +481,9 @@ export default function PostcardMessagePage() {
               <Button variant="outline" size="sm" onClick={() => printWith("pp-proof")}>
                 <Printer className="h-4 w-4 mr-1" />校正を印刷／PDF
               </Button>
+              <Button variant="outline" size="sm" onClick={savePdf}>
+                <FileText className="h-4 w-4 mr-1" />原稿PDFを保存
+              </Button>
               <Button variant="outline" size="sm" onClick={sendMail}>
                 <Mail className="h-4 w-4 mr-1" />メールで校正依頼
               </Button>
@@ -475,8 +492,14 @@ export default function PostcardMessagePage() {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              「メールで校正依頼」は原稿（下の両面イメージ）をPDFで添付して送れます（端末が共有に対応していない場合はPDFを保存してメーラーを開きます）。本文・FAX送信状にはテンプレートが入ります。
+              PCではメールに自動添付できないため、<span className="font-medium">「原稿PDFを保存」でPDFを保存 → メールに手動で添付</span>してください（「メールで校正依頼」はPDF保存＋本文入りの下書きを開きます）。スマホは共有メニューからそのまま添付できます。
             </p>
+            {attachInfo && (
+              <div className="flex items-start gap-2 rounded-md bg-emerald-50 border border-emerald-200 px-3 py-2 text-sm text-emerald-900 max-w-2xl">
+                <FileText className="h-4 w-4 mt-0.5 shrink-0 text-emerald-700" />
+                <span>{attachInfo}</span>
+              </div>
+            )}
             <div ref={proofRef} className="flex flex-wrap gap-4 bg-white p-2 w-fit">
               <div className="space-y-1">
                 <div className="text-xs text-muted-foreground">おもて（宛名面＋案内文面）</div>
