@@ -80,8 +80,8 @@ type Props = {
   events: EventLite[];
   selectedId: string;
   onSelect: (id: string) => void;
-  /** 催事ID → 来場数・名簿数・名簿一致数（来場入力の進捗とヒット率の表示に使う） */
-  stats?: Map<string, { visits: number; roster: number; matched?: number }>;
+  /** 催事ID → 来場数・名簿数（来場入力の進捗とヒット率の表示に使う） */
+  stats?: Map<string, { visits: number; roster: number }>;
 };
 
 export function EventCalendar({ events, selectedId, onSelect, stats }: Props) {
@@ -212,9 +212,8 @@ export function EventCalendar({ events, selectedId, onSelect, stats }: Props) {
                   const name = event.store_name ? `${event.venue} ${event.store_name}` : event.venue;
                   const st = stats?.get(event.id);
                   const visitCount = st?.visits ?? 0;
-                  const matchedCount = st?.matched ?? visitCount; // 名簿一致来場（無ければ総来場）
                   const dmBase = event.dm_count || st?.roster || 0; // ヒット率の分母（DM枚数→名簿人数の順）
-                  const rate = matchedCount > 0 && dmBase > 0 ? ((matchedCount / dmBase) * 100).toFixed(1) : null;
+                  const rate = visitCount > 0 && dmBase > 0 ? ((visitCount / dmBase) * 100).toFixed(1) : null;
                   const ended = event.end_date < fmtLocalYmd(today);
                   const hasDm = event.dm_count != null || (st?.roster ?? 0) > 0;
                   // 状態: done=来場入力済み / missing=DMありなのに会期終了後も未入力
