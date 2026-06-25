@@ -42,14 +42,14 @@ const URA_SRC: Record<Kind, string> = { jisshin: "/dm/ura-jisshin.jpg", sokubai:
 const OMOTE_SRC = "/dm/omote.jpg";
 
 // 見た目（サイズ・太さ）基準のスタイル。fs=ポイント
-type StyleDef = { value: string; name: string; fs: number; fw: number; color?: string; boxed?: boolean };
+type StyleDef = { value: string; name: string; short: string; fs: number; fw: number; color?: string; boxed?: boolean };
 const STYLES: StyleDef[] = [
-  { value: "box", name: "囲み（タイトル枠）", fs: 9.5, fw: 600, boxed: true },
-  { value: "xl", name: "特大・太字", fs: 12, fw: 800 },
-  { value: "lg", name: "大・太字", fs: 10.5, fw: 700 },
-  { value: "md", name: "中", fs: 10, fw: 600 },
-  { value: "normal", name: "標準", fs: 9, fw: 400 },
-  { value: "sm", name: "小・注記", fs: 7.5, fw: 400, color: "#555" },
+  { value: "box", name: "囲み（タイトル枠）", short: "囲み", fs: 9.5, fw: 600, boxed: true },
+  { value: "xl", name: "特大・太字", short: "特大", fs: 12, fw: 800 },
+  { value: "lg", name: "大・太字", short: "大", fs: 10.5, fw: 700 },
+  { value: "md", name: "中", short: "中", fs: 10, fw: 600 },
+  { value: "normal", name: "標準", short: "標準", fs: 9, fw: 400 },
+  { value: "sm", name: "小・注記", short: "小", fs: 7.5, fw: 400, color: "#555" },
 ];
 const STYLE_MAP: Record<string, StyleDef> = Object.fromEntries(STYLES.map((s) => [s.value, s]));
 // 旧スタイル名 → 新スタイル
@@ -531,43 +531,48 @@ export default function PostcardMessagePage() {
             <Card>
               <CardContent className="pt-4 space-y-3">
                 {blocks.map((b, i) => (
-                  <div key={b.id} className="rounded-md border p-2.5 space-y-2 bg-muted/20">
-                    {/* 1行目: スタイル選択 + 上下/削除 */}
-                    <div className="flex items-center gap-1.5">
-                      <Select value={normStyle(b.style)} onValueChange={(v) => v && update(b.id, { style: v })}>
-                        <SelectTrigger className="h-8 text-xs flex-1"><SelectValue>{STYLE_MAP[normStyle(b.style)]?.name}</SelectValue></SelectTrigger>
-                        <SelectContent>
-                          {STYLES.map((s) => (
-                            <SelectItem key={s.value} value={s.value}>
-                              <span style={{ fontSize: `${s.fs}pt`, fontWeight: s.fw, color: s.color }}>{s.name}</span>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => move(i, -1)} disabled={i === 0} title="上へ"><ArrowUp className="h-4 w-4" /></Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => move(i, 1)} disabled={i === blocks.length - 1} title="下へ"><ArrowDown className="h-4 w-4" /></Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 ml-2 text-destructive hover:bg-destructive/10" onClick={() => { if (window.confirm("この行を削除しますか？")) remove(b.id); }} title="この行を削除"><Trash2 className="h-4 w-4" /></Button>
-                    </div>
-                    {/* 2行目: 揃え + ラベル */}
-                    <div className="flex items-center gap-1.5">
+                  <div key={b.id} className="rounded-lg border border-border/80 p-2.5 space-y-2 bg-muted/30">
+                    {/* 上段: 揃え | サイズ ＋ 並べ替え/削除 */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {/* 文字揃え */}
                       <div className="inline-flex rounded-md border overflow-hidden shrink-0">
                         {(["left", "center", "right"] as Align[]).map((a) => {
                           const Icon = ALIGN_ICON[a];
                           return (
                             <button key={a} type="button" onClick={() => update(b.id, { align: a })} title={a === "left" ? "左寄せ" : a === "center" ? "中央寄せ" : "右寄せ"}
-                              className={cn("h-8 w-9 flex items-center justify-center", b.align === a ? "bg-primary text-primary-foreground" : "bg-white hover:bg-muted")}>
+                              className={cn("h-8 w-9 flex items-center justify-center", b.align === a ? "bg-primary text-primary-foreground" : "bg-white text-muted-foreground hover:bg-muted")}>
                               <Icon className="h-4 w-4" />
                             </button>
                           );
                         })}
                       </div>
-                      <Select value={normSpace(b.space)} onValueChange={(v) => v && update(b.id, { space: v as Space })}>
-                        <SelectTrigger className="h-8 text-xs w-[88px] shrink-0"><SelectValue>{SPACE_OPTIONS.find((o) => o.value === normSpace(b.space))?.name}</SelectValue></SelectTrigger>
-                        <SelectContent>
-                          {SPACE_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.name}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                      <Input value={b.label} onChange={(e) => update(b.id, { label: e.target.value })} placeholder="ラベル（任意）" className="h-8 text-sm flex-1" />
+                      {/* 文字サイズ（チップ） */}
+                      <div className="inline-flex rounded-md border overflow-hidden shrink-0">
+                        {STYLES.map((s) => (
+                          <button key={s.value} type="button" onClick={() => update(b.id, { style: s.value })} title={s.name}
+                            className={cn("h-8 px-2 text-xs", normStyle(b.style) === s.value ? "bg-primary text-primary-foreground" : "bg-white text-muted-foreground hover:bg-muted")}>
+                            {s.short}
+                          </button>
+                        ))}
+                      </div>
+                      {/* 並べ替え・削除 */}
+                      <div className="flex items-center gap-1 ml-auto">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => move(i, -1)} disabled={i === 0} title="上へ"><ArrowUp className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => move(i, 1)} disabled={i === blocks.length - 1} title="下へ"><ArrowDown className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 ml-1 text-destructive hover:bg-destructive/10" onClick={() => { if (window.confirm("この行を削除しますか？")) remove(b.id); }} title="この行を削除"><Trash2 className="h-4 w-4" /></Button>
+                      </div>
+                    </div>
+                    {/* 下段: 上下余白（チップ） + ラベル（補助） */}
+                    <div className="flex items-center gap-1.5">
+                      <div className="inline-flex rounded-md border overflow-hidden shrink-0">
+                        {SPACE_OPTIONS.map((o) => (
+                          <button key={o.value} type="button" onClick={() => update(b.id, { space: o.value })} title={`上下余白：${o.name}`}
+                            className={cn("h-8 px-2.5 text-xs", normSpace(b.space) === o.value ? "bg-primary text-primary-foreground" : "bg-white text-muted-foreground hover:bg-muted")}>
+                            {o.name}
+                          </button>
+                        ))}
+                      </div>
+                      <Input value={b.label} onChange={(e) => update(b.id, { label: e.target.value })} placeholder="ラベル（任意）" className="h-8 text-sm flex-1 bg-muted/50 border-transparent focus-visible:bg-white" />
                     </div>
                     <Textarea value={b.text} onChange={(e) => update(b.id, { text: e.target.value })} rows={2} placeholder="本文（改行可・ルビ可）" />
                   </div>
