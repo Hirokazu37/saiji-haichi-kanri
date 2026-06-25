@@ -196,16 +196,28 @@ export default function PostcardMessagePage() {
     return { venue, title, period };
   };
 
-  // 校正プレビューを画像(PNG)に変換（原稿の添付・共有用）
-  const renderProofImage = async (): Promise<File | null> => {
+  // 校正プレビューをPDFに変換（原稿の添付・共有用）
+  const renderProofPdf = async (): Promise<File | null> => {
     if (!proofRef.current) return null;
     try {
       const html2canvas = (await import("html2canvas")).default;
+      const { jsPDF } = await import("jspdf");
       const canvas = await html2canvas(proofRef.current, { scale: 2, backgroundColor: "#ffffff", useCORS: true });
-      const blob: Blob | null = await new Promise((res) => canvas.toBlob(res, "image/png"));
-      if (!blob) return null;
+      const imgData = canvas.toDataURL("image/jpeg", 0.92);
+      const pxW = canvas.width, pxH = canvas.height;
+      const orientation = pxW >= pxH ? "landscape" : "portrait";
+      const pdf = new jsPDF({ orientation, unit: "mm", format: "a4" });
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const margin = 8;
+      const ratio = pxW / pxH;
+      let w = pageW - margin * 2;
+      let h = w / ratio;
+      if (h > pageH - margin * 2) { h = pageH - margin * 2; w = h * ratio; }
+      pdf.addImage(imgData, "JPEG", (pageW - w) / 2, (pageH - h) / 2, w, h);
+      const blob = pdf.output("blob");
       const { venue } = proofInfo();
-      return new File([blob], `DMハガキ校正_${venue || "原稿"}.png`, { type: "image/png" });
+      return new File([blob], `DMハガキ校正_${venue || "原稿"}.pdf`, { type: "application/pdf" });
     } catch {
       return null;
     }
@@ -226,8 +238,8 @@ export default function PostcardMessagePage() {
       `有限会社 安岡蒲鉾店\n〒798-1133 愛媛県宇和島市三間町中野中293番地\n` +
       `TEL 0895-58-2155 / FAX 0895-58-2706 / フリーダイヤル 0120-58-7771`;
 
-    // 原稿画像を作って、可能なら共有シート（メール）に添付。非対応なら画像を保存しメーラーを開く
-    const file = await renderProofImage();
+    // 原稿PDFを作って、可能なら共有シート（メール）に添付。非対応ならPDFを保存しメーラーを開く
+    const file = await renderProofPdf();
     const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
     if (file && nav.canShare && nav.canShare({ files: [file] })) {
       try {
@@ -463,7 +475,7 @@ export default function PostcardMessagePage() {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              「メールで校正依頼」は原稿（下の両面イメージ）を画像で添付して送れます（端末が共有に対応していない場合は画像を保存してメーラーを開きます）。本文・FAX送信状にはテンプレートが入ります。
+              「メールで校正依頼」は原稿（下の両面イメージ）をPDFで添付して送れます（端末が共有に対応していない場合はPDFを保存してメーラーを開きます）。本文・FAX送信状にはテンプレートが入ります。
             </p>
             <div ref={proofRef} className="flex flex-wrap gap-4 bg-white p-2 w-fit">
               <div className="space-y-1">
