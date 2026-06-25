@@ -39,7 +39,7 @@ type Props = {
 export function VenueKarteDialog({ open, onOpenChange, venue, segments, canEdit, allMasterKeys, onNotesSaved }: Props) {
   const supabase = createClient();
   const [loading, setLoading] = useState(false);
-  const [rows, setRows] = useState<{ ev: EventRow; sales: number; visits: number }[]>([]);
+  const [rows, setRows] = useState<{ ev: EventRow; sales: number; visits: number; matched: number }[]>([]);
   const [custTotal, setCustTotal] = useState(0);
   const [aliases, setAliases] = useState<AliasRow[]>([]);
   const [notes, setNotes] = useState("");
@@ -88,19 +88,21 @@ export function VenueKarteDialog({ open, onOpenChange, venue, segments, canEdit,
 
       const dailyByEvent = new Map<string, number>();
       const visitByEvent = new Map<string, number>();
+      const matchedByEvent = new Map<string, number>();
       if (ids.length > 0) {
         const [dailyRes, visRes] = await Promise.all([
           supabase.from("event_daily_revenue").select("event_id, amount, tax_type, tax_rate").in("event_id", ids),
-          supabase.from("event_visit_counts").select("event_id, visit_count").in("event_id", ids),
+          supabase.from("event_visit_counts").select("event_id, visit_count, matched_count").in("event_id", ids),
         ]);
         for (const d of (dailyRes.data as DailyRow[]) || []) {
           dailyByEvent.set(d.event_id, (dailyByEvent.get(d.event_id) || 0) + toIncluded(d.amount, d.tax_type, d.tax_rate));
         }
-        for (const v of (visRes.data as { event_id: string; visit_count: number }[]) || []) {
+        for (const v of (visRes.data as { event_id: string; visit_count: number; matched_count: number }[]) || []) {
           visitByEvent.set(v.event_id, v.visit_count);
+          matchedByEvent.set(v.event_id, v.matched_count);
         }
       }
-      setRows(events.map((ev) => ({ ev, sales: dailyByEvent.get(ev.id) ?? (ev.revenue || 0), visits: visitByEvent.get(ev.id) ?? 0 })));
+      setRows(events.map((ev) => ({ ev, sales: dailyByEvent.get(ev.id) ?? (ev.revenue || 0), visits: visitByEvent.get(ev.id) ?? 0, matched: matchedByEvent.get(ev.id) ?? 0 })));
 
       if (segments.length > 0) {
         const { data: sum } = await supabase.from("segment_customer_summary").select("kbn_no, code, customer_count");
@@ -237,8 +239,8 @@ export function VenueKarteDialog({ open, onOpenChange, venue, segments, canEdit,
                       {!loading && rows.length === 0 && (
                         <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-6">この店の催事記録がありません。会場名の表記ゆれがある場合は下の「別表記の名寄せ」で追加してください。</TableCell></TableRow>
                       )}
-                      {!loading && rows.map(({ ev, sales, visits }) => {
-                        const rate = ev.dm_count && visits > 0 ? ((visits / ev.dm_count) * 100).toFixed(1) : null;
+                      {!loading && rows.map(({ ev, sales, visits, matched }) => {
+                        const rate = ev.dm_count && matched > 0 ? ((matched / ev.dm_count) * 100).toFixed(1) : null;
                         return (
                           <TableRow key={ev.id}>
                             <TableCell className="text-xs whitespace-nowrap">

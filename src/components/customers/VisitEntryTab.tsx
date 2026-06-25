@@ -19,11 +19,15 @@ import {
 
 type Visit = {
   id: string;
-  customer_id: string;
+  customer_id: string | null;
   created_at: string;
   notes: string | null;
+  guest_name: string | null;
+  reason: string | null;
   customers: Pick<Customer, "id" | "customer_no" | "name" | "kana" | "address"> | null;
 };
+
+const GUEST_REASONS = ["新規", "はがき忘れ", "その他"] as const;
 
 type UndoLogRow = {
   id: string;
@@ -35,6 +39,7 @@ type UndoLogRow = {
 
 type Feedback =
   | { kind: "ok"; customer: Customer; memo?: string }
+  | { kind: "guestok"; name: string; reason: string }
   | { kind: "dup"; customer: Customer }
   | { kind: "notfound"; input: string }
   | { kind: "error"; message: string };
@@ -71,8 +76,17 @@ export function VisitEntryTab({ segments }: Props) {
   // 来場メモの編集中の行とテキスト（登録後の修正用）
   const [memoVisitId, setMemoVisitId] = useState<string | null>(null);
   const [memoText, setMemoText] = useState("");
-  // カレンダー表示用: 催事ID → 来場数・名簿数（集計ビューから取得）
-  const [eventStats, setEventStats] = useState<Map<string, { visits: number; roster: number }>>(new Map());
+  // カレンダー表示用: 催事ID → 来場数・名簿数・名簿一致数（集計ビューから取得）
+  const [eventStats, setEventStats] = useState<Map<string, { visits: number; roster: number; matched: number }>>(new Map());
+  // 選択中の催事の「名簿一致来場数」（ヒット率の分子）
+  const [matchedCount, setMatchedCount] = useState(0);
+  // 番号なし来場の入力フォーム
+  const [guestOpen, setGuestOpen] = useState(false);
+  const [guestReason, setGuestReason] = useState<string>("新規");
+  const [guestName, setGuestName] = useState("");
+  const [guestMemo, setGuestMemo] = useState("");
+  // 番号なし来場を既存顧客に紐付け中の来場ID（名前検索で本人を選んで照合）
+  const [linkingVisitId, setLinkingVisitId] = useState<string | null>(null);
   // この催事で最近取り消した来場記録（誤操作の復元用）
   const [undoLog, setUndoLog] = useState<UndoLogRow[]>([]);
   const numberRef = useRef<HTMLInputElement>(null);
@@ -121,11 +135,22 @@ export function VisitEntryTab({ segments }: Props) {
     if (!evtId) { setVisits([]); return; }
     const { data } = await supabase
       .from("event_visits")
-      .select("id, customer_id, created_at, notes, customers(id, customer_no, name, kana, address)")
+      .select("id, customer_id, created_at, notes, guest_name, reason, customers(id, customer_no, name, kana, address)")
       .eq("event_id", evtId)
       .order("created_at", { ascending: false })
       .limit(1000);
     setVisits((data as unknown as Visit[]) || []);
+  }, [supabase]);
+
+  // 名簿一致の来場数（ヒット率の分子）を集計ビューから取得
+  const fetchCounts = useCallback(async (evtId: string) => {
+    if (!evtId) { setMatchedCount(0); return; }
+    const { data } = await supabase
+      .from("event_visit_counts")
+      .select("matched_count")
+      .eq("event_id", evtId)
+      .maybeSingle();
+    setMatchedCount((data as { matched_count: number } | null)?.matched_count ?? 0);
   }, [supabase]);
 
   const fetchUndoLog = useCallback(async (evtId: string) => {
@@ -142,21 +167,22 @@ export function VisitEntryTab({ segments }: Props) {
   useEffect(() => {
     fetchVisits(eventId);
     fetchUndoLog(eventId);
-  }, [eventId, fetchVisits, fetchUndoLog]);
+    fetchCounts(eventId);
+  }, [eventId, fetchVisits, fetchUndoLog, fetchCounts]);
 
-  // カレンダー用の集計（来場数・名簿数）。選択画面に戻るたびに最新化
+  // カレンダー用の集計（来場数・名簿数・名簿一致数）。選択画面に戻るたびに最新化
   useEffect(() => {
     if (step !== "select") return;
     Promise.all([
-      supabase.from("event_visit_counts").select("event_id, visit_count"),
+      supabase.from("event_visit_counts").select("event_id, visit_count, matched_count"),
       supabase.from("event_roster_counts").select("event_id, roster_count"),
     ]).then(([vRes, rRes]) => {
-      const m = new Map<string, { visits: number; roster: number }>();
-      for (const r of (vRes.data as { event_id: string; visit_count: number }[]) || []) {
-        m.set(r.event_id, { visits: r.visit_count, roster: 0 });
+      const m = new Map<string, { visits: number; roster: number; matched: number }>();
+      for (const r of (vRes.data as { event_id: string; visit_count: number; matched_count: number }[]) || []) {
+        m.set(r.event_id, { visits: r.visit_count, roster: 0, matched: r.matched_count });
       }
       for (const r of (rRes.data as { event_id: string; roster_count: number }[]) || []) {
-        const cur = m.get(r.event_id) || { visits: 0, roster: 0 };
+        const cur = m.get(r.event_id) || { visits: 0, roster: 0, matched: 0 };
         cur.roster = r.roster_count;
         m.set(r.event_id, cur);
       }
@@ -221,6 +247,7 @@ export function VisitEntryTab({ segments }: Props) {
     } else {
       setFeedback({ kind: "ok", customer, memo: memo || undefined });
       fetchVisits(eventId);
+      fetchCounts(eventId);
     }
     setPending(null);
     setPendingInRoster(null);
@@ -231,7 +258,48 @@ export function VisitEntryTab({ segments }: Props) {
     setNumberInput("");
     // 状態更新が反映された後にフォーカスを番号入力へ戻す
     setTimeout(() => numberRef.current?.focus(), 0);
-  }, [eventId, supabase, fetchVisits, pendingMemo]);
+  }, [eventId, supabase, fetchVisits, fetchCounts, pendingMemo]);
+
+  /** 番号なしで来場を記録（新規・はがき忘れ・その他） */
+  const registerGuest = async () => {
+    if (!eventId) return;
+    const { error } = await supabase.from("event_visits").insert({
+      event_id: eventId,
+      customer_id: null,
+      guest_name: guestName.trim() || null,
+      reason: guestReason,
+      notes: guestMemo.trim() || null,
+    });
+    if (error) {
+      setFeedback({ kind: "error", message: error.message });
+      return;
+    }
+    setFeedback({ kind: "guestok", name: guestName.trim() || "番号なしの来場", reason: guestReason });
+    setGuestName("");
+    setGuestMemo("");
+    setGuestOpen(false);
+    fetchVisits(eventId);
+    fetchCounts(eventId);
+    setTimeout(() => numberRef.current?.focus(), 0);
+  };
+
+  /** 番号なし来場を既存顧客に紐付ける（はがき忘れ等を後から照合） */
+  const linkGuest = async (customer: Customer) => {
+    if (!linkingVisitId) return;
+    const { error } = await supabase
+      .from("event_visits")
+      .update({ customer_id: customer.id, guest_name: null, reason: null })
+      .eq("id", linkingVisitId);
+    // 23505 = その顧客は既にこの催事に登録済み → 番号なし行は重複なので削除
+    if (error?.code === "23505") {
+      await supabase.from("event_visits").delete().eq("id", linkingVisitId);
+    }
+    setLinkingVisitId(null);
+    setNameQuery("");
+    setNameResults([]);
+    fetchVisits(eventId);
+    fetchCounts(eventId);
+  };
 
   /** 番号で顧客を探して確認待ちにする（ゼロ埋め違いも許容） */
   const lookup = useCallback(async () => {
@@ -331,18 +399,21 @@ export function VisitEntryTab({ segments }: Props) {
 
   const undoVisit = async (visit: Visit) => {
     // スマホでの誤タップ防止に確認を挟む
-    const name = visit.customers?.name ?? "この方";
+    const name = visit.customers?.name ?? visit.guest_name ?? "この方";
     if (!window.confirm(`${name} 様の来場記録を取り消しますか？`)) return;
-    // 復元できるように、何を消したかをログに残してから削除する
-    await supabase.from("event_visit_undo_log").insert({
-      event_id: eventId,
-      customer_id: visit.customer_id,
-      notes: visit.notes,
-      deleted_by: displayName || null,
-    });
+    // 番号あり: 復元できるようログに残してから削除。番号なし: そのまま削除
+    if (visit.customer_id) {
+      await supabase.from("event_visit_undo_log").insert({
+        event_id: eventId,
+        customer_id: visit.customer_id,
+        notes: visit.notes,
+        deleted_by: displayName || null,
+      });
+    }
     await supabase.from("event_visits").delete().eq("id", visit.id);
     fetchVisits(eventId);
     fetchUndoLog(eventId);
+    fetchCounts(eventId);
   };
 
   /** 誤って取り消した来場記録を復元する */
@@ -355,6 +426,7 @@ export function VisitEntryTab({ segments }: Props) {
       await supabase.from("event_visit_undo_log").delete().eq("id", log.id);
       fetchVisits(eventId);
       fetchUndoLog(eventId);
+      fetchCounts(eventId);
     }
   };
 
@@ -442,10 +514,11 @@ export function VisitEntryTab({ segments }: Props) {
                 </div>
                 <div className="text-xs text-muted-foreground">
                   {selectedEvent.start_date}〜{selectedEvent.end_date}
-                  ／ 登録済みの来場: {visits.length}人
+                  ／ 来場: {visits.length}人
                   {(() => {
                     const base = selectedEvent.dm_count || rosterCount;
-                    return base ? `（DMヒット率 ${((visits.length / base) * 100).toFixed(1)}%）` : "";
+                    if (!base) return "";
+                    return `（うち名簿一致 ${matchedCount}人・DMヒット率 ${((matchedCount / base) * 100).toFixed(1)}%）`;
                   })()}
                 </div>
               </div>
@@ -545,6 +618,15 @@ export function VisitEntryTab({ segments }: Props) {
                 </div>
               </div>
             )}
+            {feedback?.kind === "guestok" && (
+              <div className="flex items-start gap-2 rounded-md bg-green-50 border border-green-200 px-3 py-2 text-green-800 max-w-xl">
+                <CheckCircle2 className="h-5 w-5 mt-0.5 shrink-0" />
+                <div>
+                  <div className="font-bold text-lg">番号なしで登録しました（{feedback.reason}）</div>
+                  <div className="text-xs">{feedback.name}　※あとで一覧から既存のお客様に紐付けできます</div>
+                </div>
+              </div>
+            )}
             {feedback?.kind === "dup" && (
               <div className="flex items-start gap-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-amber-800 max-w-xl">
                 <AlertTriangle className="h-5 w-5 mt-0.5 shrink-0" />
@@ -580,12 +662,20 @@ export function VisitEntryTab({ segments }: Props) {
               </div>
             )}
 
-            {/* 名前検索（ハガキ忘れ対応） */}
+            {/* 名前検索（ハガキ忘れ対応 ／ 番号なし来場の紐付け） */}
             <div className="pt-2 border-t space-y-2">
-              <Label className="flex items-center gap-1.5 text-muted-foreground">
-                <UserSearch className="h-4 w-4" />
-                ハガキ忘れの方は名前・カナで検索
-              </Label>
+              {linkingVisitId ? (
+                <div className="flex items-center gap-2 flex-wrap rounded-md bg-indigo-50 border border-indigo-200 px-3 py-1.5 text-sm text-indigo-800">
+                  <UserCheck className="h-4 w-4 shrink-0" />
+                  番号なし来場に<span className="font-semibold">お客様を紐付け中</span>。下の検索で本人を選んでください。
+                  <Button size="sm" variant="outline" className="h-7" onClick={() => setLinkingVisitId(null)}>やめる</Button>
+                </div>
+              ) : (
+                <Label className="flex items-center gap-1.5 text-muted-foreground">
+                  <UserSearch className="h-4 w-4" />
+                  ハガキ忘れの方は名前・カナで検索
+                </Label>
+              )}
               <Input
                 value={nameQuery}
                 onChange={(e) => setNameQuery(e.target.value)}
@@ -595,12 +685,45 @@ export function VisitEntryTab({ segments }: Props) {
               {nameResults.length > 0 && (
                 <div className="space-y-1.5 max-h-72 overflow-y-auto max-w-xl">
                   {nameResults.map((c) =>
-                    customerRow(c, <Button size="sm" onClick={() => register(c)}>登録</Button>)
+                    customerRow(c, linkingVisitId
+                      ? <Button size="sm" onClick={() => linkGuest(c)}>この記録に紐付け</Button>
+                      : <Button size="sm" onClick={() => register(c)}>登録</Button>
+                    )
                   )}
                 </div>
               )}
               {nameQuery.trim().length >= 2 && nameResults.length === 0 && (
                 <div className="text-xs text-muted-foreground">該当なし</div>
+              )}
+            </div>
+
+            {/* 番号なしで記録（新規・はがき忘れ等） */}
+            <div className="pt-2 border-t space-y-2">
+              {!guestOpen ? (
+                <Button variant="outline" size="sm" onClick={() => { setGuestOpen(true); setFeedback(null); }}>
+                  <UserSearch className="h-4 w-4 mr-1" />番号なしで記録（新規・はがき忘れ）
+                </Button>
+              ) : (
+                <div className="rounded-md border p-3 space-y-2 max-w-xl bg-muted/20">
+                  <div className="text-sm font-medium">番号なし来場を記録</div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {GUEST_REASONS.map((r) => (
+                      <button key={r} type="button" onClick={() => setGuestReason(r)}
+                        className={`h-8 px-3 rounded-md border text-sm ${guestReason === r ? "bg-primary text-primary-foreground" : "bg-white hover:bg-muted"}`}>
+                        {r}
+                      </button>
+                    ))}
+                  </div>
+                  <Input value={guestName} onChange={(e) => setGuestName(e.target.value)} placeholder="お名前（任意・分かれば）" className="h-9" />
+                  <Input value={guestMemo} onChange={(e) => setGuestMemo(e.target.value)} placeholder="メモ（任意）例: 5箱購入・DM希望" className="h-9" />
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" onClick={registerGuest}>登録する</Button>
+                    <Button size="sm" variant="outline" onClick={() => { setGuestOpen(false); setGuestName(""); setGuestMemo(""); }}>やめる</Button>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    ※新規のお客様は産直くんへの登録が原本です。ここでの記録は来場の取りこぼし防止用で、あとで既存のお客様に紐付けできます。
+                  </p>
+                </div>
               )}
             </div>
           </CardContent>
@@ -650,10 +773,23 @@ export function VisitEntryTab({ segments }: Props) {
               {visits.map((v) => (
                 <div key={v.id} className="px-3 py-1.5 border rounded-md">
                   <div className="flex items-center gap-3">
-                    <span className="font-mono text-xs text-muted-foreground shrink-0">
-                      #{v.customers?.customer_no ?? "?"}
+                    {v.customer_id ? (
+                      <span className="font-mono text-xs text-muted-foreground shrink-0">
+                        #{v.customers?.customer_no ?? "?"}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-medium text-indigo-800 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0.5 shrink-0">
+                        番号なし{v.reason ? `・${v.reason}` : ""}
+                      </span>
+                    )}
+                    <span className="flex-1 truncate font-medium">
+                      {v.customer_id ? (v.customers?.name ?? "（削除された顧客）") : (v.guest_name || "番号なしの来場")}
                     </span>
-                    <span className="flex-1 truncate font-medium">{v.customers?.name ?? "（削除された顧客）"}</span>
+                    {canRegister && !v.customer_id && (
+                      <Button variant="outline" size="sm" className="h-7" onClick={() => { setLinkingVisitId(v.id); setNameQuery(v.guest_name || ""); setFeedback(null); }} title="既存のお客様に紐付け">
+                        紐付け
+                      </Button>
+                    )}
                     {canRegister && (
                       <>
                         <Button
