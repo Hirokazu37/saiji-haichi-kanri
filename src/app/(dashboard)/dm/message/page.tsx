@@ -17,6 +17,7 @@ import { renderRuby } from "@/lib/ruby";
 import { PrintPortal } from "@/components/PrintPortal";
 
 type Evt = { id: string; name: string | null; venue: string; store_name: string | null; start_date: string; end_date: string };
+type ProofRow = { id: string; path: string; file_name: string | null; kind: string | null; note: string | null; created_by: string | null; created_at: string };
 type Align = "left" | "center" | "right";
 type Space = "wide" | "normal" | "tight";
 type Block = { id: string; style: string; align: Align; space: Space; label: string; text: string };
@@ -98,7 +99,7 @@ function defaultBlocks(evt: Evt | undefined): Block[] {
 }
 
 export default function PostcardMessagePage() {
-  const { role } = usePermission();
+  const { role, displayName } = usePermission();
   const canEdit = role === "admin" || role === "viewer";
   const supabase = createClient();
   const [events, setEvents] = useState<Evt[]>([]);
@@ -109,6 +110,8 @@ export default function PostcardMessagePage() {
   const [saved, setSaved] = useState(false);
   const proofRef = useRef<HTMLDivElement>(null);
   const [attachInfo, setAttachInfo] = useState<string | null>(null);
+  const [proofs, setProofs] = useState<ProofRow[]>([]);
+  const [proofRefreshKey, setProofRefreshKey] = useState(0);
 
   const printWith = (cls: string) => {
     document.body.classList.add(cls);
@@ -124,6 +127,21 @@ export default function PostcardMessagePage() {
       .limit(400)
       .then(({ data }) => setEvents((data as Evt[]) || []));
   }, [supabase]);
+
+  // 校正履歴（この催事に保存済みのPDF一覧）
+  useEffect(() => {
+    if (!eventId) { setProofs([]); return; }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("event_proofs")
+        .select("*")
+        .eq("event_id", eventId)
+        .order("created_at", { ascending: false });
+      if (!cancelled) setProofs((data as ProofRow[]) || []);
+    })();
+    return () => { cancelled = true; };
+  }, [eventId, supabase, proofRefreshKey]);
 
   const eventItems: ComboboxItem[] = useMemo(
     () => events.map((e) => ({
@@ -300,6 +318,34 @@ export default function PostcardMessagePage() {
     const file = await renderProofPdf();
     if (!file) { setAttachInfo("原稿PDFの生成に失敗しました。少し待って再度お試しください。"); return; }
     await saveProofFile(file);
+  };
+
+  // 校正PDFをアプリ（Storage）に履歴として保存
+  const saveToApp = async () => {
+    if (!eventId) return;
+    const file = await renderProofPdf();
+    if (!file) { setAttachInfo("原稿PDFの生成に失敗しました。少し待って再度お試しください。"); return; }
+    const path = `${eventId}/${Date.now()}.pdf`;
+    const { error: upErr } = await supabase.storage.from("proofs").upload(path, file, { contentType: "application/pdf", upsert: false });
+    if (upErr) { setAttachInfo(`校正履歴の保存に失敗しました: ${upErr.message}`); return; }
+    const { error: insErr } = await supabase.from("event_proofs").insert({
+      event_id: eventId, path, file_name: file.name, kind, created_by: displayName || null,
+    });
+    if (insErr) { setAttachInfo(`校正履歴の記録に失敗しました: ${insErr.message}`); return; }
+    setAttachInfo("校正履歴に保存しました。下の「校正履歴」から開けます。");
+    setProofRefreshKey((k) => k + 1);
+  };
+
+  const openProof = async (p: ProofRow) => {
+    const { data } = await supabase.storage.from("proofs").createSignedUrl(p.path, 120);
+    if (data?.signedUrl) window.open(data.signedUrl, "_blank");
+  };
+
+  const deleteProof = async (p: ProofRow) => {
+    if (!window.confirm("この校正履歴を削除しますか？")) return;
+    await supabase.storage.from("proofs").remove([p.path]);
+    await supabase.from("event_proofs").delete().eq("id", p.id);
+    setProofRefreshKey((k) => k + 1);
   };
 
   const downloadFax = () => {
@@ -510,6 +556,9 @@ export default function PostcardMessagePage() {
               <Button variant="outline" size="sm" onClick={savePdf}>
                 <FileText className="h-4 w-4 mr-1" />原稿PDFを保存
               </Button>
+              <Button variant="outline" size="sm" onClick={saveToApp}>
+                <Save className="h-4 w-4 mr-1" />アプリに保存（校正履歴）
+              </Button>
               <Button variant="outline" size="sm" onClick={sendMail}>
                 <Mail className="h-4 w-4 mr-1" />メールで校正依頼
               </Button>
@@ -524,6 +573,24 @@ export default function PostcardMessagePage() {
               <div className="flex items-start gap-2 rounded-md bg-emerald-50 border border-emerald-200 px-3 py-2 text-sm text-emerald-900 max-w-2xl">
                 <FileText className="h-4 w-4 mt-0.5 shrink-0 text-emerald-700" />
                 <span>{attachInfo}</span>
+              </div>
+            )}
+
+            {/* 校正履歴（アプリに保存したPDF） */}
+            {proofs.length > 0 && (
+              <div className="space-y-1 max-w-2xl">
+                <div className="text-xs font-medium text-muted-foreground">校正履歴（アプリ保存分）</div>
+                <div className="space-y-1">
+                  {proofs.map((p) => (
+                    <div key={p.id} className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-sm">
+                      <span className="text-xs text-muted-foreground shrink-0 tabular-nums">{p.created_at.slice(0, 16).replace("T", " ")}</span>
+                      {p.kind && <span className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 shrink-0">{KIND_OPTIONS.find((o) => o.value === p.kind)?.name ?? p.kind}</span>}
+                      <span className="flex-1 truncate">{p.file_name || "校正PDF"}{p.created_by ? `（${p.created_by}）` : ""}</span>
+                      <Button size="sm" variant="outline" className="h-7" onClick={() => openProof(p)}>開く</Button>
+                      <Button size="sm" variant="ghost" className="h-7 text-destructive" onClick={() => deleteProof(p)}>削除</Button>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
             <div ref={proofRef} className="flex flex-wrap gap-4 bg-white p-2 w-fit">
