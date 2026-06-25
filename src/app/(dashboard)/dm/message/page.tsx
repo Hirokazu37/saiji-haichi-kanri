@@ -101,6 +101,10 @@ export default function PostcardMessagePage() {
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [kind, setKind] = useState<Kind>("sokubai");
   const [saved, setSaved] = useState(false);
+  // 百貨店ごとのテンプレート（体裁＋癖メモ）
+  const [storeNote, setStoreNote] = useState("");
+  const [hasTemplate, setHasTemplate] = useState(false);
+  const [tplSaved, setTplSaved] = useState(false);
   const proofRef = useRef<HTMLDivElement>(null);
   const [attachInfo, setAttachInfo] = useState<string | null>(null);
   const [proofs, setProofs] = useState<ProofRow[]>([]);
@@ -150,18 +154,31 @@ export default function PostcardMessagePage() {
     let cancelled = false;
     (async () => {
       const evt = events.find((e) => e.id === eventId);
-      const { data } = await supabase.from("event_postcards").select("*").eq("event_id", eventId).maybeSingle();
+      const vKey = evt ? `${evt.venue}|${evt.store_name || ""}` : "";
+      const [{ data }, { data: tpl }] = await Promise.all([
+        supabase.from("event_postcards").select("*").eq("event_id", eventId).maybeSingle(),
+        vKey ? supabase.from("dm_templates").select("*").eq("venue_key", vKey).maybeSingle() : Promise.resolve({ data: null }),
+      ]);
       if (cancelled) return;
       setSaved(false);
+      setTplSaved(false);
+      setStoreNote((tpl as { note?: string } | null)?.note || "");
+      setHasTemplate(!!tpl);
+      const mapBlocks = (arr: Block[]) => arr.map((b) => ({
+        id: b.id || newId(),
+        style: normStyle(b.style),
+        align: (b.align as Align) || "center",
+        space: normSpace(b.space),
+        label: b.label || "",
+        text: b.text || "",
+      }));
+      const tplBlocks = (tpl as { blocks?: Block[] } | null)?.blocks;
       if (data?.blocks && Array.isArray(data.blocks) && data.blocks.length > 0) {
-        setBlocks((data.blocks as Block[]).map((b) => ({
-          id: b.id || newId(),
-          style: normStyle(b.style),
-          align: (b.align as Align) || "center",
-          space: normSpace(b.space),
-          label: b.label || "",
-          text: b.text || "",
-        })));
+        // この催事で保存済みの文面を優先
+        setBlocks(mapBlocks(data.blocks as Block[]));
+      } else if (tplBlocks && Array.isArray(tplBlocks) && tplBlocks.length > 0) {
+        // 保存が無ければ、この百貨店の標準テンプレートを適用
+        setBlocks(mapBlocks(tplBlocks));
       } else if (data) {
         const venue = evt ? `${evt.venue}${evt.store_name ? ` ${evt.store_name}` : ""}` : "";
         setBlocks([
@@ -183,6 +200,21 @@ export default function PostcardMessagePage() {
     if (!eventId) return;
     const { error } = await supabase.from("event_postcards").upsert({ event_id: eventId, blocks }, { onConflict: "event_id" });
     if (!error) { setSaved(true); setTimeout(() => setSaved(false), 2000); }
+  };
+
+  // 現在の文面＋メモを「この百貨店の標準テンプレート」として保存
+  const saveTemplate = async () => {
+    const evt = events.find((e) => e.id === eventId);
+    if (!evt) return;
+    const vKey = `${evt.venue}|${evt.store_name || ""}`;
+    const { error } = await supabase.from("dm_templates").upsert({
+      venue_key: vKey,
+      venue: evt.venue,
+      store_name: evt.store_name || null,
+      blocks,
+      note: storeNote.trim() || null,
+    }, { onConflict: "venue_key" });
+    if (!error) { setHasTemplate(true); setTplSaved(true); setTimeout(() => setTplSaved(false), 2000); }
   };
 
   const update = (id: string, patch: Partial<Block>) =>
@@ -455,6 +487,29 @@ export default function PostcardMessagePage() {
                   {KIND_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.name}</SelectItem>)}
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+        )}
+
+        {/* 百貨店ごとの設定（癖メモ＋標準テンプレート） */}
+        {eventId && (
+          <div className="rounded-md border bg-amber-50/40 px-3 py-2.5 space-y-2 max-w-2xl">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Label className="text-sm font-medium">この百貨店の設定（癖・標準レイアウト）</Label>
+              {hasTemplate && <span className="text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5">標準を記憶済み</span>}
+            </div>
+            <Textarea
+              value={storeNote}
+              onChange={(e) => setStoreNote(e.target.value)}
+              rows={2}
+              placeholder="この百貨店の癖・注意（例: 会場は「○階 催事場」と書く／期間は『会期』表記／○○の文言を必ず入れる など）"
+            />
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button size="sm" variant="outline" onClick={saveTemplate}>
+                <Save className="h-4 w-4 mr-1" />この店舗の標準として保存（文面＋メモ）
+              </Button>
+              {tplSaved && <span className="text-xs text-emerald-700 font-medium">✓ 保存しました</span>}
+              <span className="text-xs text-muted-foreground">同じ百貨店の次の催事は、この体裁とメモが自動で出ます。</span>
             </div>
           </div>
         )}
