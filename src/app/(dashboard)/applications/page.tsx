@@ -23,6 +23,13 @@ type EventApp = {
   application_status: string | null;
   application_submitted_date: string | null;
   application_method: string | null;
+  dm_status: string | null;
+};
+
+const DM_BADGE: Record<string, string> = {
+  "印刷済み": "bg-green-50 text-green-700 border-green-200",
+  "校正中": "bg-amber-50 text-amber-700 border-amber-200",
+  "未着手": "bg-red-50 text-red-700 border-red-200",
 };
 
 export default function ApplicationsListPage() {
@@ -34,7 +41,7 @@ export default function ApplicationsListPage() {
   const [savedId, setSavedId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
-    const { data } = await supabase.from("events").select("id, name, venue, store_name, start_date, end_date, status, application_status, application_submitted_date, application_method").order("start_date");
+    const { data } = await supabase.from("events").select("id, name, venue, store_name, start_date, end_date, status, application_status, application_submitted_date, application_method, dm_status").order("start_date");
     setEvents(data || []);
     setLoading(false);
   }, [supabase]);
@@ -98,6 +105,7 @@ export default function ApplicationsListPage() {
                 <TableHead>申込書</TableHead>
                 <TableHead className="hidden md:table-cell">提出日</TableHead>
                 <TableHead className="hidden md:table-cell">提出方法</TableHead>
+                <TableHead>DM</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -165,11 +173,19 @@ export default function ApplicationsListPage() {
                         <span className="text-sm">{e.application_method || "—"}</span>
                       )}
                     </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1.5 whitespace-nowrap">
+                        <span className={cn("text-[11px] font-bold px-2 py-0.5 rounded-full border", DM_BADGE[e.dm_status || ""] || "bg-gray-100 text-gray-500 border-gray-200")}>
+                          {e.dm_status || "なし"}
+                        </span>
+                        <Link href={`/dm/message?event=${e.id}`} className="text-[11px] text-primary hover:underline">文面へ</Link>
+                      </div>
+                    </TableCell>
                   </TableRow>
                 );
               })}
               {filtered.length === 0 && (
-                <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">該当する催事がありません</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">該当する催事がありません</TableCell></TableRow>
               )}
             </TableBody>
           </Table>

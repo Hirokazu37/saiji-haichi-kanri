@@ -146,6 +146,12 @@ export default function PostcardMessagePage() {
       .then(({ data }) => setEvents((data as Evt[]) || []));
   }, [supabase]);
 
+  // 出店申込書一覧などから ?event=<id> で来たら、その催事を選択
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search).get("event");
+    if (p) setEventId(p);
+  }, []);
+
   // 校正履歴（この催事に保存済みのPDF一覧）
   useEffect(() => {
     if (!eventId) { setProofs([]); return; }
