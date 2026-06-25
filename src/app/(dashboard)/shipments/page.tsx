@@ -503,12 +503,14 @@ export default function ShipmentsPage() {
         {/* ===== PC: ガントチャート ===== */}
         <TooltipProvider>
           <Card className="hidden md:block">
-            <CardContent className="p-0 overflow-x-auto print:overflow-visible print:text-[8px] [touch-action:pan-x_pan-y_pinch-zoom]">
+            <CardContent className="p-0 overflow-auto max-h-[75vh] print:max-h-none print:overflow-visible print:text-[8px] [touch-action:pan-x_pan-y_pinch-zoom]">
               <div>
+                {/* 月＋日付ヘッダーをまとめて画面上部に固定（縦スクロール） */}
+                <div className="sticky top-0 z-30 bg-background">
                 {/* 月ヘッダー */}
                 {monthSpan > 1 && (
                   <div className="flex border-b">
-                    <div className="w-48 print:w-32 shrink-0 border-r sticky left-0 z-30 bg-background" />
+                    <div className="w-48 print:w-32 shrink-0 border-r sticky left-0 z-40 bg-background" />
                     <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${allDays.length}, minmax(0, 1fr))` }}>
                       {monthRange.map((m) => (
                         <div key={`${m.year}-${m.month}`} className="text-center text-xs font-bold py-1 border-r bg-muted/50" style={{ gridColumn: `span ${m.days}` }}>
@@ -520,8 +522,8 @@ export default function ShipmentsPage() {
                 )}
 
                 {/* 日付ヘッダー */}
-                <div className="flex border-b sticky top-0 bg-background z-10">
-                  <div className="w-48 print:w-32 shrink-0 p-2 border-r font-medium text-sm sticky left-0 z-30 bg-background">催事 / 備品の流れ</div>
+                <div className="flex border-b bg-background">
+                  <div className="w-48 print:w-32 shrink-0 p-2 border-r font-medium text-sm sticky left-0 z-40 bg-background">催事 / 備品の流れ</div>
                   <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${allDays.length}, minmax(0, 1fr))` }}>
                     {allDays.map((d, i) => {
                       const holiday = holidays.get(d.dateStr);
@@ -536,6 +538,7 @@ export default function ShipmentsPage() {
                     })}
                   </div>
                 </div>
+                </div>{/* /sticky ヘッダー */}
 
                 {/* イベント行 + SVGオーバーレイ */}
                 <div className="relative">
