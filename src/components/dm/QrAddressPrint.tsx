@@ -38,10 +38,8 @@ function guess(headers: string[]): Record<FieldKey, string> {
   return m;
 }
 
-const fmtPostal = (p: string) => {
-  const d = p.replace(/[^0-9]/g, "");
-  return d.length === 7 ? `${d.slice(0, 3)}-${d.slice(3)}` : p;
-};
+// 郵便番号は枠に重ね刷りするのでハイフンなし・数字のみ
+const fmtPostal = (p: string) => p.replace(/[^0-9]/g, "");
 
 /** 名簿CSV（宛名つき）から QR付き宛名はがきを作って印刷する部品。
  *  印刷は body.pp-address クラスで制御し、他の印刷（文面など）と共存できる。 */
@@ -173,12 +171,12 @@ export function QrAddressPrint() {
       {cards && cards.length > 0 && (
         <div className="space-y-1">
           <div className="text-xs text-muted-foreground text-center">宛名プレビュー（1人目のサンプル・はがき1枚）</div>
-          <div className="mx-auto relative border bg-white shadow-sm overflow-hidden" style={{ width: "100mm", height: "148mm", boxSizing: "border-box", padding: "12mm 10mm" }}>
-            {cards[0].postal && <div style={{ fontSize: "14pt", letterSpacing: "2px" }}>〒{fmtPostal(cards[0].postal)}</div>}
-            <div style={{ fontSize: "11pt", marginTop: "6mm", lineHeight: 1.5 }}>{cards[0].address}</div>
-            <div style={{ fontSize: "16pt", fontWeight: "bold", marginTop: "10mm" }}>{cards[0].name}　様</div>
-            <div style={{ position: "absolute", bottom: "10mm", right: "10mm", width: "20mm", height: "20mm" }} dangerouslySetInnerHTML={{ __html: cards[0].qr }} />
-            <div style={{ position: "absolute", bottom: "7mm", right: "10mm", width: "20mm", textAlign: "center", fontSize: "7pt", color: "#333" }}>{cards[0].no}</div>
+          <div className="mx-auto relative border bg-white shadow-sm overflow-hidden" style={{ width: "100mm", height: "148mm", boxSizing: "border-box" }}>
+            {cards[0].postal && <div style={{ position: "absolute", top: "13mm", right: "14mm", fontSize: "14pt", fontWeight: "bold", letterSpacing: "3.2mm" }}>{fmtPostal(cards[0].postal)}</div>}
+            <div style={{ position: "absolute", top: "52mm", left: "14mm", right: "12mm", fontSize: "11pt", lineHeight: 1.5 }}>{cards[0].address}</div>
+            <div style={{ position: "absolute", top: "74mm", left: "14mm", right: "12mm", fontSize: "18pt", fontWeight: "bold" }}>{cards[0].name}　様</div>
+            <div style={{ position: "absolute", bottom: "30mm", right: "10mm", width: "18mm", height: "18mm" }} dangerouslySetInnerHTML={{ __html: cards[0].qr }} />
+            <div style={{ position: "absolute", bottom: "27mm", right: "10mm", width: "18mm", textAlign: "center", fontSize: "7pt", color: "#333" }}>{cards[0].no}</div>
           </div>
         </div>
       )}
@@ -194,20 +192,21 @@ export function QrAddressPrint() {
                 body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                 body.pp-address .qr-print { display: block !important; margin: 0; }
                 body.pp-address .qr-sheet { width: 210mm; height: 297mm; display: grid; grid-template-columns: 105mm 105mm; grid-template-rows: 148.5mm 148.5mm; page-break-after: always; }
-                .qr-card { position: relative; box-sizing: border-box; padding: 12mm 10mm; overflow: hidden; }
-                .qr-postal { font-size: 14pt; letter-spacing: 2px; }
-                .qr-addr { font-size: 11pt; margin-top: 6mm; line-height: 1.5; }
-                .qr-name { font-size: 16pt; font-weight: bold; margin-top: 10mm; }
-                .qr-qrcode { position: absolute; bottom: 10mm; right: 10mm; width: 20mm; height: 20mm; }
+                /* 差出人=左上／郵便枠=右上 はテンプレ側。宛名は中央、郵便番号は右上の枠に重ねる */
+                .qr-card { position: relative; box-sizing: border-box; overflow: hidden; }
+                .qr-postal { position: absolute; top: 13mm; right: 14mm; font-size: 14pt; font-weight: bold; letter-spacing: 3.2mm; }
+                .qr-addr { position: absolute; top: 52mm; left: 14mm; right: 12mm; font-size: 11pt; line-height: 1.5; }
+                .qr-name { position: absolute; top: 74mm; left: 14mm; right: 12mm; font-size: 18pt; font-weight: bold; }
+                .qr-qrcode { position: absolute; bottom: 30mm; right: 10mm; width: 18mm; height: 18mm; }
                 .qr-qrcode svg { width: 100%; height: 100%; }
-                .qr-no { position: absolute; bottom: 7mm; right: 10mm; width: 20mm; text-align: center; font-size: 7pt; color: #333; }
+                .qr-no { position: absolute; bottom: 27mm; right: 10mm; width: 18mm; text-align: center; font-size: 7pt; color: #333; }
               }
             `}</style>
             {pages.map((page, pi) => (
               <div key={pi} className="qr-sheet">
                 {page.map((c) => (
                   <div key={c.no} className="qr-card">
-                    {c.postal && <div className="qr-postal">〒{fmtPostal(c.postal)}</div>}
+                    {c.postal && <div className="qr-postal">{fmtPostal(c.postal)}</div>}
                     <div className="qr-addr">{c.address}</div>
                     <div className="qr-name">{c.name}　様</div>
                     <div className="qr-qrcode" dangerouslySetInnerHTML={{ __html: c.qr }} />
