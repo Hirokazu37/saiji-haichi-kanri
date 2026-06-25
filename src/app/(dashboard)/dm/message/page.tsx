@@ -213,27 +213,34 @@ export default function PostcardMessagePage() {
 
   const downloadFax = () => {
     const { venue, title, period } = proofInfo();
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`;
+    const recipient = venue ? `${venue}　御中` : "○○　様";
+    const eventBullet = venue || title || period
+      ? `<p>・催事：${venue}${title ? ` ${title}` : ""}${period ? `（${period}）` : ""}</p>`
+      : "";
     const html =
       `<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">` +
-      `<head><meta charset="utf-8"><title>FAX送信状</title></head>` +
-      `<body style="font-family:'Yu Gothic','游ゴシック',sans-serif; font-size:11pt; line-height:1.9;">` +
-      `<h2 style="text-align:center; letter-spacing:8px;">F A X 送 信 状</h2>` +
-      `<p style="text-align:right;">送信日：　　　年　　月　　日</p>` +
-      `<table style="width:100%; border-collapse:collapse;" border="1" cellpadding="6">` +
-      `<tr><td style="width:25%;">送信先</td><td>　　　　　　　　　　　御中</td></tr>` +
-      `<tr><td>FAX番号</td><td>　　　　－　　　　－　　　　</td></tr>` +
-      `<tr><td>差出人</td><td>有限会社 安岡蒲鉾店　担当：　　　　　　</td></tr>` +
-      `<tr><td>枚数</td><td>本紙を含め　　枚</td></tr></table>` +
-      `<h3>件名：DMハガキ校正のお願い</h3>` +
-      `<p>いつもお世話になっております。安岡蒲鉾でございます。<br>` +
-      `下記催事のDMハガキにつきまして、校正をお願いいたします。</p>` +
-      `<p>　会場：${venue}<br>` +
-      (title ? `　催事名：${title}<br>` : "") +
-      (period ? `　会期：${period}<br>` : "") +
-      `</p>` +
-      `<p>別紙のとおり校正をお送りいたします。ご確認のほど、よろしくお願いいたします。</p><hr>` +
-      `<p style="font-size:10pt;">有限会社 安岡蒲鉾店　〒798-1133 愛媛県宇和島市三間町中野中293番地<br>` +
-      `TEL 0895-58-2155　FAX 0895-58-2706　フリーダイヤル 0120-58-7771</p></body></html>`;
+      `<head><meta charset="utf-8"><title>ＦＡＸ送信のご案内</title></head>` +
+      `<body style="font-family:'Yu Gothic','游ゴシック','ＭＳ Ｐゴシック',sans-serif; font-size:11pt; line-height:1.9;">` +
+      `<h2 style="text-align:center; letter-spacing:6px; margin-bottom:18pt;">ＦＡＸ送信のご案内</h2>` +
+      `<p>発信日　${dateStr}</p>` +
+      `<p>発信元　　　有限会社　安岡蒲鉾店<br>` +
+      `　　　　　　本社工場　愛媛県宇和島市三間町中野中293番地<br>` +
+      `　　　　　　ＴＥＬ　0895-58-2155<br>` +
+      `　　　　　　ＦＡＸ　0895-58-2706</p>` +
+      `<p style="font-size:13pt; margin-top:14pt;">${recipient}</p>` +
+      `<p>発信枚数　　　　　　枚　（　本紙含む　・　本紙含まず　）</p>` +
+      `<p>ＤＭハガキの原稿を送信いたしますので、ご校正のほどよろしくお願いいたします。</p>` +
+      `<p style="text-align:center; margin:12pt 0;">記</p>` +
+      `<p>この度は大変お世話になっております。<br>` +
+      `下記のとおり、ＤＭハガキの原稿（校正用）を送信いたしますので、ご確認のうえ、ご校正くださいますようお願い申し上げます。<br>` +
+      `お気づきの点やご修正のご指示がございましたら、ご連絡いただきますようお願いいたします。</p>` +
+      `<p>■ＤＭハガキ　原稿校正のお願い</p>` +
+      `<p>・ＤＭハガキ原稿（校正用）　　１部</p>` +
+      eventBullet +
+      `<p style="text-align:right; margin-top:8pt;">以上</p>` +
+      `</body></html>`;
     const blob = new Blob(["﻿", html], { type: "application/msword" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
