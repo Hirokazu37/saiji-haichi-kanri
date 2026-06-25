@@ -252,11 +252,11 @@ export default function PostcardMessagePage() {
       }
     }
     // PC等: メールに自動添付できないので、PDFを保存してから下書きを開く（添付は手動）
-    downloadFile(file);
-    setAttachInfo(`原稿PDFを保存しました：「${file.name}」。ブラウザの保存先（通常は「ダウンロード」フォルダ）にあります。開いたメールにこのPDFを添付して送信してください。`);
+    await saveProofFile(file, "開いたメールにこのPDFを添付して送信してください。");
     window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
+  // 通常ダウンロード（保存先はブラウザ設定のフォルダ）
   const downloadFile = (file: File) => {
     const url = URL.createObjectURL(file);
     const a = document.createElement("a");
@@ -268,12 +268,38 @@ export default function PostcardMessagePage() {
     URL.revokeObjectURL(url);
   };
 
+  // 保存先を選べるブラウザ(Chrome/Edge)は保存ダイアログ、非対応は通常ダウンロード
+  const saveProofFile = async (file: File, note?: string): Promise<boolean> => {
+    type PickerWin = Window & {
+      showSaveFilePicker?: (o: { suggestedName?: string; types?: { description?: string; accept: Record<string, string[]> }[] }) => Promise<FileSystemFileHandle>;
+    };
+    const w = window as PickerWin;
+    if (w.showSaveFilePicker) {
+      try {
+        const handle = await w.showSaveFilePicker({
+          suggestedName: file.name,
+          types: [{ description: "PDF", accept: { "application/pdf": [".pdf"] } }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(file);
+        await writable.close();
+        setAttachInfo(`原稿PDFを保存しました（選んだ場所に「${file.name}」）。${note ?? ""}`);
+        return true;
+      } catch (e) {
+        if ((e as DOMException)?.name === "AbortError") { setAttachInfo("保存をキャンセルしました。"); return false; }
+        // それ以外の失敗は通常ダウンロードへ
+      }
+    }
+    downloadFile(file);
+    setAttachInfo(`原稿PDFを保存しました：「${file.name}」（ブラウザのダウンロード先フォルダ）。${note ?? ""}`);
+    return true;
+  };
+
   // 原稿PDFだけを保存（メールやFAXに添付する用）
   const savePdf = async () => {
     const file = await renderProofPdf();
     if (!file) { setAttachInfo("原稿PDFの生成に失敗しました。少し待って再度お試しください。"); return; }
-    downloadFile(file);
-    setAttachInfo(`原稿PDFを保存しました：「${file.name}」。ブラウザの保存先（通常は「ダウンロード」フォルダ）にあります。`);
+    await saveProofFile(file);
   };
 
   const downloadFax = () => {
