@@ -51,7 +51,7 @@ const S_POSTAL: React.CSSProperties = { position: "absolute", top: "21mm", left:
 const S_ADDR: React.CSSProperties = { position: "absolute", top: "27mm", left: "30mm", width: "65mm", fontSize: "11pt", lineHeight: 1.5 };
 const S_NAME: React.CSSProperties = { position: "absolute", top: "46mm", left: "30mm", width: "65mm", fontSize: "14pt" };
 const S_QR: React.CSSProperties = { position: "absolute", top: "55mm", right: "10mm", width: "18mm", height: "18mm" };
-const S_NO: React.CSSProperties = { position: "absolute", top: "73mm", right: "8mm", width: "22mm", textAlign: "center", fontSize: "9pt", fontWeight: "bold", color: "#333" };
+const S_NO: React.CSSProperties = { position: "absolute", top: "73mm", right: "8mm", width: "22mm", textAlign: "center", fontSize: "9pt", color: "#333" };
 
 /** 名簿CSV（宛名つき）から QR付き宛名はがきを作って印刷する部品。
  *  印刷は body.pp-address クラスで制御し、他の印刷（文面など）と共存できる。 */
@@ -323,7 +323,7 @@ export function QrAddressPrint({ frontOverlay }: { frontOverlay?: React.ReactNod
                 .qr-name { position: absolute; top: 46mm; left: 30mm; width: 65mm; font-size: 14pt; }
                 .qr-qrcode { position: absolute; top: 55mm; right: 10mm; width: 18mm; height: 18mm; }
                 .qr-qrcode svg { width: 100%; height: 100%; }
-                .qr-no { position: absolute; top: 73mm; right: 8mm; width: 22mm; text-align: center; font-size: 9pt; font-weight: bold; color: #333; }
+                .qr-no { position: absolute; top: 73mm; right: 8mm; width: 22mm; text-align: center; font-size: 9pt; color: #333; }
               }
             `}</style>
             {pages.map((page, pi) => (
