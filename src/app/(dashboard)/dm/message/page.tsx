@@ -86,7 +86,7 @@ function defaultBlocks(evt: Evt | undefined): Block[] {
     { id: newId(), style: "normal", align: "center", space: "normal", label: "期間", text: evt ? periodFromDates(evt.start_date, evt.end_date) : "" },
     { id: newId(), style: "normal", align: "center", space: "normal", label: "会場", text: `${venue}　○階` },
     { id: newId(), style: "normal", align: "center", space: "normal", label: "営業時間", text: "午前10時〜午後8時" },
-    { id: newId(), style: "sm", align: "center", space: "normal", label: "備考", text: "" },
+    { id: newId(), style: "sm", align: "center", space: "normal", label: "", text: "" },
   ];
 }
 
@@ -168,7 +168,7 @@ export default function PostcardMessagePage() {
           { id: newId(), style: "normal", align: "center", space: "normal", label: "期間", text: data.period_text || "" },
           { id: newId(), style: "normal", align: "center", space: "normal", label: "会場", text: data.venue_label || `${venue}　○階` },
           { id: newId(), style: "normal", align: "center", space: "normal", label: "営業時間", text: data.hours || "午前10時〜午後8時" },
-          { id: newId(), style: "sm", align: "center", space: "normal", label: "備考", text: data.body || "" },
+          { id: newId(), style: "sm", align: "center", space: "normal", label: "", text: data.body || "" },
         ]);
       } else {
         setBlocks(defaultBlocks(evt));
@@ -209,7 +209,7 @@ export default function PostcardMessagePage() {
   const renderProofPdf = async (): Promise<File | null> => {
     if (!proofRef.current) return null;
     try {
-      const html2canvas = (await import("html2canvas")).default;
+      const html2canvas = (await import("html2canvas-pro")).default;
       const { jsPDF } = await import("jspdf");
       const canvas = await html2canvas(proofRef.current, { scale: 2, backgroundColor: "#ffffff", useCORS: true });
       const imgData = canvas.toDataURL("image/jpeg", 0.92);
@@ -531,14 +531,8 @@ export default function PostcardMessagePage() {
           <div className="space-y-2">
             <div className="flex items-center gap-2 flex-wrap">
               <Label className="text-sm font-medium mr-1">校正プレビュー（実物イメージ）</Label>
-              <Button variant="outline" size="sm" onClick={() => printWith("pp-proof")}>
-                <Printer className="h-4 w-4 mr-1" />校正を印刷／PDF
-              </Button>
               <Button variant="outline" size="sm" onClick={savePdf}>
-                <FileText className="h-4 w-4 mr-1" />原稿PDFを保存
-              </Button>
-              <Button variant="outline" size="sm" onClick={saveToApp}>
-                <Save className="h-4 w-4 mr-1" />アプリに保存（校正履歴）
+                <FileText className="h-4 w-4 mr-1" />PDFを保存（パソコンに）
               </Button>
               <Button variant="outline" size="sm" onClick={sendMail}>
                 <Mail className="h-4 w-4 mr-1" />メールで校正依頼
@@ -546,9 +540,15 @@ export default function PostcardMessagePage() {
               <Button variant="outline" size="sm" onClick={downloadFax}>
                 <FileText className="h-4 w-4 mr-1" />FAX送信状（Word）
               </Button>
+              <Button variant="outline" size="sm" onClick={() => printWith("pp-proof")}>
+                <Printer className="h-4 w-4 mr-1" />印刷（紙）
+              </Button>
+              <Button variant="ghost" size="sm" onClick={saveToApp}>
+                <Save className="h-4 w-4 mr-1" />アプリに記録（履歴）
+              </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              PCではメールに自動添付できないため、<span className="font-medium">「原稿PDFを保存」でPDFを保存 → メールに手動で添付</span>してください（「メールで校正依頼」はPDF保存＋本文入りの下書きを開きます）。スマホは共有メニューからそのまま添付できます。
+              送付用：<span className="font-medium">「PDFを保存」</span>でパソコンに保存 →「メールで校正依頼」で開いた下書きに添付（スマホは共有でそのまま添付）。FAXは「FAX送信状」、紙に刷るなら「印刷」。「アプリに記録」は社内で後から見返す控えです。
             </p>
             {attachInfo && (
               <div className="flex items-start gap-2 rounded-md bg-emerald-50 border border-emerald-200 px-3 py-2 text-sm text-emerald-900 max-w-2xl">
