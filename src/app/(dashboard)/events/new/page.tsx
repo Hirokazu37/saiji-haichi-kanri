@@ -104,6 +104,7 @@ function NewEventPageInner() {
     name: "",
     venue: "",
     store_name: "",
+    venue_floor: "",
     prefecture: "",
     start_date: "",
     end_date: "",
@@ -188,6 +189,7 @@ function NewEventPageInner() {
         name: src.name || "",
         venue: src.venue || "",
         store_name: src.store_name || "",
+        venue_floor: src.venue_floor || "",
         prefecture: src.prefecture || "",
         start_date: "",
         end_date: "",
@@ -624,6 +626,7 @@ function NewEventPageInner() {
         name: form.name.trim() || null,
         venue: form.venue.trim(),
         store_name: form.store_name.trim() || null,
+        venue_floor: form.venue_floor.trim() || null,
         prefecture: form.prefecture,
         start_date: form.start_date,
         end_date: form.end_date,
@@ -872,6 +875,11 @@ function NewEventPageInner() {
               searchPlaceholder="例: いせたん、けいおう..."
               allowCustom
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label>会場（階・売場）</Label>
+            <Input value={form.venue_floor} onChange={(e) => setForm({ ...form, venue_floor: e.target.value })} placeholder="例: 8階 大催事場 / 地下1階 催事場" />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

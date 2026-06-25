@@ -41,6 +41,7 @@ type EventData = {
   name: string | null;
   venue: string;
   store_name: string | null;
+  venue_floor: string | null;
   prefecture: string;
   start_date: string;
   end_date: string;
@@ -107,6 +108,7 @@ export default function EventDetailPage({
     name: "",
     venue: "",
     store_name: "",
+    venue_floor: "",
     prefecture: "",
     start_date: "",
     end_date: "",
@@ -142,6 +144,7 @@ export default function EventDetailPage({
         name: eventRes.data.name || "",
         venue: eventRes.data.venue,
         store_name: eventRes.data.store_name || "",
+        venue_floor: eventRes.data.venue_floor || "",
         prefecture: eventRes.data.prefecture,
         last_day_closing_time: eventRes.data.last_day_closing_time || "",
         start_date: eventRes.data.start_date,
@@ -289,6 +292,7 @@ export default function EventDetailPage({
         name: form.name.trim() || null,
         venue: form.venue.trim(),
         store_name: form.store_name.trim() || null,
+        venue_floor: form.venue_floor.trim() || null,
         prefecture: form.prefecture,
         start_date: form.start_date,
         end_date: form.end_date,
@@ -775,6 +779,12 @@ export default function EventDetailPage({
             <div className="space-y-2">
               <Label>店舗名</Label>
               <Input value={form.store_name} onChange={(e) => setForm({ ...form, store_name: e.target.value })} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>会場（階・売場）</Label>
+              <Input value={form.venue_floor} onChange={(e) => setForm({ ...form, venue_floor: e.target.value })} placeholder="例: 8階 大催事場 / 地下1階 催事場" />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">

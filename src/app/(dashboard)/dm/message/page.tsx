@@ -18,7 +18,7 @@ import { PrintPortal } from "@/components/PrintPortal";
 import { EventCalendar } from "@/components/customers/EventCalendar";
 import type { EventLite } from "@/components/customers/types";
 
-type Evt = { id: string; name: string | null; venue: string; store_name: string | null; start_date: string; end_date: string; dm_count: number | null };
+type Evt = { id: string; name: string | null; venue: string; store_name: string | null; start_date: string; end_date: string; dm_count: number | null; venue_floor: string | null };
 type ProofRow = { id: string; path: string; file_name: string | null; kind: string | null; note: string | null; created_by: string | null; created_at: string };
 type Align = "left" | "center" | "right";
 type Space = "wide" | "normal" | "tight";
@@ -80,13 +80,18 @@ function spanStyle(s: StyleDef): React.CSSProperties {
   };
 }
 
-function defaultBlocks(evt: Evt | undefined): Block[] {
+// 会場行のテキスト（店名＋階。階が未入力なら ○階 のプレースホルダ）
+function venueLine(evt: Evt | undefined): string {
   const venue = evt ? `${evt.venue}${evt.store_name ? ` ${evt.store_name}` : ""}` : "";
+  return `${venue}${evt?.venue_floor ? `　${evt.venue_floor}` : "　○階"}`;
+}
+
+function defaultBlocks(evt: Evt | undefined): Block[] {
   return [
     { id: newId(), style: "box", align: "center", space: "normal", label: "", text: "出店のご案内" },
     { id: newId(), style: "xl", align: "center", space: "normal", label: "", text: evt?.name ? `「${evt.name}」` : "" },
     { id: newId(), style: "normal", align: "center", space: "normal", label: "期間", text: evt ? periodFromDates(evt.start_date, evt.end_date) : "" },
-    { id: newId(), style: "normal", align: "center", space: "normal", label: "会場", text: `${venue}　○階` },
+    { id: newId(), style: "normal", align: "center", space: "normal", label: "会場", text: venueLine(evt) },
     { id: newId(), style: "normal", align: "center", space: "normal", label: "営業時間", text: "午前10時〜午後8時" },
     { id: newId(), style: "sm", align: "center", space: "normal", label: "", text: "" },
   ];
@@ -119,7 +124,7 @@ export default function PostcardMessagePage() {
   useEffect(() => {
     supabase
       .from("events")
-      .select("id, name, venue, store_name, start_date, end_date, dm_count")
+      .select("id, name, venue, store_name, start_date, end_date, dm_count, venue_floor")
       .order("start_date", { ascending: false })
       .limit(400)
       .then(({ data }) => setEvents((data as Evt[]) || []));
@@ -177,8 +182,13 @@ export default function PostcardMessagePage() {
         // この催事で保存済みの文面を優先
         setBlocks(mapBlocks(data.blocks as Block[]));
       } else if (tplBlocks && Array.isArray(tplBlocks) && tplBlocks.length > 0) {
-        // 保存が無ければ、この百貨店の標準テンプレートを適用
-        setBlocks(mapBlocks(tplBlocks));
+        // 保存が無ければ、この百貨店の標準テンプレートを適用（会場の階はこの催事の値を反映）
+        const tb = mapBlocks(tplBlocks);
+        if (evt?.venue_floor) {
+          const idx = tb.findIndex((b) => b.label === "会場");
+          if (idx >= 0) tb[idx] = { ...tb[idx], text: venueLine(evt) };
+        }
+        setBlocks(tb);
       } else if (data) {
         const venue = evt ? `${evt.venue}${evt.store_name ? ` ${evt.store_name}` : ""}` : "";
         setBlocks([
