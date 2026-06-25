@@ -30,15 +30,6 @@ const SPACE_OPTIONS: { value: Space; name: string }[] = [
 const SPACE_MARGIN: Record<Space, string> = { wide: "2mm 0", normal: "0.7mm 0", tight: "0.1mm 0" };
 const normSpace = (v: unknown): Space => (v === "wide" || v === "tight" ? v : "normal");
 
-type VPos = "top" | "center" | "bottom";
-const VPOS_OPTIONS: { value: VPos; name: string }[] = [
-  { value: "top", name: "上寄せ" },
-  { value: "center", name: "中央" },
-  { value: "bottom", name: "下寄せ" },
-];
-const VPOS_JUSTIFY: Record<VPos, string> = { top: "flex-start", center: "center", bottom: "flex-end" };
-const normVPos = (v: unknown): VPos => (v === "center" || v === "bottom" ? v : "top");
-
 // 裏面（ビジュアル面）の種別。画像は public/dm に同梱
 type Kind = "jisshin" | "sokubai";
 const KIND_OPTIONS: { value: Kind; name: string }[] = [
@@ -93,8 +84,9 @@ function defaultBlocks(evt: Evt | undefined): Block[] {
     { id: newId(), style: "box", align: "center", space: "normal", label: "", text: "出店のご案内" },
     { id: newId(), style: "xl", align: "center", space: "normal", label: "", text: evt?.name ? `「${evt.name}」` : "" },
     { id: newId(), style: "normal", align: "center", space: "normal", label: "期間", text: evt ? periodFromDates(evt.start_date, evt.end_date) : "" },
-    { id: newId(), style: "normal", align: "center", space: "normal", label: "会場", text: venue },
-    { id: newId(), style: "sm", align: "center", space: "normal", label: "", text: "午前10時〜午後8時" },
+    { id: newId(), style: "normal", align: "center", space: "normal", label: "会場", text: `${venue}　○階` },
+    { id: newId(), style: "normal", align: "center", space: "normal", label: "営業時間", text: "午前10時〜午後8時" },
+    { id: newId(), style: "sm", align: "center", space: "normal", label: "備考", text: "" },
   ];
 }
 
@@ -105,7 +97,6 @@ export default function PostcardMessagePage() {
   const [events, setEvents] = useState<Evt[]>([]);
   const [eventId, setEventId] = useState("");
   const [blocks, setBlocks] = useState<Block[]>([]);
-  const [vpos, setVpos] = useState<VPos>("top");
   const [kind, setKind] = useState<Kind>("sokubai");
   const [saved, setSaved] = useState(false);
   const proofRef = useRef<HTMLDivElement>(null);
@@ -160,7 +151,6 @@ export default function PostcardMessagePage() {
       const { data } = await supabase.from("event_postcards").select("*").eq("event_id", eventId).maybeSingle();
       if (cancelled) return;
       setSaved(false);
-      setVpos(normVPos(data?.vpos));
       if (data?.blocks && Array.isArray(data.blocks) && data.blocks.length > 0) {
         setBlocks((data.blocks as Block[]).map((b) => ({
           id: b.id || newId(),
@@ -176,9 +166,9 @@ export default function PostcardMessagePage() {
           { id: newId(), style: "box", align: "center", space: "normal", label: "", text: data.lead || "出店のご案内" },
           { id: newId(), style: "xl", align: "center", space: "normal", label: "", text: data.title || evt?.name || "" },
           { id: newId(), style: "normal", align: "center", space: "normal", label: "期間", text: data.period_text || "" },
-          { id: newId(), style: "normal", align: "center", space: "normal", label: "会場", text: data.venue_label || venue },
-          { id: newId(), style: "sm", align: "center", space: "normal", label: "", text: data.hours || "" },
-          ...(data.body ? [{ id: newId(), style: "normal", align: "center" as Align, space: "normal" as Space, label: "", text: data.body }] : []),
+          { id: newId(), style: "normal", align: "center", space: "normal", label: "会場", text: data.venue_label || `${venue}　○階` },
+          { id: newId(), style: "normal", align: "center", space: "normal", label: "営業時間", text: data.hours || "午前10時〜午後8時" },
+          { id: newId(), style: "sm", align: "center", space: "normal", label: "備考", text: data.body || "" },
         ]);
       } else {
         setBlocks(defaultBlocks(evt));
@@ -189,7 +179,7 @@ export default function PostcardMessagePage() {
 
   const save = async () => {
     if (!eventId) return;
-    const { error } = await supabase.from("event_postcards").upsert({ event_id: eventId, blocks, vpos }, { onConflict: "event_id" });
+    const { error } = await supabase.from("event_postcards").upsert({ event_id: eventId, blocks }, { onConflict: "event_id" });
     if (!error) { setSaved(true); setTimeout(() => setSaved(false), 2000); }
   };
 
@@ -391,7 +381,7 @@ export default function PostcardMessagePage() {
 
   const renderPostcard = () => (
     <div className="pc-msg">
-      <div className="pc-anno" style={{ justifyContent: VPOS_JUSTIFY[vpos] }}>
+      <div className="pc-anno" style={{ justifyContent: "flex-end" }}>
         {blocks.filter((b) => b.text.trim() || b.label.trim()).map((b) => {
           const s = STYLE_MAP[normStyle(b.style)];
           return (
@@ -458,15 +448,6 @@ export default function PostcardMessagePage() {
 
         {eventId && (
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <div className="flex items-center gap-2">
-              <Label className="text-xs text-muted-foreground shrink-0">枠内の縦寄せ</Label>
-              <Select value={vpos} onValueChange={(v) => v && setVpos(v as VPos)}>
-                <SelectTrigger className="h-8 text-xs w-[120px]"><SelectValue>{VPOS_OPTIONS.find((o) => o.value === vpos)?.name}</SelectValue></SelectTrigger>
-                <SelectContent>
-                  {VPOS_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
             <div className="flex items-center gap-2">
               <Label className="text-xs text-muted-foreground shrink-0">裏面の種別</Label>
               <Select value={kind} onValueChange={(v) => v && setKind(v as Kind)}>
