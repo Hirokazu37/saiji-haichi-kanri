@@ -67,12 +67,25 @@ export function QrAddressPrint() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
-  // 面ごと（左上/右上/左下/右下）の宛名位置の微調整（mm）。テンプレ枠に合わせる
-  const [quadOffsets, setQuadOffsets] = useState<{ dx: number; dy: number }[]>([
-    { dx: 0, dy: 0 }, { dx: 0, dy: 0 }, { dx: 0, dy: 0 }, { dx: 0, dy: 0 },
-  ]);
+  // 面ごと（左上/右上/左下/右下）の宛名位置の微調整（mm）。テンプレ枠に合わせる。
+  // この端末に保存した値があれば読み込む。
+  const [quadOffsets, setQuadOffsets] = useState<{ dx: number; dy: number }[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const s = localStorage.getItem("dm_qr_quad_offsets");
+        if (s) { const a = JSON.parse(s); if (Array.isArray(a) && a.length === 4) return a; }
+      } catch { /* ignore */ }
+    }
+    return [{ dx: 0, dy: 0 }, { dx: 0, dy: 0 }, { dx: 0, dy: 0 }, { dx: 0, dy: 0 }];
+  });
+  const [posSaved, setPosSaved] = useState(false);
   const setQuad = (i: number, axis: "dx" | "dy", v: number) =>
     setQuadOffsets((prev) => prev.map((q, idx) => (idx === i ? { ...q, [axis]: v } : q)));
+  const savePositions = () => {
+    try { localStorage.setItem("dm_qr_quad_offsets", JSON.stringify(quadOffsets)); } catch { /* ignore */ }
+    setPosSaved(true);
+    setTimeout(() => setPosSaved(false), 2000);
+  };
   // 全体を右に3mm寄せた上で、面ごとの微調整を加える
   const shiftFor = (i: number): React.CSSProperties => ({ transform: `translate(${3 + quadOffsets[i].dx}mm, ${quadOffsets[i].dy}mm)` });
   const QUAD_LABELS = ["左上", "右上", "左下", "右下"];
@@ -216,6 +229,11 @@ export function QrAddressPrint() {
                   <input type="number" step={0.5} value={quadOffsets[i].dy} onChange={(e) => setQuad(i, "dy", parseFloat(e.target.value) || 0)} className="h-7 w-14 rounded border border-input bg-white px-1" />
                 </div>
               ))}
+            </div>
+            <div className="flex items-center justify-center gap-2">
+              <Button variant="outline" size="sm" onClick={savePositions}>この位置を保存（この端末）</Button>
+              {posSaved && <span className="text-xs text-emerald-700 font-medium">✓ 保存しました</span>}
+              <span className="text-[11px] text-muted-foreground">次回も同じ位置が呼び出されます</span>
             </div>
           </div>
         </div>
