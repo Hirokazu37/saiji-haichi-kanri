@@ -281,11 +281,7 @@ export default function PostcardMessagePage() {
       `有限会社 安岡蒲鉾店\n〒798-1133 愛媛県宇和島市三間町中野中293番地\n` +
       `TEL 0895-58-2155 / FAX 0895-58-2706 / フリーダイヤル 0120-58-7771`;
 
-    // PDFを保存してから、メールの新規下書きを開く（添付は手動。共有シートは使わない）
-    const file = await renderProofPdf();
-    if (file) {
-      await saveProofFile(file, "開いたメールにこのPDFを添付して送信してください。");
-    }
+    // メールの新規下書きを開くだけ（PDFは「PDFを保存」で別途保存して添付）
     window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
