@@ -38,6 +38,15 @@ const VPOS_OPTIONS: { value: VPos; name: string }[] = [
 const VPOS_JUSTIFY: Record<VPos, string> = { top: "flex-start", center: "center", bottom: "flex-end" };
 const normVPos = (v: unknown): VPos => (v === "center" || v === "bottom" ? v : "top");
 
+// 裏面（ビジュアル面）の種別。画像は public/dm に同梱
+type Kind = "jisshin" | "sokubai";
+const KIND_OPTIONS: { value: Kind; name: string }[] = [
+  { value: "jisshin", name: "実演" },
+  { value: "sokubai", name: "即売" },
+];
+const URA_SRC: Record<Kind, string> = { jisshin: "/dm/ura-jisshin.jpg", sokubai: "/dm/ura-sokubai.jpg" };
+const OMOTE_SRC = "/dm/omote.jpg";
+
 // 見た目（サイズ・太さ）基準のスタイル。fs=ポイント
 type StyleDef = { value: string; name: string; fs: number; fw: number; color?: string; boxed?: boolean };
 const STYLES: StyleDef[] = [
@@ -96,7 +105,14 @@ export default function PostcardMessagePage() {
   const [eventId, setEventId] = useState("");
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [vpos, setVpos] = useState<VPos>("top");
+  const [kind, setKind] = useState<Kind>("jisshin");
   const [saved, setSaved] = useState(false);
+
+  const printWith = (cls: string) => {
+    document.body.classList.add(cls);
+    window.print();
+    document.body.classList.remove(cls);
+  };
 
   useEffect(() => {
     supabase
@@ -196,15 +212,23 @@ export default function PostcardMessagePage() {
     <div className="space-y-4 pb-8">
       <style>{`
         /* 案内文面ボックス: 横98mm×縦42mm、下から25mm。縦位置(vpos)は枠内の寄せ */
-        .pc-msg { box-sizing: border-box; height: 100%; position: relative; color: #1a1a1a; }
+        .pc-msg { box-sizing: border-box; position: absolute; inset: 0; color: #1a1a1a; }
         .pc-anno { position: absolute; left: 0; right: 0; bottom: 25mm; margin: 0 auto; width: 98mm; height: 42mm; padding: 2mm 3mm; box-sizing: border-box; display: flex; flex-direction: column; }
         .pc-msg ruby rt { font-size: 0.5em; }
+        /* はがき台紙（校正で背景画像を敷く） */
+        .hagaki { position: relative; overflow: hidden; background: #fff; }
+        .hagaki > img.bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
         @media print {
           @page { size: A4 portrait; margin: 0; }
           body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          .pc-print { display: block !important; margin: 0; }
+          .pc-print { display: none !important; }
+          body.pp-4 .pc-print-4 { display: block !important; }
+          body.pp-proof .pc-print-proof { display: block !important; }
           .pc-sheet { width: 210mm; height: 297mm; display: grid; grid-template-columns: 105mm 105mm; grid-template-rows: 148.5mm 148.5mm; }
-          .pc-sheet > .pc-cell { border: 0.3pt dashed #ccc; overflow: hidden; box-sizing: border-box; }
+          .pc-sheet > .pc-cell { position: relative; background: #fff; border: 0.3pt dashed #ccc; overflow: hidden; box-sizing: border-box; }
+          /* 校正: 単票・両面をA4縦に2枚 */
+          .proof-stack { width: 210mm; }
+          .proof-card { width: 100mm; height: 148mm; margin: 0 auto; }
         }
         .pc-print { display: none; }
       `}</style>
@@ -230,14 +254,25 @@ export default function PostcardMessagePage() {
         </div>
 
         {eventId && (
-          <div className="flex items-center gap-2">
-            <Label className="text-xs text-muted-foreground shrink-0">枠内の縦寄せ</Label>
-            <Select value={vpos} onValueChange={(v) => v && setVpos(v as VPos)}>
-              <SelectTrigger className="h-8 text-xs w-[160px]"><SelectValue>{VPOS_OPTIONS.find((o) => o.value === vpos)?.name}</SelectValue></SelectTrigger>
-              <SelectContent>
-                {VPOS_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div className="flex items-center gap-2">
+              <Label className="text-xs text-muted-foreground shrink-0">枠内の縦寄せ</Label>
+              <Select value={vpos} onValueChange={(v) => v && setVpos(v as VPos)}>
+                <SelectTrigger className="h-8 text-xs w-[120px]"><SelectValue>{VPOS_OPTIONS.find((o) => o.value === vpos)?.name}</SelectValue></SelectTrigger>
+                <SelectContent>
+                  {VPOS_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <Label className="text-xs text-muted-foreground shrink-0">裏面の種別</Label>
+              <Select value={kind} onValueChange={(v) => v && setKind(v as Kind)}>
+                <SelectTrigger className="h-8 text-xs w-[110px]"><SelectValue>{KIND_OPTIONS.find((o) => o.value === kind)?.name}</SelectValue></SelectTrigger>
+                <SelectContent>
+                  {KIND_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         )}
 
@@ -292,30 +327,75 @@ export default function PostcardMessagePage() {
                 <div className="flex items-center gap-2 pt-1 border-t mt-1">
                   <Button onClick={save}><Save className="h-4 w-4 mr-1" />保存</Button>
                   {saved && <span className="text-xs text-green-600 font-medium">✓ 保存しました</span>}
-                  <Button variant="outline" onClick={() => window.print()}><Printer className="h-4 w-4 mr-1" />4面印刷</Button>
+                  <Button variant="outline" onClick={() => printWith("pp-4")}><Printer className="h-4 w-4 mr-1" />4面印刷（文面）</Button>
                 </div>
               </CardContent>
             </Card>
 
-            {/* プレビュー（1枚） */}
+            {/* プレビュー（1枚・文面のみ） */}
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">プレビュー（はがき1枚）</Label>
-              <div className="border rounded-md bg-white shadow-sm mx-auto" style={{ width: "105mm", height: "148.5mm" }}>
+              <Label className="text-xs text-muted-foreground">プレビュー（文面のみ）</Label>
+              <div className="relative overflow-hidden border rounded-md bg-white shadow-sm mx-auto" style={{ width: "105mm", height: "148.5mm" }}>
                 {renderPostcard()}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 校正プレビュー（実物イメージ・両面） */}
+        {eventId && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-3 flex-wrap">
+              <Label className="text-sm font-medium">校正プレビュー（実物イメージ）</Label>
+              <Button variant="outline" size="sm" onClick={() => printWith("pp-proof")}>
+                <Printer className="h-4 w-4 mr-1" />校正を印刷（両面・単票）
+              </Button>
+              <span className="text-xs text-muted-foreground">印刷ダイアログで「PDFに保存」を選ぶと校正用PDFになります</span>
+            </div>
+            <div className="flex flex-wrap gap-4">
+              <div className="space-y-1">
+                <div className="text-xs text-muted-foreground">裏面（{KIND_OPTIONS.find((o) => o.value === kind)?.name}）</div>
+                <div className="hagaki border shadow-sm" style={{ width: "100mm", height: "148mm" }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img className="bg" src={URA_SRC[kind]} alt="裏面" />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-xs text-muted-foreground">おもて（宛名面＋案内文面）</div>
+                <div className="hagaki border shadow-sm" style={{ width: "100mm", height: "148mm" }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img className="bg" src={OMOTE_SRC} alt="おもて" />
+                  {renderPostcard()}
+                </div>
               </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* 印刷（4面・全て同じ文面）— body直下にポータルで出す */}
+      {/* 印刷 — body直下にポータルで出す（印刷時にbodyのクラスでどちらを出すか切替） */}
       {eventId && (
         <PrintPortal>
-          <div className="pc-print">
+          {/* 本番: 文面4面 */}
+          <div className="pc-print pc-print-4">
             <div className="pc-sheet">
               {[0, 1, 2, 3].map((i) => (
                 <div key={i} className="pc-cell">{renderPostcard()}</div>
               ))}
+            </div>
+          </div>
+          {/* 校正: 単票・両面（裏→おもて） */}
+          <div className="pc-print pc-print-proof">
+            <div className="proof-stack">
+              <div className="hagaki proof-card">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img className="bg" src={URA_SRC[kind]} alt="裏面" />
+              </div>
+              <div className="hagaki proof-card">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img className="bg" src={OMOTE_SRC} alt="おもて" />
+                {renderPostcard()}
+              </div>
             </div>
           </div>
         </PrintPortal>
