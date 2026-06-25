@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -36,6 +37,20 @@ function todayStr(): string {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+// DMステータスの表示バッジ（一覧では誤操作防止のため表示専用）
+const DM_BADGE: Record<string, string> = {
+  "印刷済み": "bg-green-50 text-green-700 border-green-200",
+  "校正中": "bg-amber-50 text-amber-700 border-amber-200",
+  "未着手": "bg-red-50 text-red-700 border-red-200",
+};
+function dmBadge(s: string | null) {
+  return (
+    <span className={cn("text-[11px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap", DM_BADGE[s || ""] || "bg-gray-100 text-gray-500 border-gray-200")}>
+      {s || "未設定"}
+    </span>
+  );
 }
 
 export default function DMListPage() {
@@ -217,9 +232,9 @@ export default function DMListPage() {
         ※ 「区分」列のバッジをクリックすると、この催事のDMをどの名簿（区分）に出したかを記録できます（緑＝選択中）。顧客・来場管理の抽出で使われます。
       </p>
 
-      <div className="space-y-2 print:hidden">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 print:hidden">
         {/* 検索窓 */}
-        <div className="relative max-w-sm">
+        <div className="relative w-full sm:w-64">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             value={query}
@@ -279,8 +294,16 @@ export default function DMListPage() {
               {filtered.map((e) => {
                 const isDone = e.dm_status === "印刷済み";
                 const isPast = e.end_date < today;
+                // 投函期限が迫っている（未完了・未開催）行を強調
+                const dd = daysToDeadline(e);
+                const urgent = !isPast && !isDone && daysToStart(e) >= 0 && dd <= 7;
+                const rowCls = isPast
+                  ? "opacity-60"
+                  : urgent
+                  ? (dd <= 3 ? "bg-red-50 hover:bg-red-100" : "bg-amber-50 hover:bg-amber-100")
+                  : "";
                 return (
-                  <TableRow key={e.id} className={isPast ? "opacity-60" : ""}>
+                  <TableRow key={e.id} className={rowCls}>
                     <TableCell>
                       <Link href={`/events/${e.id}`} className="text-primary hover:underline text-sm font-medium">
                         {e.venue}{e.store_name ? ` ${e.store_name}` : ""}
@@ -346,22 +369,28 @@ export default function DMListPage() {
                       })()}
                     </TableCell>
                     <TableCell>
-                      {canEdit ? (
-                        <div className="flex gap-1">
-                          {["未着手", "校正中", "印刷済み"].map((s) => (
-                            <button
-                              key={s}
-                              type="button"
-                              className={`px-1.5 py-1 text-xs rounded border transition-colors ${e.dm_status === s ? "bg-green-700 text-white border-green-700 font-bold" : "bg-white text-gray-500 border-gray-300 hover:bg-green-50 hover:text-green-700"}`}
-                              onClick={() => updateField(e.id, "dm_status", e.dm_status === s ? null : s)}
-                            >
-                              {s}
-                            </button>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-sm">{e.dm_status || "—"}</span>
-                      )}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {dmBadge(e.dm_status)}
+                        {urgent && (
+                          <span className="inline-flex items-center gap-0.5 text-[11px] font-bold px-1.5 py-0.5 rounded-full border bg-red-600 text-white border-red-600 whitespace-nowrap">
+                            <AlertTriangle className="h-3 w-3" />要対応
+                          </span>
+                        )}
+                        {canEdit && (
+                          // 誤操作防止のため、変更はプルダウンで（一覧では表示はバッジ）
+                          <select
+                            value={e.dm_status ?? ""}
+                            onChange={(ev) => updateField(e.id, "dm_status", ev.target.value || null)}
+                            className="h-7 text-xs rounded-md border border-input bg-white px-1 text-muted-foreground"
+                            title="ステータスを変更"
+                          >
+                            <option value="">未設定</option>
+                            <option value="未着手">未着手</option>
+                            <option value="校正中">校正中</option>
+                            <option value="印刷済み">印刷済み</option>
+                          </select>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       {canEdit ? (
@@ -405,10 +434,15 @@ export default function DMListPage() {
                               {rosterCounts.get(e.id)!.toLocaleString()}人
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground whitespace-nowrap" title="名簿CSV未取込">
+                            <button
+                              type="button"
+                              onClick={() => openRosterImport(e)}
+                              className="inline-flex items-center gap-0.5 text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-300 rounded px-1.5 py-0.5 whitespace-nowrap hover:bg-amber-100"
+                              title="クリックで名簿CSVを取り込む"
+                            >
                               <AlertTriangle className="h-3 w-3" />
-                              未取込
-                            </span>
+                              未取込（取り込む）
+                            </button>
                           )}
                         </div>
                       ) : (
