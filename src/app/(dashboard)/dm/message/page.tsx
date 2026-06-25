@@ -558,9 +558,9 @@ export default function PostcardMessagePage() {
         )}
 
         {eventId && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+          <div className="flex flex-col lg:flex-row gap-6 items-start">
             {/* ブロック編集 */}
-            <Card>
+            <Card className="w-full lg:flex-1 lg:max-w-xl min-w-0">
               <CardContent className="pt-4 space-y-3">
                 {blocks.map((b, i) => (
                   <div key={b.id} className="rounded-lg border border-border/80 p-2.5 space-y-2 bg-muted/30">
@@ -619,9 +619,9 @@ export default function PostcardMessagePage() {
             </Card>
 
             {/* プレビュー（1枚・文面のみ）— スクロールしても追従 */}
-            <div className="space-y-1 lg:sticky lg:top-4 self-start">
-              <Label className="text-xs text-muted-foreground">プレビュー（文面のみ）</Label>
-              <div className="relative overflow-hidden border rounded-md bg-white shadow-sm mx-auto" style={{ width: "105mm", height: "148.5mm" }}>
+            <div className="shrink-0 lg:sticky lg:top-4 self-start" style={{ width: "105mm" }}>
+              <Label className="text-xs text-muted-foreground block mb-2">プレビュー（文面のみ）</Label>
+              <div className="relative overflow-hidden border rounded-md bg-white shadow-sm" style={{ width: "105mm", height: "148.5mm" }}>
                 {renderPostcard()}
               </div>
             </div>
