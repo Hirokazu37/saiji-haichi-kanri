@@ -87,6 +87,7 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
   const [pickerSearch, setPickerSearch] = useState("");
   const [agencyHeadcount, setAgencyHeadcount] = useState<string>("1");
   const [showOtherAreas, setShowOtherAreas] = useState(false);
+  const [showAreaHotels, setShowAreaHotels] = useState(false);
 
   const fetchData = useCallback(async () => {
     const [staffRes, shipRes, evtRes, venueRes, hmRes, hvlRes, mannRes, vmRes, mpRes, maRes, vmlRes, aalRes] = await Promise.all([
@@ -210,18 +211,23 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
     return list.sort((a, b) => a.days - b.days);
   }, [allEvents, endDate, currentLabel]);
 
-  const hotelCandidates = useMemo(() => {
+  // この百貨店に直接紐づく「常連ホテル」（既定で表示）
+  const hotelLinked = useMemo(() => {
     const venueLabel = storeName ? `${venue} ${storeName}` : venue;
     const linkedIds = new Set(hotelVenueLinks.filter((l) => l.venue_name === venueLabel).map((l) => l.hotel_id));
-    // 1. 該当百貨店に直接紐づくホテル
-    // 2. 百貨店と同じエリアに属するホテル
-    // どちらかに該当するホテルだけを候補に。両方該当なしなら空リスト(マスタ全件を出さない)
-    return hotelMasters.filter((h) => {
-      if (linkedIds.has(h.id)) return true;
-      if (venueAreaId && h.area_id === venueAreaId) return true;
-      return false;
-    });
+    return hotelMasters.filter((h) => linkedIds.has(h.id));
+  }, [venue, storeName, hotelMasters, hotelVenueLinks]);
+
+  // 同じエリアのその他ホテル（既定では隠し、トグルで表示）
+  const hotelArea = useMemo(() => {
+    const venueLabel = storeName ? `${venue} ${storeName}` : venue;
+    const linkedIds = new Set(hotelVenueLinks.filter((l) => l.venue_name === venueLabel).map((l) => l.hotel_id));
+    if (!venueAreaId) return [];
+    return hotelMasters.filter((h) => !linkedIds.has(h.id) && h.area_id === venueAreaId);
   }, [venue, storeName, hotelMasters, hotelVenueLinks, venueAreaId]);
+
+  // 実際にバッジ表示するホテル（常連のみ／トグルでエリアも）
+  const shownHotels = showAreaHotels ? [...hotelLinked, ...hotelArea] : hotelLinked;
 
   // 個人/会社を「この百貨店」「このエリア対応」「その他」にグルーピング
   // ピッカーダイアログで、エリアと関係ない候補が混ざって分かりづらくならないように。
@@ -542,9 +548,18 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
       {/* ホテル */}
       <Card className="border-l-4 border-l-blue-500 bg-blue-50/50">
         <CardContent className="pt-4 pb-4 space-y-3">
-          <div className="flex items-center gap-2">
-            <Hotel className="h-4 w-4 text-blue-600" />
-            <span className="text-sm font-bold text-blue-800">ホテル</span>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <Hotel className="h-4 w-4 text-blue-600" />
+              <span className="text-sm font-bold text-blue-800">ホテル</span>
+              {hotelLinked.length > 0 && <span className="text-[11px] text-blue-700/70">この百貨店の常連 {hotelLinked.length}件</span>}
+            </div>
+            {hotelArea.length > 0 && (
+              <button type="button" onClick={() => setShowAreaHotels((v) => !v)}
+                className="text-[11px] text-blue-700 hover:underline">
+                {showAreaHotels ? "エリアのホテルを隠す" : `エリアのホテルも表示（${hotelArea.length}件）`}
+              </button>
+            )}
           </div>
           {dedupedStaff.length > 0 ? (
             <div className="space-y-2">
@@ -579,9 +594,9 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
                   </div>
                   <div className="space-y-1">
                     <Input value={s.hotel_name || ""} onChange={(e) => updateStaffField(i, "hotel_name", e.target.value)} placeholder="ホテル名を入力（空欄のまま手配済にもできます）" className={`h-8 text-sm ${s.hotel_status === "不要" ? "opacity-50" : ""}`} disabled={s.hotel_status === "不要"} />
-                    {hotelCandidates.length > 0 && (
+                    {shownHotels.length > 0 && (
                       <div className="flex flex-wrap gap-1">
-                        {hotelCandidates.map((h) => (
+                        {shownHotels.map((h) => (
                           <Badge key={h.id} variant={s.hotel_name === h.name ? "default" : "outline"}
                             className="cursor-pointer text-[10px] hover:bg-primary/10"
                             onClick={() => { updateStaffField(i, "hotel_name", h.name); }}
