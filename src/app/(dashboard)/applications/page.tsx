@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -40,24 +41,6 @@ export default function ApplicationsListPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const toggleApplication = async (evtId: string, current: string | null) => {
-    const next = current === "提出済" ? "未提出" : "提出済";
-    // 提出済にした時、提出日が未設定なら今日を自動セット
-    const updates: Record<string, string | null> = { application_status: next };
-    if (next === "提出済") {
-      const evt = events.find((e) => e.id === evtId);
-      if (evt && !evt.application_submitted_date) {
-        updates.application_submitted_date = new Date().toISOString().slice(0, 10);
-      }
-    } else {
-      updates.application_submitted_date = null;
-    }
-    setEvents((prev) => prev.map((e) => e.id === evtId ? { ...e, ...updates } : e));
-    await supabase.from("events").update(updates).eq("id", evtId);
-    setSavedId(evtId);
-    setTimeout(() => setSavedId((prev) => prev === evtId ? null : prev), 1500);
-  };
-
   const updateField = (evtId: string, field: string, value: string | null) => {
     setEvents((prev) => prev.map((e) => e.id === evtId ? { ...e, [field]: value } : e));
     supabase.from("events").update({ [field]: value || null }).eq("id", evtId).then(() => {
@@ -65,6 +48,27 @@ export default function ApplicationsListPage() {
       setTimeout(() => setSavedId((prev) => prev === evtId ? null : prev), 1500);
     });
   };
+
+  // 提出方法を選んだら、自動で「提出済」＋提出日（空なら今日）に
+  const submitWithMethod = async (evtId: string, method: string) => {
+    const evt = events.find((e) => e.id === evtId);
+    const updates: Record<string, string | null> = { application_method: method, application_status: "提出済" };
+    if (evt && !evt.application_submitted_date) updates.application_submitted_date = new Date().toISOString().slice(0, 10);
+    setEvents((prev) => prev.map((e) => (e.id === evtId ? { ...e, ...updates } : e)));
+    await supabase.from("events").update(updates).eq("id", evtId);
+    setSavedId(evtId);
+    setTimeout(() => setSavedId((prev) => (prev === evtId ? null : prev)), 1500);
+  };
+
+  const setUnsubmitted = async (evtId: string) => {
+    const updates = { application_status: "未提出", application_submitted_date: null };
+    setEvents((prev) => prev.map((e) => (e.id === evtId ? { ...e, ...updates } : e)));
+    await supabase.from("events").update(updates).eq("id", evtId);
+  };
+
+  // 未提出かつ会期開始が2週間以内（終了済を除く）＝要対応
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const daysToStart = (s: string) => Math.ceil((new Date(s + "T00:00:00").getTime() - new Date(todayStr + "T00:00:00").getTime()) / 86400000);
 
   const filtered = filter === "unsubmitted"
     ? events.filter((e) => e.application_status !== "提出済" && e.status !== "終了")
@@ -84,10 +88,10 @@ export default function ApplicationsListPage() {
       </div>
 
       <Card>
-        <CardContent className="p-0 overflow-x-auto">
+        <CardContent className="p-0 overflow-auto max-h-[75vh]">
           <Table className="min-w-[760px]">
             <TableHeader>
-              <TableRow>
+              <TableRow className="[&>th]:sticky [&>th]:top-0 [&>th]:z-10 [&>th]:bg-background">
                 <TableHead>催事</TableHead>
                 <TableHead>催事名</TableHead>
                 <TableHead className="hidden md:table-cell">会期</TableHead>
@@ -99,8 +103,11 @@ export default function ApplicationsListPage() {
             <TableBody>
               {filtered.map((e) => {
                 const isSubmitted = e.application_status === "提出済";
+                const isPast = e.end_date < todayStr;
+                const ds = daysToStart(e.start_date);
+                const urgent = !isSubmitted && !isPast && e.status !== "終了" && ds >= 0 && ds <= 14;
                 return (
-                  <TableRow key={e.id}>
+                  <TableRow key={e.id} className={urgent ? (ds <= 7 ? "bg-red-50 hover:bg-red-100" : "bg-amber-50 hover:bg-amber-100") : ""}>
                     <TableCell>
                       <Link href={`/events/${e.id}`} className="text-primary hover:underline text-sm font-medium">
                         {e.venue}{e.store_name ? ` ${e.store_name}` : ""}
@@ -109,22 +116,20 @@ export default function ApplicationsListPage() {
                     <TableCell className="text-sm text-muted-foreground">{e.name || "—"}</TableCell>
                     <TableCell className="text-sm hidden md:table-cell">{e.start_date} 〜 {e.end_date}</TableCell>
                     <TableCell>
-                      {canEdit ? (
-                        <button
-                          type="button"
-                          className={`relative inline-flex h-6 w-24 items-center rounded-full transition-colors ${isSubmitted ? "bg-green-700" : "bg-gray-300"}`}
-                          onClick={() => toggleApplication(e.id, e.application_status)}
-                        >
-                          <span className={`absolute text-[10px] font-medium ${isSubmitted ? "left-2 text-white" : "right-2 text-gray-600"}`}>
-                            {isSubmitted ? "提出済" : "未提出"}
-                          </span>
-                          <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${isSubmitted ? "translate-x-[72px]" : "translate-x-0.5"}`} />
-                        </button>
-                      ) : (
-                        <span className={`text-xs font-medium ${isSubmitted ? "text-green-700" : "text-gray-500"}`}>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className={cn(
+                          "text-[11px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap",
+                          isSubmitted ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"
+                        )}>
                           {isSubmitted ? "提出済" : "未提出"}
                         </span>
-                      )}
+                        {urgent && (
+                          <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full border bg-red-600 text-white border-red-600 whitespace-nowrap">要対応</span>
+                        )}
+                        {canEdit && isSubmitted && (
+                          <button type="button" onClick={() => setUnsubmitted(e.id)} className="text-[10px] text-muted-foreground hover:text-foreground underline">未提出に戻す</button>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
                       {canEdit ? (
@@ -145,8 +150,9 @@ export default function ApplicationsListPage() {
                             <button
                               key={m}
                               type="button"
+                              title="選ぶと自動で「提出済」になります"
                               className={`px-2 py-1 text-xs rounded border transition-colors ${e.application_method === m ? "bg-green-700 text-white border-green-700 font-bold" : "bg-white text-gray-500 border-gray-300 hover:bg-green-50 hover:text-green-700"}`}
-                              onClick={() => updateField(e.id, "application_method", e.application_method === m ? null : m)}
+                              onClick={() => submitWithMethod(e.id, m)}
                             >
                               {m}
                             </button>
