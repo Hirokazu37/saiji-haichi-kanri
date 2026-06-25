@@ -530,53 +530,66 @@ export default function PostcardMessagePage() {
             {/* ブロック編集 */}
             <Card>
               <CardContent className="pt-4 space-y-3">
-                {blocks.map((b, i) => (
-                  <div key={b.id} className="rounded-lg border border-border/80 p-2.5 space-y-2 bg-muted/30">
-                    {/* 上段: 揃え | サイズ ＋ 並べ替え/削除 */}
-                    <div className="flex items-center gap-1.5 flex-wrap">
+                {blocks.map((b, i) => {
+                  const s = STYLE_MAP[normStyle(b.style)];
+                  return (
+                  <div key={b.id} className="group rounded-lg p-2 hover:bg-muted/40 focus-within:bg-muted/40 transition-colors space-y-1.5">
+                    {/* 本文（仕上がりの見た目で表示・その場で編集） */}
+                    <div className="flex items-start gap-2">
+                      {b.label.trim() && <span className="text-xs text-muted-foreground pt-2 shrink-0">{b.label}</span>}
+                      <Textarea
+                        value={b.text}
+                        onChange={(e) => update(b.id, { text: e.target.value })}
+                        rows={Math.max(1, b.text.split("\n").length)}
+                        placeholder="ここに文章を入力（改行可・ルビ可）"
+                        className="flex-1 resize-none bg-transparent border-transparent leading-snug focus-visible:bg-white focus-visible:border-input"
+                        style={{ fontSize: `${(s.fs * 1.4).toFixed(1)}pt`, fontWeight: s.fw, textAlign: b.align, color: s.color }}
+                      />
+                    </div>
+                    {/* 操作（ホバー／選択時のみ表示） */}
+                    <div className="hidden group-hover:flex group-focus-within:flex items-center gap-1.5 flex-wrap">
                       {/* 文字揃え */}
                       <div className="inline-flex rounded-md border overflow-hidden shrink-0">
                         {(["left", "center", "right"] as Align[]).map((a) => {
                           const Icon = ALIGN_ICON[a];
                           return (
                             <button key={a} type="button" onClick={() => update(b.id, { align: a })} title={a === "left" ? "左寄せ" : a === "center" ? "中央寄せ" : "右寄せ"}
-                              className={cn("h-8 w-9 flex items-center justify-center", b.align === a ? "bg-primary text-primary-foreground" : "bg-white text-muted-foreground hover:bg-muted")}>
-                              <Icon className="h-4 w-4" />
+                              className={cn("h-7 w-8 flex items-center justify-center", b.align === a ? "bg-primary text-primary-foreground" : "bg-white text-muted-foreground hover:bg-muted")}>
+                              <Icon className="h-3.5 w-3.5" />
                             </button>
                           );
                         })}
                       </div>
                       {/* 文字サイズ（チップ） */}
                       <div className="inline-flex rounded-md border overflow-hidden shrink-0">
-                        {STYLES.map((s) => (
-                          <button key={s.value} type="button" onClick={() => update(b.id, { style: s.value })} title={s.name}
-                            className={cn("h-8 px-2 text-xs", normStyle(b.style) === s.value ? "bg-primary text-primary-foreground" : "bg-white text-muted-foreground hover:bg-muted")}>
-                            {s.short}
+                        {STYLES.map((st) => (
+                          <button key={st.value} type="button" onClick={() => update(b.id, { style: st.value })} title={st.name}
+                            className={cn("h-7 px-2 text-xs", normStyle(b.style) === st.value ? "bg-primary text-primary-foreground" : "bg-white text-muted-foreground hover:bg-muted")}>
+                            {st.short}
                           </button>
                         ))}
                       </div>
-                      {/* 並べ替え・削除 */}
-                      <div className="flex items-center gap-1 ml-auto">
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => move(i, -1)} disabled={i === 0} title="上へ"><ArrowUp className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => move(i, 1)} disabled={i === blocks.length - 1} title="下へ"><ArrowDown className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 ml-1 text-destructive hover:bg-destructive/10" onClick={() => { if (window.confirm("この行を削除しますか？")) remove(b.id); }} title="この行を削除"><Trash2 className="h-4 w-4" /></Button>
-                      </div>
-                    </div>
-                    {/* 下段: 上下余白（チップ） + ラベル（補助） */}
-                    <div className="flex items-center gap-1.5">
+                      {/* 上下余白（チップ） */}
                       <div className="inline-flex rounded-md border overflow-hidden shrink-0">
                         {SPACE_OPTIONS.map((o) => (
                           <button key={o.value} type="button" onClick={() => update(b.id, { space: o.value })} title={`上下余白：${o.name}`}
-                            className={cn("h-8 px-2.5 text-xs", normSpace(b.space) === o.value ? "bg-primary text-primary-foreground" : "bg-white text-muted-foreground hover:bg-muted")}>
+                            className={cn("h-7 px-2 text-xs", normSpace(b.space) === o.value ? "bg-primary text-primary-foreground" : "bg-white text-muted-foreground hover:bg-muted")}>
                             {o.name}
                           </button>
                         ))}
                       </div>
-                      <Input value={b.label} onChange={(e) => update(b.id, { label: e.target.value })} placeholder="ラベル（任意）" className="h-8 text-sm flex-1 bg-muted/50 border-transparent focus-visible:bg-white" />
+                      {/* ラベル（任意） */}
+                      <Input value={b.label} onChange={(e) => update(b.id, { label: e.target.value })} placeholder="ラベル" className="h-7 text-xs w-24 bg-white" />
+                      {/* 並べ替え・削除 */}
+                      <div className="flex items-center gap-1 ml-auto">
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => move(i, -1)} disabled={i === 0} title="上へ"><ArrowUp className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => move(i, 1)} disabled={i === blocks.length - 1} title="下へ"><ArrowDown className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 ml-1 text-destructive hover:bg-destructive/10" onClick={() => { if (window.confirm("この行を削除しますか？")) remove(b.id); }} title="この行を削除"><Trash2 className="h-4 w-4" /></Button>
+                      </div>
                     </div>
-                    <Textarea value={b.text} onChange={(e) => update(b.id, { text: e.target.value })} rows={2} placeholder="本文（改行可・ルビ可）" />
                   </div>
-                ))}
+                  );
+                })}
                 <Button variant="outline" size="sm" onClick={add}><Plus className="h-4 w-4 mr-1" />行を追加</Button>
                 <div className="flex items-center gap-2 pt-1 border-t mt-1">
                   <Button onClick={save}><Save className="h-4 w-4 mr-1" />保存</Button>
