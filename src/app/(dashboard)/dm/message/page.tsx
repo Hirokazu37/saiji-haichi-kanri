@@ -50,12 +50,12 @@ const OMOTE_SRC = "/dm/omote.jpg";
 // 見た目（サイズ・太さ）基準のスタイル。fs=ポイント
 type StyleDef = { value: string; name: string; fs: number; fw: number; color?: string; boxed?: boolean };
 const STYLES: StyleDef[] = [
-  { value: "box", name: "囲み（タイトル枠）", fs: 11, fw: 600, boxed: true },
-  { value: "xl", name: "特大・太字", fs: 13.5, fw: 800 },
-  { value: "lg", name: "大・太字", fs: 12, fw: 700 },
-  { value: "md", name: "中", fs: 11, fw: 600 },
-  { value: "normal", name: "標準", fs: 10.5, fw: 400 },
-  { value: "sm", name: "小・注記", fs: 8.5, fw: 400, color: "#555" },
+  { value: "box", name: "囲み（タイトル枠）", fs: 9.5, fw: 600, boxed: true },
+  { value: "xl", name: "特大・太字", fs: 12, fw: 800 },
+  { value: "lg", name: "大・太字", fs: 10.5, fw: 700 },
+  { value: "md", name: "中", fs: 10, fw: 600 },
+  { value: "normal", name: "標準", fs: 9, fw: 400 },
+  { value: "sm", name: "小・注記", fs: 7.5, fw: 400, color: "#555" },
 ];
 const STYLE_MAP: Record<string, StyleDef> = Object.fromEntries(STYLES.map((s) => [s.value, s]));
 // 旧スタイル名 → 新スタイル
