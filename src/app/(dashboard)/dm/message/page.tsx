@@ -711,7 +711,7 @@ export default function PostcardMessagePage() {
         {eventId && (
           <div className="space-y-2 border-t pt-4">
             <h2 className="text-base font-bold text-center">宛名印刷（QR付きはがき）</h2>
-            <QrAddressPrint />
+            <QrAddressPrint frontOverlay={renderPostcard()} />
           </div>
         )}
       </div>

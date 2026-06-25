@@ -54,7 +54,7 @@ const S_NO: React.CSSProperties = { position: "absolute", top: "74mm", right: "1
 
 /** 名簿CSV（宛名つき）から QR付き宛名はがきを作って印刷する部品。
  *  印刷は body.pp-address クラスで制御し、他の印刷（文面など）と共存できる。 */
-export function QrAddressPrint() {
+export function QrAddressPrint({ frontOverlay }: { frontOverlay?: React.ReactNode } = {}) {
   const [fileName, setFileName] = useState("");
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<string[][]>([]);
@@ -149,11 +149,22 @@ export function QrAddressPrint() {
     }
   };
 
-  const printAddresses = () => {
-    document.body.classList.add("pp-address");
+  const printWith = (cls: string) => {
+    document.body.classList.add(cls);
     window.print();
-    document.body.classList.remove("pp-address");
+    document.body.classList.remove(cls);
   };
+
+  // 印刷用の宛名（クラス指定。qr-shift で面ごとの微調整を反映）
+  const printAddr = (c: Postcard, q: number) => (
+    <div className="qr-shift" style={shiftFor(q)}>
+      {c.postal && <div className="qr-postal">{fmtPostal(c.postal)}</div>}
+      <div className="qr-addr">{c.address}</div>
+      <div className="qr-name">{c.name}　様</div>
+      <div className="qr-qrcode" dangerouslySetInnerHTML={{ __html: c.qr }} />
+      <div className="qr-no">{c.no}</div>
+    </div>
+  );
 
   const pages: Postcard[][] = [];
   if (cards) for (let i = 0; i < cards.length; i += 4) pages.push(cards.slice(i, i + 4));
@@ -208,17 +219,26 @@ export function QrAddressPrint() {
 
       {cards && (
         <div className="space-y-2">
-          <div className="flex items-center justify-center gap-3 flex-wrap">
-            <Button onClick={printAddresses}>
-              <Printer className="h-4 w-4 mr-1" />宛名を印刷する（{cards.length}枚 / {pages.length}ページ）
+          <div className="flex items-center justify-center gap-2 flex-wrap">
+            {frontOverlay && (
+              <Button onClick={() => printWith("pp-both")}>
+                <Printer className="h-4 w-4 mr-1" />宛名＋文面をまとめて印刷
+              </Button>
+            )}
+            <Button variant={frontOverlay ? "outline" : "default"} onClick={() => printWith("pp-address")}>
+              <Printer className="h-4 w-4 mr-1" />宛名のみ印刷（{cards.length}枚 / {pages.length}ページ）
             </Button>
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs text-muted-foreground w-full text-center">
               印刷ダイアログで「余白なし」「等倍(100%)」に設定し、A4厚紙に印刷して4分割してください。
             </span>
           </div>
           {/* 面ごとの位置微調整（テンプレの枠に合わせる） */}
           <div className="space-y-1">
-            <div className="text-xs text-muted-foreground text-center">位置を面ごとに微調整（mm／＋横=右・＋縦=下）。上のプレビューに反映</div>
+            <div className="flex items-center justify-center gap-2 flex-wrap">
+              <span className="text-xs text-muted-foreground">位置を面ごとに微調整（mm／＋横=右・＋縦=下）</span>
+              <Button variant="outline" size="sm" className="h-7" onClick={savePositions}>位置を保存</Button>
+              {posSaved && <span className="text-xs text-emerald-700 font-medium">✓ 保存</span>}
+            </div>
             <div className="grid grid-cols-2 gap-2 max-w-md mx-auto">
               {QUAD_LABELS.map((lbl, i) => (
                 <div key={i} className="flex items-center gap-1 border rounded-md px-2 py-1 text-xs">
@@ -230,11 +250,6 @@ export function QrAddressPrint() {
                 </div>
               ))}
             </div>
-            <div className="flex items-center justify-center gap-2">
-              <Button variant="outline" size="sm" onClick={savePositions}>この位置を保存（この端末）</Button>
-              {posSaved && <span className="text-xs text-emerald-700 font-medium">✓ 保存しました</span>}
-              <span className="text-[11px] text-muted-foreground">次回も同じ位置が呼び出されます</span>
-            </div>
           </div>
         </div>
       )}
@@ -242,7 +257,7 @@ export function QrAddressPrint() {
       {/* 仕上がりプレビュー（4面まとめて） — 面ごとの位置調整を同時に確認 */}
       {cards && cards.length > 0 && (
         <div className="space-y-1">
-          <div className="text-xs text-muted-foreground text-center">宛名プレビュー（4面・印刷1ページ目）。下の面ごと微調整が反映されます</div>
+          <div className="text-xs text-muted-foreground text-center">{frontOverlay ? "宛名＋文面プレビュー" : "宛名プレビュー"}（4面・印刷1ページ目）。下の面ごと微調整が反映されます</div>
           <div className="overflow-auto">
             <div className="w-fit mx-auto" style={{ zoom: 0.6 } as React.CSSProperties}>
               <div className="grid grid-cols-2 border-l border-t" style={{ width: "210mm" }}>
@@ -251,6 +266,7 @@ export function QrAddressPrint() {
                   return (
                     <div key={q} className="relative bg-white border-r border-b overflow-hidden" style={{ width: "105mm", height: "148.5mm" }}>
                       <span className="absolute top-0 left-0 z-10 bg-white/80 px-1 text-muted-foreground" style={{ fontSize: "9pt" }}>{QUAD_LABELS[q]}</span>
+                      {frontOverlay}
                       {c ? cardInner(c, q) : <span className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">（データなし）</span>}
                     </div>
                   );
@@ -266,12 +282,13 @@ export function QrAddressPrint() {
         <PrintPortal>
           <div className="qr-print">
             <style>{`
-              .qr-print { display: none; }
+              .qr-print, .qr-print-both { display: none; }
               @media print {
                 @page { size: A4 portrait; margin: 0; }
                 body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                 body.pp-address .qr-print { display: block !important; margin: 0; }
-                body.pp-address .qr-sheet { width: 210mm; height: 297mm; display: grid; grid-template-columns: 105mm 105mm; grid-template-rows: 148.5mm 148.5mm; page-break-after: always; }
+                body.pp-both .qr-print-both { display: block !important; margin: 0; }
+                .qr-sheet { width: 210mm; height: 297mm; display: grid; grid-template-columns: 105mm 105mm; grid-template-rows: 148.5mm 148.5mm; page-break-after: always; }
                 /* 差出人=左上／郵便枠=右上 はテンプレ側。郵便番号は右上の枠、宛名はその下 */
                 .qr-card { position: relative; box-sizing: border-box; overflow: hidden; }
                 .qr-shift { position: absolute; inset: 0; }
@@ -286,19 +303,26 @@ export function QrAddressPrint() {
             {pages.map((page, pi) => (
               <div key={pi} className="qr-sheet">
                 {page.map((c, ci) => (
-                  <div key={c.no} className="qr-card">
-                    <div className="qr-shift" style={shiftFor(ci % 4)}>
-                      {c.postal && <div className="qr-postal">{fmtPostal(c.postal)}</div>}
-                      <div className="qr-addr">{c.address}</div>
-                      <div className="qr-name">{c.name}　様</div>
-                      <div className="qr-qrcode" dangerouslySetInnerHTML={{ __html: c.qr }} />
-                      <div className="qr-no">{c.no}</div>
-                    </div>
-                  </div>
+                  <div key={c.no} className="qr-card">{printAddr(c, ci % 4)}</div>
                 ))}
               </div>
             ))}
           </div>
+          {/* まとめ印刷: 宛名＋文面（文面は全面共通、宛名は面ごと） */}
+          {frontOverlay && (
+            <div className="qr-print-both">
+              {pages.map((page, pi) => (
+                <div key={pi} className="qr-sheet">
+                  {page.map((c, ci) => (
+                    <div key={c.no} className="qr-card">
+                      {frontOverlay}
+                      {printAddr(c, ci % 4)}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
         </PrintPortal>
       )}
     </div>
