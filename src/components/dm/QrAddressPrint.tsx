@@ -219,7 +219,7 @@ export function QrAddressPrint() {
         <div className="space-y-1">
           <div className="text-xs text-muted-foreground text-center">宛名プレビュー（4面・印刷1ページ目）。下の面ごと微調整が反映されます</div>
           <div className="overflow-auto">
-            <div className="mx-auto" style={{ zoom: 0.6 } as React.CSSProperties}>
+            <div className="w-fit mx-auto" style={{ zoom: 0.6 } as React.CSSProperties}>
               <div className="grid grid-cols-2 border-l border-t" style={{ width: "210mm" }}>
                 {[0, 1, 2, 3].map((q) => {
                   const c = (pages[0] || [])[q];
