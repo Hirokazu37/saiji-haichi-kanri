@@ -641,7 +641,7 @@ export default function PostcardMessagePage() {
         {/* 校正プレビュー（実物イメージ・両面） */}
         {eventId && (
           <div className="space-y-2">
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap justify-center">
               <Label className="text-sm font-medium mr-1">校正プレビュー（実物イメージ）</Label>
               <Button size="sm" onClick={sendMail}>
                 <Mail className="h-4 w-4 mr-1" />メールで校正依頼
@@ -659,11 +659,11 @@ export default function PostcardMessagePage() {
                 <Save className="h-4 w-4 mr-1" />アプリに記録（履歴）
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-muted-foreground text-center max-w-3xl mx-auto">
               送付用：<span className="font-medium">「PDFを保存」</span>でパソコンに保存 →「メールで校正依頼」で開いた下書きに添付（スマホは共有でそのまま添付）。FAXは「FAX送信状」、紙に刷るなら「印刷」。「アプリに記録」は社内で後から見返す控えです。
             </p>
             {attachInfo && (
-              <div className="flex items-start gap-2 rounded-md bg-emerald-50 border border-emerald-200 px-3 py-2 text-sm text-emerald-900 max-w-2xl">
+              <div className="flex items-start gap-2 rounded-md bg-emerald-50 border border-emerald-200 px-3 py-2 text-sm text-emerald-900 max-w-2xl mx-auto">
                 <FileText className="h-4 w-4 mt-0.5 shrink-0 text-emerald-700" />
                 <span>{attachInfo}</span>
               </div>
@@ -671,7 +671,7 @@ export default function PostcardMessagePage() {
 
             {/* 校正履歴（アプリに保存したPDF） */}
             {proofs.length > 0 && (
-              <div className="space-y-1 max-w-2xl">
+              <div className="space-y-1 max-w-2xl mx-auto">
                 <div className="text-xs font-medium text-muted-foreground">校正履歴（アプリ保存分）</div>
                 <div className="space-y-1">
                   {proofs.map((p) => (
@@ -686,7 +686,7 @@ export default function PostcardMessagePage() {
                 </div>
               </div>
             )}
-            <div ref={proofRef} className="flex flex-wrap gap-4 bg-white p-2 w-fit">
+            <div ref={proofRef} className="flex flex-wrap gap-4 bg-white p-2 w-fit mx-auto justify-center">
               <div className="space-y-1">
                 <div className="text-xs text-muted-foreground">おもて（宛名面＋案内文面）</div>
                 <div className="hagaki border shadow-sm" style={{ width: "100mm", height: "148mm" }}>
