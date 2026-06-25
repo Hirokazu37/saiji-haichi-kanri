@@ -10,7 +10,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Combobox, type ComboboxItem } from "@/components/ui/combobox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowLeft, Printer, Info, Save, ArrowUp, ArrowDown, Trash2, Plus, AlignLeft, AlignCenter, AlignRight, Mail, FileText } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
 import { renderRuby } from "@/lib/ruby";
@@ -503,22 +502,25 @@ export default function PostcardMessagePage() {
         </div>
 
         {eventId && (
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <div className="flex items-center gap-2">
-              <Label className="text-xs text-muted-foreground shrink-0">裏面の種別</Label>
-              <Select value={kind} onValueChange={(v) => v && setKind(v as Kind)}>
-                <SelectTrigger className="h-8 text-xs w-[110px]"><SelectValue>{KIND_OPTIONS.find((o) => o.value === kind)?.name}</SelectValue></SelectTrigger>
-                <SelectContent>
-                  {KIND_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+          <div className="flex items-center justify-center gap-3 flex-wrap">
+            <Label className="text-sm font-bold shrink-0">裏面の種別</Label>
+            <div className="inline-flex rounded-lg border-2 overflow-hidden shadow-sm">
+              {KIND_OPTIONS.map((o) => (
+                <button key={o.value} type="button" onClick={() => setKind(o.value)}
+                  className={cn(
+                    "h-10 px-7 text-sm font-bold transition-colors",
+                    kind === o.value ? "bg-primary text-primary-foreground" : "bg-white text-gray-500 hover:bg-muted"
+                  )}>
+                  {o.name}
+                </button>
+              ))}
             </div>
           </div>
         )}
 
         {/* 百貨店ごとの設定（癖メモ＋標準テンプレート） */}
         {eventId && (
-          <div className="rounded-md border bg-amber-50/40 px-3 py-2.5 space-y-2 max-w-2xl">
+          <div className="rounded-md border bg-amber-50/40 px-3 py-2.5 space-y-2 max-w-2xl mx-auto">
             <div className="flex items-center gap-2 flex-wrap">
               <Label className="text-sm font-medium">この百貨店の設定（癖・標準レイアウト）</Label>
               {hasTemplate && <span className="text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5">標準を記憶済み</span>}
