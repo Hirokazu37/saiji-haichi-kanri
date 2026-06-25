@@ -18,7 +18,7 @@ import { PrintPortal } from "@/components/PrintPortal";
 import { EventCalendar } from "@/components/customers/EventCalendar";
 import type { EventLite } from "@/components/customers/types";
 
-type Evt = { id: string; name: string | null; venue: string; store_name: string | null; start_date: string; end_date: string; dm_count: number | null; venue_floor: string | null };
+type Evt = { id: string; name: string | null; venue: string; store_name: string | null; start_date: string; end_date: string; dm_count: number | null; venue_floor: string | null; dm_status: string | null };
 type ProofRow = { id: string; path: string; file_name: string | null; kind: string | null; note: string | null; created_by: string | null; created_at: string };
 type Align = "left" | "center" | "right";
 type Space = "wide" | "normal" | "tight";
@@ -110,6 +110,7 @@ export default function PostcardMessagePage() {
   const [storeNote, setStoreNote] = useState("");
   const [hasTemplate, setHasTemplate] = useState(false);
   const [tplSaved, setTplSaved] = useState(false);
+  const [dmStatus, setDmStatus] = useState<string | null>(null);
   const proofRef = useRef<HTMLDivElement>(null);
   const [attachInfo, setAttachInfo] = useState<string | null>(null);
   const [proofs, setProofs] = useState<ProofRow[]>([]);
@@ -121,10 +122,18 @@ export default function PostcardMessagePage() {
     document.body.classList.remove(cls);
   };
 
+  // DMステータスの変更（催事に保存）
+  const updateStatus = async (s: string | null) => {
+    if (!eventId) return;
+    setDmStatus(s);
+    setEvents((prev) => prev.map((e) => (e.id === eventId ? { ...e, dm_status: s } : e)));
+    await supabase.from("events").update({ dm_status: s }).eq("id", eventId);
+  };
+
   useEffect(() => {
     supabase
       .from("events")
-      .select("id, name, venue, store_name, start_date, end_date, dm_count, venue_floor")
+      .select("id, name, venue, store_name, start_date, end_date, dm_count, venue_floor, dm_status")
       .order("start_date", { ascending: false })
       .limit(400)
       .then(({ data }) => setEvents((data as Evt[]) || []));
@@ -167,6 +176,7 @@ export default function PostcardMessagePage() {
       if (cancelled) return;
       setSaved(false);
       setTplSaved(false);
+      setDmStatus(evt?.dm_status ?? null);
       setStoreNote((tpl as { note?: string } | null)?.note || "");
       setHasTemplate(!!tpl);
       const mapBlocks = (arr: Block[]) => arr.map((b) => ({
@@ -291,6 +301,8 @@ export default function PostcardMessagePage() {
       `有限会社 安岡蒲鉾店\n〒798-1133 愛媛県宇和島市三間町中野中293番地\n` +
       `TEL 0895-58-2155 / FAX 0895-58-2706 / フリーダイヤル 0120-58-7771`;
 
+    // 校正依頼を出したら自動で「校正中」に（印刷済みは降格しない）
+    if (dmStatus !== "校正中" && dmStatus !== "印刷済み") updateStatus("校正中");
     // メールの新規下書きを開くだけ（PDFは「PDFを保存」で別途保存して添付）
     window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
@@ -463,6 +475,26 @@ export default function PostcardMessagePage() {
           <ArrowLeft className="h-4 w-4" />DMハガキ一覧へ
         </Link>
         <h1 className="text-2xl font-bold">DMはがき 文面の作成・印刷</h1>
+
+        {eventId && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <Label className="text-xs text-muted-foreground shrink-0">DMステータス</Label>
+            <div className="inline-flex rounded-md border overflow-hidden">
+              {["未着手", "校正中", "印刷済み"].map((s) => (
+                <button key={s} type="button" onClick={() => updateStatus(dmStatus === s ? null : s)}
+                  className={cn(
+                    "h-8 px-3 text-xs font-medium transition-colors",
+                    dmStatus === s
+                      ? (s === "印刷済み" ? "bg-green-700 text-white" : s === "校正中" ? "bg-amber-500 text-white" : "bg-gray-600 text-white")
+                      : "bg-white text-gray-500 hover:bg-muted"
+                  )}>
+                  {s}
+                </button>
+              ))}
+            </div>
+            <span className="text-[11px] text-muted-foreground">「メールで校正依頼」を押すと自動で「校正中」になります</span>
+          </div>
+        )}
 
         <div className="flex items-start gap-2 rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-sm text-blue-800">
           <Info className="h-4 w-4 mt-0.5 shrink-0 text-blue-600" />
