@@ -439,7 +439,7 @@ export default function PostcardMessagePage() {
           body.pp-4 .pc-print-4 { display: block !important; }
           body.pp-proof .pc-print-proof { display: block !important; }
           .pc-sheet { width: 210mm; height: 297mm; display: grid; grid-template-columns: 105mm 105mm; grid-template-rows: 148.5mm 148.5mm; }
-          .pc-sheet > .pc-cell { position: relative; background: #fff; border: 0.3pt dashed #ccc; overflow: hidden; box-sizing: border-box; }
+          .pc-sheet > .pc-cell { position: relative; background: #fff; overflow: hidden; box-sizing: border-box; }
           /* 校正: 単票・両面をA4縦に横並び（おもて左／裏面右） */
           .proof-stack { width: 210mm; display: flex; justify-content: center; gap: 5mm; padding-top: 8mm; }
           .proof-card { width: 100mm; height: 148mm; }
