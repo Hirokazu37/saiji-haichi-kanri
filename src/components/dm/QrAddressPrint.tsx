@@ -55,6 +55,7 @@ export function QrAddressPrint() {
   const [cards, setCards] = useState<Postcard[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [dragging, setDragging] = useState(false);
   // 面ごと（左上/右上/左下/右下）の宛名位置の微調整（mm）。テンプレ枠に合わせる
   const [quadOffsets, setQuadOffsets] = useState<{ dx: number; dy: number }[]>([
     { dx: 0, dy: 0 }, { dx: 0, dy: 0 }, { dx: 0, dy: 0 }, { dx: 0, dy: 0 },
@@ -131,9 +132,14 @@ export function QrAddressPrint() {
         </div>
       </div>
 
-      <label className="flex items-center justify-center gap-2 border-2 border-dashed rounded-lg p-6 cursor-pointer hover:bg-muted/50 transition-colors max-w-xl mx-auto">
+      <label
+        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files?.[0]; if (f) handleFile(f); }}
+        className={`flex items-center justify-center gap-2 border-2 border-dashed rounded-lg p-6 cursor-pointer transition-colors max-w-xl mx-auto ${dragging ? "border-primary bg-primary/10" : "hover:bg-muted/50"}`}
+      >
         <FileSpreadsheet className="h-5 w-5 text-muted-foreground" />
-        <span className="text-sm">{fileName || "宛名つき名簿CSVを選択（Shift_JIS / UTF-8）"}</span>
+        <span className="text-sm">{fileName || (dragging ? "ここにCSVをドロップ" : "宛名つき名簿CSVを選択／ここにドラッグ＆ドロップ（Shift_JIS / UTF-8）")}</span>
         <input type="file" accept=".csv,.txt" className="hidden"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }} />
       </label>
