@@ -47,6 +47,16 @@ export default function ShipmentsPage() {
   const [pastVenues, setPastVenues] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const tableRef = useRef<HTMLDivElement>(null);
+  // 不整合リストから該当行へジャンプ＆一時ハイライト
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const focusEvent = (id: string) => {
+    setHighlightId(id);
+    ["evt-row", "evt-card"].forEach((p) => {
+      const el = document.getElementById(`${p}-${id}`);
+      if (el && el.offsetParent !== null) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    setTimeout(() => setHighlightId((cur) => (cur === id ? null : cur)), 2600);
+  };
 
   // 編集パネル
   const [editEvent, setEditEvent] = useState<EventRecord | null>(null);
@@ -393,7 +403,15 @@ export default function ShipmentsPage() {
             備品の流れに不整合があります（{uniqueWarnings.length}件）
           </div>
           {uniqueWarnings.map((w, i) => (
-            <div key={i} className="text-xs text-red-600 pl-6">• {w.message}</div>
+            <button
+              key={i}
+              type="button"
+              onClick={() => focusEvent(w.evtId)}
+              className="block w-full text-left text-xs text-red-600 pl-6 py-0.5 rounded hover:bg-red-100 hover:text-red-800 hover:underline transition-colors"
+              title="クリックで該当の催事へ移動"
+            >
+              • {w.message}
+            </button>
           ))}
         </div>
       )}
@@ -427,7 +445,8 @@ export default function ShipmentsPage() {
               return (
                 <Card
                   key={evt.id}
-                  className={`border-l-4 ${hasWarn ? "border-l-red-500" : "border-l-primary"} ${canEdit ? "cursor-pointer active:opacity-80 transition-opacity" : ""}`}
+                  id={`evt-card-${evt.id}`}
+                  className={`border-l-4 scroll-mt-20 ${hasWarn ? "border-l-red-500 bg-red-50/40" : "border-l-primary"} ${highlightId === evt.id ? "ring-2 ring-red-500" : ""} ${canEdit ? "cursor-pointer active:opacity-80 transition-opacity" : ""}`}
                   onClick={canEdit ? () => openEditPanel(evt) : undefined}
                 >
                   <CardContent className="p-3 space-y-2">
@@ -489,7 +508,7 @@ export default function ShipmentsPage() {
                 {/* 月ヘッダー */}
                 {monthSpan > 1 && (
                   <div className="flex border-b">
-                    <div className="w-48 print:w-32 shrink-0 border-r" />
+                    <div className="w-48 print:w-32 shrink-0 border-r sticky left-0 z-30 bg-background" />
                     <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${allDays.length}, minmax(0, 1fr))` }}>
                       {monthRange.map((m) => (
                         <div key={`${m.year}-${m.month}`} className="text-center text-xs font-bold py-1 border-r bg-muted/50" style={{ gridColumn: `span ${m.days}` }}>
@@ -502,7 +521,7 @@ export default function ShipmentsPage() {
 
                 {/* 日付ヘッダー */}
                 <div className="flex border-b sticky top-0 bg-background z-10">
-                  <div className="w-48 print:w-32 shrink-0 p-2 border-r font-medium text-sm">催事 / 備品の流れ</div>
+                  <div className="w-48 print:w-32 shrink-0 p-2 border-r font-medium text-sm sticky left-0 z-30 bg-background">催事 / 備品の流れ</div>
                   <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${allDays.length}, minmax(0, 1fr))` }}>
                     {allDays.map((d, i) => {
                       const holiday = holidays.get(d.dateStr);
@@ -535,11 +554,13 @@ export default function ShipmentsPage() {
                     const fromBadgeColor = fromIsHonsha ? "border-amber-400 text-amber-700 bg-amber-50" : fromEvtMatch ? barColors[eventColorMap.get(fromEvtMatch.id) ?? 0].badge : "border-gray-400 text-gray-700 bg-gray-50";
                     const toBadgeColor = toIsHonsha ? "border-amber-400 text-amber-700 bg-amber-50" : toEvtMatch ? barColors[eventColorMap.get(toEvtMatch.id) ?? 0].badge : "border-gray-400 text-gray-700 bg-gray-50";
 
+                    const warn = evtHasWarning.has(evt.id);
+                    const rowBg = warn ? "bg-red-50/50" : idx % 2 === 1 ? "bg-muted/20" : "bg-background";
                     return (
-                      <div key={evt.id} className={`flex border-b last:border-b-0 ${idx % 2 === 1 ? "bg-muted/20" : ""}`} style={{ height: ROW_HEIGHT }}>
-                        {/* 左パネル */}
+                      <div key={evt.id} id={`evt-row-${evt.id}`} className={`flex border-b last:border-b-0 scroll-mt-24 ${rowBg} ${highlightId === evt.id ? "ring-2 ring-red-500 ring-inset" : ""}`} style={{ height: ROW_HEIGHT }}>
+                        {/* 左パネル（横スクロールしても固定） */}
                         <div
-                          className={`w-48 print:w-32 shrink-0 p-1.5 border-r text-xs overflow-hidden ${canEdit ? "hover:bg-muted/50 transition-colors cursor-pointer" : ""}`}
+                          className={`w-48 print:w-32 shrink-0 p-1.5 border-r text-xs overflow-hidden sticky left-0 z-20 ${rowBg} ${canEdit ? "hover:bg-muted/50 transition-colors cursor-pointer" : ""}`}
                           onClick={canEdit ? () => openEditPanel(evt) : undefined}
                         >
                           <div className="font-bold text-sm truncate text-black flex items-center gap-1">
@@ -572,7 +593,7 @@ export default function ShipmentsPage() {
                         </div>
 
                         {/* ガントエリア */}
-                        <div className="flex-1 relative">
+                        <div className={`flex-1 relative ${warn ? "bg-red-50/40" : ""}`}>
                           <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${allDays.length}, minmax(0, 1fr))` }}>
                             {allDays.map((d, i) => {
                               const red = isRedDay(d.date, d.dateStr);
