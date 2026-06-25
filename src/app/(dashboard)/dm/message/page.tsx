@@ -15,8 +15,10 @@ import { ArrowLeft, Printer, Info, Save, ArrowUp, ArrowDown, Trash2, Plus, Align
 import { usePermission } from "@/hooks/usePermission";
 import { renderRuby } from "@/lib/ruby";
 import { PrintPortal } from "@/components/PrintPortal";
+import { EventCalendar } from "@/components/customers/EventCalendar";
+import type { EventLite } from "@/components/customers/types";
 
-type Evt = { id: string; name: string | null; venue: string; store_name: string | null; start_date: string; end_date: string };
+type Evt = { id: string; name: string | null; venue: string; store_name: string | null; start_date: string; end_date: string; dm_count: number | null };
 type ProofRow = { id: string; path: string; file_name: string | null; kind: string | null; note: string | null; created_by: string | null; created_at: string };
 type Align = "left" | "center" | "right";
 type Space = "wide" | "normal" | "tight";
@@ -113,7 +115,7 @@ export default function PostcardMessagePage() {
   useEffect(() => {
     supabase
       .from("events")
-      .select("id, name, venue, store_name, start_date, end_date")
+      .select("id, name, venue, store_name, start_date, end_date, dm_count")
       .order("start_date", { ascending: false })
       .limit(400)
       .then(({ data }) => setEvents((data as Evt[]) || []));
@@ -247,20 +249,11 @@ export default function PostcardMessagePage() {
       `有限会社 安岡蒲鉾店\n〒798-1133 愛媛県宇和島市三間町中野中293番地\n` +
       `TEL 0895-58-2155 / FAX 0895-58-2706 / フリーダイヤル 0120-58-7771`;
 
-    // 原稿PDFを作って、可能なら共有シート（メール）に添付。非対応ならPDFを保存しメーラーを開く
+    // PDFを保存してから、メールの新規下書きを開く（添付は手動。共有シートは使わない）
     const file = await renderProofPdf();
-    if (!file) { setAttachInfo("原稿PDFの生成に失敗しました。少し待って再度お試しください。"); return; }
-    const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
-    if (nav.canShare && nav.canShare({ files: [file] })) {
-      try {
-        await nav.share({ files: [file], title: subject, text: body });
-        return;
-      } catch {
-        /* キャンセル等は下のフォールバックへ */
-      }
+    if (file) {
+      await saveProofFile(file, "開いたメールにこのPDFを添付して送信してください。");
     }
-    // PC等: メールに自動添付できないので、PDFを保存してから下書きを開く（添付は手動）
-    await saveProofFile(file, "開いたメールにこのPDFを添付して送信してください。");
     window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
@@ -441,9 +434,15 @@ export default function PostcardMessagePage() {
           </div>
         </div>
 
-        <div className="max-w-md">
-          <Label className="text-xs mb-1 block">対象の催事</Label>
-          <Combobox items={eventItems} value={eventId} onChange={setEventId} allowCustom={false} placeholder="催事を選択" searchPlaceholder="会場名などで検索" />
+        <div className="space-y-2">
+          <Label className="text-xs block">対象の催事（カレンダーから選択）</Label>
+          <div className="max-w-2xl">
+            <EventCalendar events={events as EventLite[]} selectedId={eventId} onSelect={setEventId} />
+          </div>
+          <div className="flex flex-col md:flex-row gap-1 md:items-center">
+            <span className="text-xs text-muted-foreground shrink-0">検索して選ぶ場合：</span>
+            <Combobox items={eventItems} value={eventId} onChange={(v) => { if (v) setEventId(v); }} allowCustom={false} placeholder="会場名などで検索" searchPlaceholder="会場名などで検索" className="max-w-md" />
+          </div>
         </div>
 
         {eventId && (
