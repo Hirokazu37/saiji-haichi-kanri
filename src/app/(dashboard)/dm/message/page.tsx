@@ -41,6 +41,13 @@ const KIND_OPTIONS: { value: Kind; name: string }[] = [
 const URA_SRC: Record<Kind, string> = { jisshin: "/dm/ura-jisshin.jpg", sokubai: "/dm/ura-sokubai.jpg" };
 const OMOTE_SRC = "/dm/omote.jpg";
 
+// DMステータスの色（現在の状態バッジ用）
+const DM_STATUS_COLOR: Record<string, string> = {
+  "未着手": "bg-red-50 text-red-700 border-red-200",
+  "校正中": "bg-amber-50 text-amber-700 border-amber-200",
+  "印刷済み": "bg-green-50 text-green-700 border-green-200",
+};
+
 // 見た目（サイズ・太さ）基準のスタイル。fs=ポイント
 type StyleDef = { value: string; name: string; short: string; fs: number; fw: number; color?: string; boxed?: boolean };
 const STYLES: StyleDef[] = [
@@ -477,8 +484,13 @@ export default function PostcardMessagePage() {
         <h1 className="text-2xl font-bold">DMはがき 文面の作成・印刷</h1>
 
         {eventId && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <Label className="text-xs text-muted-foreground shrink-0">DMステータス</Label>
+          <div className="flex items-center gap-2 flex-wrap rounded-md border bg-muted/30 px-3 py-2">
+            <span className="text-sm font-medium shrink-0">DMステータス</span>
+            <span className="text-xs text-muted-foreground">現在</span>
+            <span className={cn("text-xs font-bold px-2 py-0.5 rounded-full border", DM_STATUS_COLOR[dmStatus || ""] || "bg-gray-100 text-gray-500 border-gray-200")}>
+              {dmStatus || "未設定"}
+            </span>
+            <span className="text-xs text-muted-foreground ml-1">変更</span>
             <div className="inline-flex rounded-md border overflow-hidden">
               {["未着手", "校正中", "印刷済み"].map((s) => (
                 <button key={s} type="button" onClick={() => updateStatus(dmStatus === s ? null : s)}
@@ -492,7 +504,7 @@ export default function PostcardMessagePage() {
                 </button>
               ))}
             </div>
-            <span className="text-[11px] text-muted-foreground">「メールで校正依頼」を押すと自動で「校正中」になります</span>
+            <span className="text-[11px] text-muted-foreground w-full sm:w-auto">DMハガキ一覧と連動。「メールで校正依頼」で自動「校正中」に。</span>
           </div>
         )}
 
