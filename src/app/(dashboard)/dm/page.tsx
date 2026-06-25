@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -37,20 +36,6 @@ function todayStr(): string {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
-}
-
-// DMステータスの表示バッジ（一覧では誤操作防止のため表示専用）
-const DM_BADGE: Record<string, string> = {
-  "印刷済み": "bg-green-50 text-green-700 border-green-200",
-  "校正中": "bg-amber-50 text-amber-700 border-amber-200",
-  "未着手": "bg-red-50 text-red-700 border-red-200",
-};
-function dmBadge(s: string | null) {
-  return (
-    <span className={cn("text-[11px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap", DM_BADGE[s || ""] || "bg-gray-100 text-gray-500 border-gray-200")}>
-      {s || "未設定"}
-    </span>
-  );
 }
 
 export default function DMListPage() {
@@ -370,25 +355,26 @@ export default function DMListPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        {dmBadge(e.dm_status)}
+                        {canEdit ? (
+                          <div className="flex gap-1">
+                            {["未着手", "校正中", "印刷済み"].map((s) => (
+                              <button
+                                key={s}
+                                type="button"
+                                className={`px-1.5 py-1 text-xs rounded border transition-colors ${e.dm_status === s ? "bg-green-700 text-white border-green-700 font-bold" : "bg-white text-gray-500 border-gray-300 hover:bg-green-50 hover:text-green-700"}`}
+                                onClick={() => updateField(e.id, "dm_status", e.dm_status === s ? null : s)}
+                              >
+                                {s}
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-sm">{e.dm_status || "—"}</span>
+                        )}
                         {urgent && (
                           <span className="inline-flex items-center gap-0.5 text-[11px] font-bold px-1.5 py-0.5 rounded-full border bg-red-600 text-white border-red-600 whitespace-nowrap">
                             <AlertTriangle className="h-3 w-3" />要対応
                           </span>
-                        )}
-                        {canEdit && (
-                          // 誤操作防止のため、変更はプルダウンで（一覧では表示はバッジ）
-                          <select
-                            value={e.dm_status ?? ""}
-                            onChange={(ev) => updateField(e.id, "dm_status", ev.target.value || null)}
-                            className="h-7 text-xs rounded-md border border-input bg-white px-1 text-muted-foreground"
-                            title="ステータスを変更"
-                          >
-                            <option value="">未設定</option>
-                            <option value="未着手">未着手</option>
-                            <option value="校正中">校正中</option>
-                            <option value="印刷済み">印刷済み</option>
-                          </select>
                         )}
                       </div>
                     </TableCell>
