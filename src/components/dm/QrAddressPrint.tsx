@@ -45,6 +45,13 @@ const fmtPostal = (p: string) => {
   return d ? `〒${d}` : "";
 };
 
+// 画面プレビューの宛名要素スタイル（印刷CSSの .qr-* と同じ値）
+const S_POSTAL: React.CSSProperties = { position: "absolute", top: "21mm", left: "30mm", width: "65mm", fontSize: "11pt" };
+const S_ADDR: React.CSSProperties = { position: "absolute", top: "27mm", left: "30mm", width: "65mm", fontSize: "11pt", lineHeight: 1.5 };
+const S_NAME: React.CSSProperties = { position: "absolute", top: "46mm", left: "30mm", width: "65mm", fontSize: "14pt" };
+const S_QR: React.CSSProperties = { position: "absolute", top: "55mm", right: "10mm", width: "18mm", height: "18mm" };
+const S_NO: React.CSSProperties = { position: "absolute", top: "74mm", right: "10mm", width: "18mm", textAlign: "center", fontSize: "7pt", color: "#333" };
+
 /** 名簿CSV（宛名つき）から QR付き宛名はがきを作って印刷する部品。
  *  印刷は body.pp-address クラスで制御し、他の印刷（文面など）と共存できる。 */
 export function QrAddressPrint() {
@@ -69,6 +76,17 @@ export function QrAddressPrint() {
   // 全体を右に3mm寄せた上で、面ごとの微調整を加える
   const shiftFor = (i: number): React.CSSProperties => ({ transform: `translate(${3 + quadOffsets[i].dx}mm, ${quadOffsets[i].dy}mm)` });
   const QUAD_LABELS = ["左上", "右上", "左下", "右下"];
+
+  // 1枚分の宛名（画面プレビュー用）。q=面インデックスで微調整を反映
+  const cardInner = (c: Postcard, q: number) => (
+    <div style={{ position: "absolute", inset: 0, ...shiftFor(q) }}>
+      {c.postal && <div style={S_POSTAL}>{fmtPostal(c.postal)}</div>}
+      <div style={S_ADDR}>{c.address}</div>
+      <div style={S_NAME}>{c.name}　様</div>
+      <div style={S_QR} dangerouslySetInnerHTML={{ __html: c.qr }} />
+      <div style={S_NO}>{c.no}</div>
+    </div>
+  );
 
   const handleFile = async (file: File) => {
     setError(""); setCards(null);
@@ -203,17 +221,23 @@ export function QrAddressPrint() {
         </div>
       )}
 
-      {/* 仕上がりの実物プレビュー（1人目のサンプル） — はみ出し確認用 */}
+      {/* 仕上がりプレビュー（4面まとめて） — 面ごとの位置調整を同時に確認 */}
       {cards && cards.length > 0 && (
         <div className="space-y-1">
-          <div className="text-xs text-muted-foreground text-center">宛名プレビュー（1人目のサンプル・はがき1枚）</div>
-          <div className="mx-auto relative border bg-white shadow-sm overflow-hidden" style={{ width: "100mm", height: "148mm", boxSizing: "border-box" }}>
-            <div style={{ position: "absolute", inset: 0, ...shiftFor(0) }}>
-              {cards[0].postal && <div style={{ position: "absolute", top: "21mm", left: "30mm", width: "65mm", fontSize: "11pt" }}>{fmtPostal(cards[0].postal)}</div>}
-              <div style={{ position: "absolute", top: "27mm", left: "30mm", width: "65mm", fontSize: "11pt", lineHeight: 1.5 }}>{cards[0].address}</div>
-              <div style={{ position: "absolute", top: "46mm", left: "30mm", width: "65mm", fontSize: "14pt" }}>{cards[0].name}　様</div>
-              <div style={{ position: "absolute", top: "55mm", right: "10mm", width: "18mm", height: "18mm" }} dangerouslySetInnerHTML={{ __html: cards[0].qr }} />
-              <div style={{ position: "absolute", top: "74mm", right: "10mm", width: "18mm", textAlign: "center", fontSize: "7pt", color: "#333" }}>{cards[0].no}</div>
+          <div className="text-xs text-muted-foreground text-center">宛名プレビュー（4面・印刷1ページ目）。下の面ごと微調整が反映されます</div>
+          <div className="overflow-auto">
+            <div className="mx-auto" style={{ zoom: 0.6 } as React.CSSProperties}>
+              <div className="grid grid-cols-2 border-l border-t" style={{ width: "210mm" }}>
+                {[0, 1, 2, 3].map((q) => {
+                  const c = (pages[0] || [])[q];
+                  return (
+                    <div key={q} className="relative bg-white border-r border-b overflow-hidden" style={{ width: "105mm", height: "148.5mm" }}>
+                      <span className="absolute top-0 left-0 z-10 bg-white/80 px-1 text-muted-foreground" style={{ fontSize: "9pt" }}>{QUAD_LABELS[q]}</span>
+                      {c ? cardInner(c, q) : <span className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">（データなし）</span>}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
