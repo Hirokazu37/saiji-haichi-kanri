@@ -105,7 +105,7 @@ export default function PostcardMessagePage() {
   const [eventId, setEventId] = useState("");
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [vpos, setVpos] = useState<VPos>("top");
-  const [kind, setKind] = useState<Kind>("jisshin");
+  const [kind, setKind] = useState<Kind>("sokubai");
   const [saved, setSaved] = useState(false);
 
   const printWith = (cls: string) => {
