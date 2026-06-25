@@ -55,10 +55,14 @@ export function QrAddressPrint() {
   const [cards, setCards] = useState<Postcard[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  // 宛名全体の微調整（mm）。テンプレ枠に合わせて試し刷りで合わせる
-  const [offsetX, setOffsetX] = useState(0);
-  const [offsetY, setOffsetY] = useState(0);
-  const shiftStyle = { transform: `translate(${offsetX}mm, ${offsetY}mm)` } as React.CSSProperties;
+  // 面ごと（左上/右上/左下/右下）の宛名位置の微調整（mm）。テンプレ枠に合わせる
+  const [quadOffsets, setQuadOffsets] = useState<{ dx: number; dy: number }[]>([
+    { dx: 0, dy: 0 }, { dx: 0, dy: 0 }, { dx: 0, dy: 0 }, { dx: 0, dy: 0 },
+  ]);
+  const setQuad = (i: number, axis: "dx" | "dy", v: number) =>
+    setQuadOffsets((prev) => prev.map((q, idx) => (idx === i ? { ...q, [axis]: v } : q)));
+  const shiftFor = (i: number): React.CSSProperties => ({ transform: `translate(${quadOffsets[i].dx}mm, ${quadOffsets[i].dy}mm)` });
+  const QUAD_LABELS = ["左上", "右上", "左下", "右下"];
 
   const handleFile = async (file: File) => {
     setError(""); setCards(null);
@@ -170,16 +174,20 @@ export function QrAddressPrint() {
               印刷ダイアログで「余白なし」「等倍(100%)」に設定し、A4厚紙に印刷して4分割してください。
             </span>
           </div>
-          {/* 宛名全体の位置微調整（テンプレ枠に合わせる） */}
-          <div className="flex items-center justify-center gap-3 flex-wrap text-sm">
-            <span className="text-xs text-muted-foreground">位置の微調整（mm）</span>
-            <label className="flex items-center gap-1">横
-              <input type="number" step={0.5} value={offsetX} onChange={(e) => setOffsetX(parseFloat(e.target.value) || 0)} className="h-8 w-16 rounded-md border border-input bg-white px-2 text-sm" />
-            </label>
-            <label className="flex items-center gap-1">縦
-              <input type="number" step={0.5} value={offsetY} onChange={(e) => setOffsetY(parseFloat(e.target.value) || 0)} className="h-8 w-16 rounded-md border border-input bg-white px-2 text-sm" />
-            </label>
-            <span className="text-[11px] text-muted-foreground">＋横=右 ／ ＋縦=下。プレビューと印刷の宛名全体が動きます</span>
+          {/* 面ごとの位置微調整（テンプレの枠に合わせる） */}
+          <div className="space-y-1">
+            <div className="text-xs text-muted-foreground text-center">郵便番号・宛名の位置を面ごとに微調整（mm／＋横=右・＋縦=下）</div>
+            <div className="grid grid-cols-2 gap-2 max-w-md mx-auto">
+              {QUAD_LABELS.map((lbl, i) => (
+                <div key={i} className="flex items-center gap-1 border rounded-md px-2 py-1 text-xs">
+                  <span className="w-8 font-medium shrink-0">{lbl}</span>
+                  <span>横</span>
+                  <input type="number" step={0.5} value={quadOffsets[i].dx} onChange={(e) => setQuad(i, "dx", parseFloat(e.target.value) || 0)} className="h-7 w-14 rounded border border-input bg-white px-1" />
+                  <span>縦</span>
+                  <input type="number" step={0.5} value={quadOffsets[i].dy} onChange={(e) => setQuad(i, "dy", parseFloat(e.target.value) || 0)} className="h-7 w-14 rounded border border-input bg-white px-1" />
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -189,12 +197,12 @@ export function QrAddressPrint() {
         <div className="space-y-1">
           <div className="text-xs text-muted-foreground text-center">宛名プレビュー（1人目のサンプル・はがき1枚）</div>
           <div className="mx-auto relative border bg-white shadow-sm overflow-hidden" style={{ width: "100mm", height: "148mm", boxSizing: "border-box" }}>
-            <div style={{ position: "absolute", inset: 0, ...shiftStyle }}>
+            <div style={{ position: "absolute", inset: 0, ...shiftFor(0) }}>
               {cards[0].postal && <div style={{ position: "absolute", top: "13mm", right: "14mm", fontSize: "14pt", fontWeight: "bold", letterSpacing: "3.2mm" }}>{fmtPostal(cards[0].postal)}</div>}
-              <div style={{ position: "absolute", top: "27mm", left: "14mm", right: "12mm", fontSize: "11pt", lineHeight: 1.5 }}>{cards[0].address}</div>
-              <div style={{ position: "absolute", top: "41mm", left: "14mm", right: "12mm", fontSize: "18pt", fontWeight: "bold" }}>{cards[0].name}　様</div>
-              <div style={{ position: "absolute", top: "60mm", right: "10mm", width: "18mm", height: "18mm" }} dangerouslySetInnerHTML={{ __html: cards[0].qr }} />
-              <div style={{ position: "absolute", top: "79mm", right: "10mm", width: "18mm", textAlign: "center", fontSize: "7pt", color: "#333" }}>{cards[0].no}</div>
+              <div style={{ position: "absolute", top: "27mm", left: "30mm", width: "65mm", fontSize: "11pt", lineHeight: 1.5 }}>{cards[0].address}</div>
+              <div style={{ position: "absolute", top: "44mm", left: "30mm", width: "65mm", fontSize: "18pt", fontWeight: "bold" }}>{cards[0].name}　様</div>
+              <div style={{ position: "absolute", top: "55mm", right: "10mm", width: "18mm", height: "18mm" }} dangerouslySetInnerHTML={{ __html: cards[0].qr }} />
+              <div style={{ position: "absolute", top: "74mm", right: "10mm", width: "18mm", textAlign: "center", fontSize: "7pt", color: "#333" }}>{cards[0].no}</div>
             </div>
           </div>
         </div>
@@ -215,18 +223,18 @@ export function QrAddressPrint() {
                 .qr-card { position: relative; box-sizing: border-box; overflow: hidden; }
                 .qr-shift { position: absolute; inset: 0; }
                 .qr-postal { position: absolute; top: 13mm; right: 14mm; font-size: 14pt; font-weight: bold; letter-spacing: 3.2mm; }
-                .qr-addr { position: absolute; top: 27mm; left: 14mm; right: 12mm; font-size: 11pt; line-height: 1.5; }
-                .qr-name { position: absolute; top: 41mm; left: 14mm; right: 12mm; font-size: 18pt; font-weight: bold; }
-                .qr-qrcode { position: absolute; top: 60mm; right: 10mm; width: 18mm; height: 18mm; }
+                .qr-addr { position: absolute; top: 27mm; left: 30mm; width: 65mm; font-size: 11pt; line-height: 1.5; }
+                .qr-name { position: absolute; top: 44mm; left: 30mm; width: 65mm; font-size: 18pt; font-weight: bold; }
+                .qr-qrcode { position: absolute; top: 55mm; right: 10mm; width: 18mm; height: 18mm; }
                 .qr-qrcode svg { width: 100%; height: 100%; }
-                .qr-no { position: absolute; top: 79mm; right: 10mm; width: 18mm; text-align: center; font-size: 7pt; color: #333; }
+                .qr-no { position: absolute; top: 74mm; right: 10mm; width: 18mm; text-align: center; font-size: 7pt; color: #333; }
               }
             `}</style>
             {pages.map((page, pi) => (
               <div key={pi} className="qr-sheet">
-                {page.map((c) => (
+                {page.map((c, ci) => (
                   <div key={c.no} className="qr-card">
-                    <div className="qr-shift" style={shiftStyle}>
+                    <div className="qr-shift" style={shiftFor(ci % 4)}>
                       {c.postal && <div className="qr-postal">{fmtPostal(c.postal)}</div>}
                       <div className="qr-addr">{c.address}</div>
                       <div className="qr-name">{c.name}　様</div>
