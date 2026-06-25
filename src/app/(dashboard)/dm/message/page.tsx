@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Combobox, type ComboboxItem } from "@/components/ui/combobox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Printer, Info, Save, ArrowUp, ArrowDown, Trash2, Plus, AlignLeft, AlignCenter, AlignRight } from "lucide-react";
+import { ArrowLeft, Printer, Info, Save, ArrowUp, ArrowDown, Trash2, Plus, AlignLeft, AlignCenter, AlignRight, Mail, FileText } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
 import { renderRuby } from "@/lib/ruby";
 import { PrintPortal } from "@/components/PrintPortal";
@@ -186,6 +186,65 @@ export default function PostcardMessagePage() {
   const remove = (id: string) => setBlocks((prev) => prev.filter((b) => b.id !== id));
   const add = () => setBlocks((prev) => [...prev, { id: newId(), style: "normal", align: "center", space: "normal", label: "", text: "" }]);
 
+  // 校正依頼に使う催事情報
+  const proofInfo = () => {
+    const ev = events.find((e) => e.id === eventId);
+    const venue = ev ? `${ev.venue}${ev.store_name ? ` ${ev.store_name}` : ""}` : "";
+    const title = (blocks.find((b) => normStyle(b.style) === "xl")?.text || ev?.name || "").replace(/[「」]/g, "");
+    const period = ev ? periodFromDates(ev.start_date, ev.end_date) : "";
+    return { venue, title, period };
+  };
+
+  const sendMail = () => {
+    const { venue, title, period } = proofInfo();
+    const subject = `DMハガキ校正のお願い（${venue}${title ? ` / ${title}` : ""}）`;
+    const body =
+      `いつもお世話になっております。安岡蒲鉾でございます。\n\n` +
+      `下記催事のDMハガキにつきまして、校正をお願いいたします。\n` +
+      `　会場：${venue}\n` +
+      (title ? `　催事名：${title}\n` : "") +
+      (period ? `　会期：${period}\n` : "") +
+      `\n校正用PDFを添付いたしますので、ご確認のほどよろしくお願いいたします。\n\n` +
+      `------------------------------\n` +
+      `有限会社 安岡蒲鉾店\n〒798-1133 愛媛県宇和島市三間町中野中293番地\n` +
+      `TEL 0895-58-2155 / FAX 0895-58-2706 / フリーダイヤル 0120-58-7771`;
+    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
+
+  const downloadFax = () => {
+    const { venue, title, period } = proofInfo();
+    const html =
+      `<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">` +
+      `<head><meta charset="utf-8"><title>FAX送信状</title></head>` +
+      `<body style="font-family:'Yu Gothic','游ゴシック',sans-serif; font-size:11pt; line-height:1.9;">` +
+      `<h2 style="text-align:center; letter-spacing:8px;">F A X 送 信 状</h2>` +
+      `<p style="text-align:right;">送信日：　　　年　　月　　日</p>` +
+      `<table style="width:100%; border-collapse:collapse;" border="1" cellpadding="6">` +
+      `<tr><td style="width:25%;">送信先</td><td>　　　　　　　　　　　御中</td></tr>` +
+      `<tr><td>FAX番号</td><td>　　　　－　　　　－　　　　</td></tr>` +
+      `<tr><td>差出人</td><td>有限会社 安岡蒲鉾店　担当：　　　　　　</td></tr>` +
+      `<tr><td>枚数</td><td>本紙を含め　　枚</td></tr></table>` +
+      `<h3>件名：DMハガキ校正のお願い</h3>` +
+      `<p>いつもお世話になっております。安岡蒲鉾でございます。<br>` +
+      `下記催事のDMハガキにつきまして、校正をお願いいたします。</p>` +
+      `<p>　会場：${venue}<br>` +
+      (title ? `　催事名：${title}<br>` : "") +
+      (period ? `　会期：${period}<br>` : "") +
+      `</p>` +
+      `<p>別紙のとおり校正をお送りいたします。ご確認のほど、よろしくお願いいたします。</p><hr>` +
+      `<p style="font-size:10pt;">有限会社 安岡蒲鉾店　〒798-1133 愛媛県宇和島市三間町中野中293番地<br>` +
+      `TEL 0895-58-2155　FAX 0895-58-2706　フリーダイヤル 0120-58-7771</p></body></html>`;
+    const blob = new Blob(["﻿", html], { type: "application/msword" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `DM校正依頼_${venue || "FAX送信状"}.doc`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const renderPostcard = () => (
     <div className="pc-msg">
       <div className="pc-anno" style={{ justifyContent: VPOS_JUSTIFY[vpos] }}>
@@ -226,9 +285,9 @@ export default function PostcardMessagePage() {
           body.pp-proof .pc-print-proof { display: block !important; }
           .pc-sheet { width: 210mm; height: 297mm; display: grid; grid-template-columns: 105mm 105mm; grid-template-rows: 148.5mm 148.5mm; }
           .pc-sheet > .pc-cell { position: relative; background: #fff; border: 0.3pt dashed #ccc; overflow: hidden; box-sizing: border-box; }
-          /* 校正: 単票・両面をA4縦に2枚 */
-          .proof-stack { width: 210mm; }
-          .proof-card { width: 100mm; height: 148mm; margin: 0 auto; }
+          /* 校正: 単票・両面をA4縦に横並び（おもて左／裏面右） */
+          .proof-stack { width: 210mm; display: flex; justify-content: center; gap: 5mm; padding-top: 8mm; }
+          .proof-card { width: 100mm; height: 148mm; }
         }
         .pc-print { display: none; }
       `}</style>
@@ -345,27 +404,35 @@ export default function PostcardMessagePage() {
         {/* 校正プレビュー（実物イメージ・両面） */}
         {eventId && (
           <div className="space-y-2">
-            <div className="flex items-center gap-3 flex-wrap">
-              <Label className="text-sm font-medium">校正プレビュー（実物イメージ）</Label>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Label className="text-sm font-medium mr-1">校正プレビュー（実物イメージ）</Label>
               <Button variant="outline" size="sm" onClick={() => printWith("pp-proof")}>
-                <Printer className="h-4 w-4 mr-1" />校正を印刷（両面・単票）
+                <Printer className="h-4 w-4 mr-1" />校正を印刷／PDF
               </Button>
-              <span className="text-xs text-muted-foreground">印刷ダイアログで「PDFに保存」を選ぶと校正用PDFになります</span>
+              <Button variant="outline" size="sm" onClick={sendMail}>
+                <Mail className="h-4 w-4 mr-1" />メールで校正依頼
+              </Button>
+              <Button variant="outline" size="sm" onClick={downloadFax}>
+                <FileText className="h-4 w-4 mr-1" />FAX送信状（Word）
+              </Button>
             </div>
+            <p className="text-xs text-muted-foreground">
+              「校正を印刷／PDF」でPDF保存 → メールに添付して送付できます（メール本文・FAX送信状にはテンプレートが入ります）。
+            </p>
             <div className="flex flex-wrap gap-4">
-              <div className="space-y-1">
-                <div className="text-xs text-muted-foreground">裏面（{KIND_OPTIONS.find((o) => o.value === kind)?.name}）</div>
-                <div className="hagaki border shadow-sm" style={{ width: "100mm", height: "148mm" }}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img className="bg" src={URA_SRC[kind]} alt="裏面" />
-                </div>
-              </div>
               <div className="space-y-1">
                 <div className="text-xs text-muted-foreground">おもて（宛名面＋案内文面）</div>
                 <div className="hagaki border shadow-sm" style={{ width: "100mm", height: "148mm" }}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img className="bg" src={OMOTE_SRC} alt="おもて" />
                   {renderPostcard()}
+                </div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-xs text-muted-foreground">裏面（{KIND_OPTIONS.find((o) => o.value === kind)?.name}）</div>
+                <div className="hagaki border shadow-sm" style={{ width: "100mm", height: "148mm" }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img className="bg" src={URA_SRC[kind]} alt="裏面" />
                 </div>
               </div>
             </div>
@@ -384,17 +451,17 @@ export default function PostcardMessagePage() {
               ))}
             </div>
           </div>
-          {/* 校正: 単票・両面（裏→おもて） */}
+          {/* 校正: 単票・両面（おもて左／裏面右の横並び） */}
           <div className="pc-print pc-print-proof">
             <div className="proof-stack">
               <div className="hagaki proof-card">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img className="bg" src={URA_SRC[kind]} alt="裏面" />
+                <img className="bg" src={OMOTE_SRC} alt="おもて" />
+                {renderPostcard()}
               </div>
               <div className="hagaki proof-card">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img className="bg" src={OMOTE_SRC} alt="おもて" />
-                {renderPostcard()}
+                <img className="bg" src={URA_SRC[kind]} alt="裏面" />
               </div>
             </div>
           </div>
