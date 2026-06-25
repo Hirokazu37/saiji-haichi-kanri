@@ -483,31 +483,6 @@ export default function PostcardMessagePage() {
         </Link>
         <h1 className="text-2xl font-bold">DMはがき 文面の作成・印刷</h1>
 
-        {eventId && (
-          <div className="flex items-center gap-2 flex-wrap rounded-md border bg-muted/30 px-3 py-2">
-            <span className="text-sm font-medium shrink-0">DMステータス</span>
-            <span className="text-xs text-muted-foreground">現在</span>
-            <span className={cn("text-xs font-bold px-2 py-0.5 rounded-full border", DM_STATUS_COLOR[dmStatus || ""] || "bg-gray-100 text-gray-500 border-gray-200")}>
-              {dmStatus || "未設定"}
-            </span>
-            <span className="text-xs text-muted-foreground ml-1">変更</span>
-            <div className="inline-flex rounded-md border overflow-hidden">
-              {["未着手", "校正中", "印刷済み"].map((s) => (
-                <button key={s} type="button" onClick={() => updateStatus(dmStatus === s ? null : s)}
-                  className={cn(
-                    "h-8 px-3 text-xs font-medium transition-colors",
-                    dmStatus === s
-                      ? (s === "印刷済み" ? "bg-green-700 text-white" : s === "校正中" ? "bg-amber-500 text-white" : "bg-gray-600 text-white")
-                      : "bg-white text-gray-500 hover:bg-muted"
-                  )}>
-                  {s}
-                </button>
-              ))}
-            </div>
-            <span className="text-[11px] text-muted-foreground w-full sm:w-auto">DMハガキ一覧と連動。「メールで校正依頼」で自動「校正中」に。</span>
-          </div>
-        )}
-
         <div className="flex items-start gap-2 rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-sm text-blue-800">
           <Info className="h-4 w-4 mt-0.5 shrink-0 text-blue-600" />
           <div>
@@ -631,7 +606,28 @@ export default function PostcardMessagePage() {
             </Card>
 
             {/* プレビュー（1枚・文面のみ）— スクロールしても追従 */}
-            <div className="shrink-0 lg:sticky lg:top-4 self-start" style={{ width: "105mm" }}>
+            <div className="shrink-0 lg:sticky lg:top-4 self-start space-y-3" style={{ width: "105mm" }}>
+              {/* DMステータス（プレビューのすぐ上） */}
+              <div className="flex items-center gap-2 flex-wrap rounded-md border bg-muted/30 px-3 py-2">
+                <span className="text-sm font-medium shrink-0">DMステータス</span>
+                <span className={cn("text-xs font-bold px-2 py-0.5 rounded-full border", DM_STATUS_COLOR[dmStatus || ""] || "bg-gray-100 text-gray-500 border-gray-200")}>
+                  {dmStatus || "未設定"}
+                </span>
+                <div className="inline-flex rounded-md border overflow-hidden ml-auto">
+                  {["未着手", "校正中", "印刷済み"].map((s) => (
+                    <button key={s} type="button" onClick={() => updateStatus(dmStatus === s ? null : s)}
+                      className={cn(
+                        "h-8 px-2.5 text-xs font-medium transition-colors",
+                        dmStatus === s
+                          ? (s === "印刷済み" ? "bg-green-700 text-white" : s === "校正中" ? "bg-amber-500 text-white" : "bg-gray-600 text-white")
+                          : "bg-white text-gray-500 hover:bg-muted"
+                      )}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+                <span className="text-[11px] text-muted-foreground w-full">DMハガキ一覧と連動。「メールで校正依頼」で自動「校正中」に。</span>
+              </div>
               <Label className="text-xs text-muted-foreground block mb-2">プレビュー（文面のみ）</Label>
               <div className="relative overflow-hidden border rounded-md bg-white shadow-sm" style={{ width: "105mm", height: "148.5mm" }}>
                 {renderPostcard()}
