@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -107,6 +107,7 @@ export default function PostcardMessagePage() {
   const [vpos, setVpos] = useState<VPos>("top");
   const [kind, setKind] = useState<Kind>("sokubai");
   const [saved, setSaved] = useState(false);
+  const proofRef = useRef<HTMLDivElement>(null);
 
   const printWith = (cls: string) => {
     document.body.classList.add(cls);
@@ -195,19 +196,57 @@ export default function PostcardMessagePage() {
     return { venue, title, period };
   };
 
-  const sendMail = () => {
+  // 校正プレビューを画像(PNG)に変換（原稿の添付・共有用）
+  const renderProofImage = async (): Promise<File | null> => {
+    if (!proofRef.current) return null;
+    try {
+      const html2canvas = (await import("html2canvas")).default;
+      const canvas = await html2canvas(proofRef.current, { scale: 2, backgroundColor: "#ffffff", useCORS: true });
+      const blob: Blob | null = await new Promise((res) => canvas.toBlob(res, "image/png"));
+      if (!blob) return null;
+      const { venue } = proofInfo();
+      return new File([blob], `DMハガキ校正_${venue || "原稿"}.png`, { type: "image/png" });
+    } catch {
+      return null;
+    }
+  };
+
+  const sendMail = async () => {
     const { venue, title, period } = proofInfo();
     const subject = `DMハガキ校正のお願い（${venue}${title ? ` / ${title}` : ""}）`;
     const body =
+      `${venue ? `${venue}　DMハガキ校正ご担当者様\n\n` : ""}` +
       `いつもお世話になっております。安岡蒲鉾でございます。\n\n` +
       `下記催事のDMハガキにつきまして、校正をお願いいたします。\n` +
       `　会場：${venue}\n` +
       (title ? `　催事名：${title}\n` : "") +
       (period ? `　会期：${period}\n` : "") +
-      `\n校正用PDFを添付いたしますので、ご確認のほどよろしくお願いいたします。\n\n` +
+      `\nDMハガキの原稿（校正用）を添付いたしますので、ご確認のほどよろしくお願いいたします。\n\n` +
       `------------------------------\n` +
       `有限会社 安岡蒲鉾店\n〒798-1133 愛媛県宇和島市三間町中野中293番地\n` +
       `TEL 0895-58-2155 / FAX 0895-58-2706 / フリーダイヤル 0120-58-7771`;
+
+    // 原稿画像を作って、可能なら共有シート（メール）に添付。非対応なら画像を保存しメーラーを開く
+    const file = await renderProofImage();
+    const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
+    if (file && nav.canShare && nav.canShare({ files: [file] })) {
+      try {
+        await nav.share({ files: [file], title: subject, text: body });
+        return;
+      } catch {
+        /* キャンセル等は下のフォールバックへ */
+      }
+    }
+    if (file) {
+      const url = URL.createObjectURL(file);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = file.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
     window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
@@ -215,7 +254,7 @@ export default function PostcardMessagePage() {
     const { venue, title, period } = proofInfo();
     const now = new Date();
     const dateStr = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`;
-    const recipient = venue ? `${venue}　御中` : "○○　様";
+    const recipient = `${venue || "○○百貨店"}　DMハガキ校正ご担当者様`;
     const eventBullet = venue || title || period
       ? `<p>・催事：${venue}${title ? ` ${title}` : ""}${period ? `（${period}）` : ""}</p>`
       : "";
@@ -230,7 +269,7 @@ export default function PostcardMessagePage() {
       `　　　　　　ＴＥＬ　0895-58-2155<br>` +
       `　　　　　　ＦＡＸ　0895-58-2706</p>` +
       `<p style="font-size:13pt; margin-top:14pt;">${recipient}</p>` +
-      `<p>発信枚数　　　　　　枚　（　本紙含む　・　本紙含まず　）</p>` +
+      `<p>発信枚数　　２　枚　（　本紙含む　）</p>` +
       `<p>ＤＭハガキの原稿を送信いたしますので、ご校正のほどよろしくお願いいたします。</p>` +
       `<p style="text-align:center; margin:12pt 0;">記</p>` +
       `<p>この度は大変お世話になっております。<br>` +
@@ -424,9 +463,9 @@ export default function PostcardMessagePage() {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              「校正を印刷／PDF」でPDF保存 → メールに添付して送付できます（メール本文・FAX送信状にはテンプレートが入ります）。
+              「メールで校正依頼」は原稿（下の両面イメージ）を画像で添付して送れます（端末が共有に対応していない場合は画像を保存してメーラーを開きます）。本文・FAX送信状にはテンプレートが入ります。
             </p>
-            <div className="flex flex-wrap gap-4">
+            <div ref={proofRef} className="flex flex-wrap gap-4 bg-white p-2 w-fit">
               <div className="space-y-1">
                 <div className="text-xs text-muted-foreground">おもて（宛名面＋案内文面）</div>
                 <div className="hagaki border shadow-sm" style={{ width: "100mm", height: "148mm" }}>
