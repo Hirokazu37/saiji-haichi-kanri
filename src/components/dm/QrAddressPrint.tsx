@@ -169,6 +169,20 @@ export function QrAddressPrint() {
         </div>
       )}
 
+      {/* 仕上がりの実物プレビュー（1人目のサンプル） — はみ出し確認用 */}
+      {cards && cards.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-xs text-muted-foreground text-center">宛名プレビュー（1人目のサンプル・はがき1枚）</div>
+          <div className="mx-auto relative border bg-white shadow-sm overflow-hidden" style={{ width: "100mm", height: "148mm", boxSizing: "border-box", padding: "12mm 10mm" }}>
+            {cards[0].postal && <div style={{ fontSize: "14pt", letterSpacing: "2px" }}>〒{fmtPostal(cards[0].postal)}</div>}
+            <div style={{ fontSize: "11pt", marginTop: "6mm", lineHeight: 1.5 }}>{cards[0].address}</div>
+            <div style={{ fontSize: "16pt", fontWeight: "bold", marginTop: "10mm" }}>{cards[0].name}　様</div>
+            <div style={{ position: "absolute", bottom: "10mm", right: "10mm", width: "20mm", height: "20mm" }} dangerouslySetInnerHTML={{ __html: cards[0].qr }} />
+            <div style={{ position: "absolute", bottom: "7mm", right: "10mm", width: "20mm", textAlign: "center", fontSize: "7pt", color: "#333" }}>{cards[0].no}</div>
+          </div>
+        </div>
+      )}
+
       {/* 印刷レイアウト — body直下にポータルで出す（body.pp-address のときだけ印刷） */}
       {cards && (
         <PrintPortal>
