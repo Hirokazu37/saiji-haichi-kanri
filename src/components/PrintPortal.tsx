@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
+// 複数のポータルが同時に存在しても body クラスを正しく扱うための参照カウント
+let portalCount = 0;
+
 /**
  * 子要素を <body> 直下に描画するポータル。
  * 印刷時にアプリ本体(app shell)を display:none で外し、この中身だけを
@@ -20,10 +23,12 @@ export function PrintPortal({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!el) return;
     document.body.appendChild(el);
+    portalCount++;
     document.body.classList.add("has-print-portal");
     return () => {
       document.body.removeChild(el);
-      document.body.classList.remove("has-print-portal");
+      portalCount = Math.max(0, portalCount - 1);
+      if (portalCount === 0) document.body.classList.remove("has-print-portal");
     };
   }, [el]);
 

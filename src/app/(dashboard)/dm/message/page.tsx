@@ -14,6 +14,7 @@ import { ArrowLeft, Printer, Info, Save, ArrowUp, ArrowDown, Trash2, Plus, Align
 import { usePermission } from "@/hooks/usePermission";
 import { renderRuby } from "@/lib/ruby";
 import { PrintPortal } from "@/components/PrintPortal";
+import { QrAddressPrint } from "@/components/dm/QrAddressPrint";
 import { EventCalendar } from "@/components/customers/EventCalendar";
 import type { EventLite } from "@/components/customers/types";
 
@@ -703,6 +704,14 @@ export default function PostcardMessagePage() {
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* 宛名印刷（QR） — 同じ画面で名簿CSVから宛名はがきも印刷 */}
+        {eventId && (
+          <div className="space-y-2 border-t pt-4">
+            <h2 className="text-base font-bold text-center">宛名印刷（QR付きはがき）</h2>
+            <QrAddressPrint />
           </div>
         )}
       </div>
