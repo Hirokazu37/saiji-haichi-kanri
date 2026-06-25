@@ -41,6 +41,7 @@ export function VenueKarteDialog({ open, onOpenChange, venue, segments, canEdit,
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<{ ev: EventRow; sales: number; visits: number }[]>([]);
   const [custTotal, setCustTotal] = useState(0);
+  const [dmNote, setDmNote] = useState<string | null>(null);
   const [aliases, setAliases] = useState<AliasRow[]>([]);
   const [notes, setNotes] = useState("");
   const [notesSaved, setNotesSaved] = useState(false);
@@ -77,6 +78,14 @@ export function VenueKarteDialog({ open, onOpenChange, venue, segments, canEdit,
         ...aliasList.map((a) => evKey(a.alias_venue, a.alias_store)),
       ]);
       const venueNames = Array.from(new Set([venue.venue_name, ...aliasList.map((a) => a.alias_venue)]));
+
+      // この店のDM文面メモ（名寄せ含む会場キーで dm_templates を引く・閲覧のみ）
+      const { data: tplData } = await supabase
+        .from("dm_templates")
+        .select("note")
+        .in("venue_key", Array.from(matchKeys));
+      const note = ((tplData as { note: string | null }[]) || []).map((t) => t.note).find((n) => n && n.trim());
+      setDmNote(note || null);
 
       const { data: evData } = await supabase
         .from("events")
@@ -300,6 +309,13 @@ export function VenueKarteDialog({ open, onOpenChange, venue, segments, canEdit,
                   )}
                 </div>
               )}
+
+              <div>
+                <div className="text-sm font-medium mb-1">DM文面メモ（この百貨店の癖・記載ルール）</div>
+                <div className="text-sm whitespace-pre-wrap rounded-md bg-amber-50/50 border border-amber-200 px-3 py-2 text-amber-900">
+                  {dmNote || "未登録（DMはがき文面ページの「この百貨店の設定」で登録できます）"}
+                </div>
+              </div>
 
               <div>
                 <div className="text-sm font-medium mb-1">メモ・振り返り（交渉条件・担当・課題など）</div>
