@@ -459,12 +459,12 @@ export default function EventsPage() {
     return true;
   });
 
-  // ホテルマスター候補: 百貨店名で絞り込み、該当なければ全件
+  // ホテルマスター候補: この百貨店に紐づくホテルのみ（未紐付けなら候補なし＝手入力）。
+  // 以前は未紐付け時にマスター全件を出していたが、関係ないホテルが大量に並ぶため廃止。
   const getHotelCandidates = (venue: string, storeName: string | null) => {
     const venueLabel = storeName ? `${venue} ${storeName}` : venue;
     const linkedIds = new Set(hotelVenueLinks.filter((l) => l.venue_name === venueLabel).map((l) => l.hotel_id));
-    const candidates = linkedIds.size > 0 ? hotelMasters.filter((h) => linkedIds.has(h.id)) : hotelMasters;
-    return candidates;
+    return hotelMasters.filter((h) => linkedIds.has(h.id));
   };
 
   const getDayOfWeek = (date: Date) => ["日", "月", "火", "水", "木", "金", "土"][date.getDay()];

@@ -239,7 +239,8 @@ export default function HotelTransportPage() {
     if (!selectedEvent) return hotelMasters;
     const venueLabel = selectedEvent.store_name ? `${selectedEvent.venue} ${selectedEvent.store_name}` : selectedEvent.venue;
     const linkedIds = new Set(hotelVenueLinks.filter((l) => l.venue_name === venueLabel).map((l) => l.hotel_id));
-    return linkedIds.size > 0 ? hotelMasters.filter((h) => linkedIds.has(h.id)) : hotelMasters;
+    // この百貨店に紐づくホテルのみ（未紐付けなら候補なし＝手入力）。全件フォールバックは廃止。
+    return hotelMasters.filter((h) => linkedIds.has(h.id));
   }, [selectedEvent, hotelMasters, hotelVenueLinks]);
 
   // ステータス判定
