@@ -558,7 +558,7 @@ export default function PostcardMessagePage() {
         )}
 
         {eventId && (
-          <div className="flex flex-col lg:flex-row gap-6 items-start">
+          <div className="flex flex-col lg:flex-row gap-6 items-center lg:items-start lg:justify-center">
             {/* ブロック編集 */}
             <Card className="w-full lg:flex-1 lg:max-w-xl min-w-0">
               <CardContent className="pt-4 space-y-3">
