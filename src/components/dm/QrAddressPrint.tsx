@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -108,6 +108,35 @@ export function QrAddressPrint({ frontOverlay }: { frontOverlay?: React.ReactNod
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // 読み込んだ宛名つきCSVを「ブラウザのこのセッション中」だけ保持する。
+  // ページを移動しても（/dm/message ↔ /dm/postcards）使い回せる。
+  // 住所を含むためサーバには保存せず、タブ/ブラウザを閉じると消える（個人情報最小化の方針を維持）。
+  const ROSTER_KEY = "dm_qr_roster_v1";
+  const restored = useRef(false);
+  useEffect(() => {
+    if (restored.current) return;
+    restored.current = true;
+    try {
+      const s = sessionStorage.getItem(ROSTER_KEY);
+      if (!s) return;
+      const d = JSON.parse(s) as { fileName?: string; headers?: string[]; rows?: string[][]; mapping?: Record<FieldKey, string> };
+      if (d.rows?.length && d.headers?.length) {
+        setFileName(d.fileName || "");
+        setHeaders(d.headers);
+        setRows(d.rows);
+        if (d.mapping) setMapping(d.mapping);
+      }
+    } catch { /* ignore */ }
+  }, []);
+  useEffect(() => {
+    if (!restored.current) return;
+    try {
+      if (rows.length && headers.length) {
+        sessionStorage.setItem(ROSTER_KEY, JSON.stringify({ fileName, headers, rows, mapping }));
+      }
+    } catch { /* 容量超過などは無視（保持できないだけ） */ }
+  }, [fileName, headers, rows, mapping]);
+
   // CSVを選ぶ。File System Access API があれば showOpenFilePicker を使い、
   // id を付けることで「前回開いたフォルダ」をブラウザが記憶する
   // （= 一度 校正原稿フォルダ を開けば、次回以降はそこから開く）。
@@ -132,6 +161,11 @@ export function QrAddressPrint({ frontOverlay }: { frontOverlay?: React.ReactNod
     }
     // 非対応ブラウザは従来の <input type="file"> にフォールバック
     fileInputRef.current?.click();
+  };
+
+  const clearRoster = () => {
+    setFileName(""); setHeaders([]); setRows([]); setCards(null); setError("");
+    try { sessionStorage.removeItem(ROSTER_KEY); } catch { /* ignore */ }
   };
 
   const handleFile = async (file: File) => {
@@ -230,6 +264,12 @@ export function QrAddressPrint({ frontOverlay }: { frontOverlay?: React.ReactNod
       <p className="text-[11px] text-muted-foreground text-center max-w-xl mx-auto">
         初回は <span className="font-mono bg-muted px-1 rounded">…\はがき\★DMハガキ校正印刷\校正原稿</span> を開いてください。次回からはそのフォルダが最初に開きます。
       </p>
+      {rows.length > 0 && (
+        <p className="text-[11px] text-center max-w-xl mx-auto text-emerald-700">
+          読み込み済み：<span className="font-medium">{fileName || "名簿"}</span>（{rows.length.toLocaleString()}件）。このブラウザの間は他のページ（文面／はがき）でも使えます。
+          <button type="button" onClick={clearRoster} className="ml-2 text-muted-foreground hover:text-foreground underline">クリア</button>
+        </p>
+      )}
 
       {headers.length > 0 && (
         <Card className="max-w-2xl mx-auto">
