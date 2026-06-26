@@ -471,7 +471,7 @@ export default function PostcardMessagePage() {
 
   const renderPostcard = () => (
     <div className="pc-msg">
-      <div className="pc-anno" style={{ justifyContent: "flex-end" }}>
+      <div className="pc-anno" style={{ justifyContent: "center" }}>
         {blocks.filter((b) => b.text.trim() || b.label.trim()).map((b) => {
           const s = STYLE_MAP[normStyle(b.style)];
           return (
@@ -494,9 +494,9 @@ export default function PostcardMessagePage() {
   return (
     <div className="space-y-4 pb-8">
       <style>{`
-        /* 案内文面ボックス: 横98mm、下から15mm（実刷りに合わせ宛名より10mm下げた）。枠内は下詰め */
+        /* 案内文面ボックス: 横98mm、下から25mm。枠内は上下中央 */
         .pc-msg { box-sizing: border-box; position: absolute; inset: 0; color: #1a1a1a; }
-        .pc-anno { position: absolute; left: 0; right: 0; bottom: 15mm; margin: 0 auto; width: 98mm; height: 34mm; padding: 1.5mm 3mm; box-sizing: border-box; display: flex; flex-direction: column; }
+        .pc-anno { position: absolute; left: 0; right: 0; bottom: 25mm; margin: 0 auto; width: 98mm; height: 34mm; padding: 1.5mm 3mm; box-sizing: border-box; display: flex; flex-direction: column; }
         /* はがき台紙（校正で背景画像を敷く） */
         .hagaki { position: relative; overflow: hidden; background: #fff; }
         .hagaki > img.bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
