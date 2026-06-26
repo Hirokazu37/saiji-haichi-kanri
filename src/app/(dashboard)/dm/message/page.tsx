@@ -83,6 +83,9 @@ function spanStyle(s: StyleDef): React.CSSProperties {
     color: s.color,
     lineHeight: 1.5,
     letterSpacing: s.boxed ? "3px" : undefined,
+    // 字間(letterSpacing)は最後の文字の右にも余白が付くため、囲み内で文字が左に寄って見える。
+    // 同じ幅だけ字下げして左右の余白を均等にし、画面・PDF（html2canvas）で中央に揃える。
+    textIndent: s.boxed ? "3px" : undefined,
     ...(s.boxed ? { display: "inline-block", border: "0.8pt solid #222", padding: "0.8mm 5mm" } : {}),
   };
 }
