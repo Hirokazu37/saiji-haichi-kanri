@@ -247,7 +247,15 @@ export default function PostcardMessagePage() {
       blocks,
       note: storeNote.trim() || null,
     }, { onConflict: "venue_key" });
-    if (!error) { setHasTemplate(true); setTplSaved(true); setTimeout(() => setTplSaved(false), 2000); }
+    if (!error) {
+      setHasTemplate(true); setTplSaved(true); setTimeout(() => setTplSaved(false), 2000);
+    } else {
+      // テーブル未作成（migration 050 未適用）などで失敗したら、無言にせず知らせる
+      const hint = /relation .*dm_templates.* does not exist|could not find the table|schema cache/i.test(error.message || "")
+        ? "「dm_templates」テーブルが見つかりません。Supabaseで migration 050 を適用してください。"
+        : error.message;
+      alert(`店舗テンプレートの保存に失敗しました。\n${hint}`);
+    }
   };
 
   const update = (id: string, patch: Partial<Block>) =>
