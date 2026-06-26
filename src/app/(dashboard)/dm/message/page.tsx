@@ -12,7 +12,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Combobox, type ComboboxItem } from "@/components/ui/combobox";
 import { ArrowLeft, Printer, Info, Save, ArrowUp, ArrowDown, Trash2, Plus, AlignLeft, AlignCenter, AlignRight, Mail, FileText } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
-import { renderRuby } from "@/lib/ruby";
 import { PrintPortal } from "@/components/PrintPortal";
 import { QrAddressPrint } from "@/components/dm/QrAddressPrint";
 import { EventCalendar } from "@/components/customers/EventCalendar";
@@ -443,9 +442,9 @@ export default function PostcardMessagePage() {
           const s = STYLE_MAP[normStyle(b.style)];
           return (
             <div key={b.id} style={{ textAlign: b.align, margin: SPACE_MARGIN[normSpace(b.space)] }}>
-              <span style={spanStyle(s)}>
+              <span style={{ ...spanStyle(s), whiteSpace: "pre-line" }}>
                 {b.label.trim() && <span>{b.label} </span>}
-                {renderRuby(b.text)}
+                {b.text}
               </span>
             </div>
           );
@@ -464,7 +463,6 @@ export default function PostcardMessagePage() {
         /* 案内文面ボックス: 横98mm×縦42mm、下から25mm。縦位置(vpos)は枠内の寄せ */
         .pc-msg { box-sizing: border-box; position: absolute; inset: 0; color: #1a1a1a; }
         .pc-anno { position: absolute; left: 0; right: 0; bottom: 25mm; margin: 0 auto; width: 98mm; height: 34mm; padding: 1.5mm 3mm; box-sizing: border-box; display: flex; flex-direction: column; }
-        .pc-msg ruby rt { font-size: 0.5em; }
         /* はがき台紙（校正で背景画像を敷く） */
         .hagaki { position: relative; overflow: hidden; background: #fff; }
         .hagaki > img.bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
@@ -494,7 +492,7 @@ export default function PostcardMessagePage() {
           <Info className="h-4 w-4 mt-0.5 shrink-0 text-blue-600" />
           <div>
             各行で見た目（サイズ・太さ）と<span className="font-semibold">左/中央/右の揃え</span>を選べます。↑↓で並べ替え、改行も自由です。
-            <span className="block mt-0.5">ルビは <span className="font-mono bg-white px-1 rounded">｜漢字《かんじ》</span> の形で入力。空欄の行は印刷されません。</span>
+            <span className="block mt-0.5">空欄の行は印刷されません。</span>
           </div>
         </div>
 
@@ -603,7 +601,7 @@ export default function PostcardMessagePage() {
                       </div>
                       <Input value={b.label} onChange={(e) => update(b.id, { label: e.target.value })} placeholder="ラベル（任意）" className="h-8 text-sm flex-1 bg-muted/50 border-transparent focus-visible:bg-white" />
                     </div>
-                    <Textarea value={b.text} onChange={(e) => update(b.id, { text: e.target.value })} rows={2} placeholder="本文（改行可・ルビ可）" />
+                    <Textarea value={b.text} onChange={(e) => update(b.id, { text: e.target.value })} rows={2} placeholder="本文（改行可）" />
                   </div>
                 ))}
                 <Button variant="outline" size="sm" onClick={add}><Plus className="h-4 w-4 mr-1" />行を追加</Button>
