@@ -28,6 +28,7 @@ type EventApp = {
 
 const DM_BADGE: Record<string, string> = {
   "印刷済み": "bg-green-50 text-green-700 border-green-200",
+  "校正済み": "bg-blue-50 text-blue-700 border-blue-200",
   "校正中": "bg-amber-50 text-amber-700 border-amber-200",
   "未着手": "bg-red-50 text-red-700 border-red-200",
 };

@@ -1478,7 +1478,7 @@ export default function EventsPage() {
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <span className="text-sm font-bold text-purple-800">DMハガキ</span>
                     <div className="flex gap-1 flex-wrap">
-                      {["なし", "未着手", "校正中", "印刷済み"].map((s) => {
+                      {["なし", "未着手", "校正中", "校正済み", "印刷済み"].map((s) => {
                         const current = dialogEvent.dm_status || "なし";
                         return (
                           <Badge key={s} variant={current === s ? "default" : "outline"} className="cursor-pointer text-xs"

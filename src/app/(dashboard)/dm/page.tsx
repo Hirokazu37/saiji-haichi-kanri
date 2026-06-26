@@ -46,7 +46,7 @@ export default function DMListPage() {
   const [events, setEvents] = useState<EventDM[]>([]);
   const [loading, setLoading] = useState(true);
   // ステータス絞り込み: すべて / 未完了 / ステータス単体
-  const [filter, setFilter] = useState<"all" | "notDone" | "未着手" | "校正中" | "印刷済み">("all");
+  const [filter, setFilter] = useState<"all" | "notDone" | "未着手" | "校正中" | "校正済み" | "印刷済み">("all");
   const [includePast, setIncludePast] = useState(false);
   const [query, setQuery] = useState("");
   // 並び順: 会期が近い順（昇順）/ 新しい順（降順）
@@ -235,6 +235,7 @@ export default function DMListPage() {
             ["notDone", "未完了のみ"],
             ["未着手", "未着手"],
             ["校正中", "校正中"],
+            ["校正済み", "校正済み"],
             ["印刷済み", "印刷済み"],
           ] as const).map(([key, label]) => (
             <Button
@@ -357,7 +358,7 @@ export default function DMListPage() {
                       <div className="flex items-center gap-1.5 flex-wrap">
                         {canEdit ? (
                           <div className="flex gap-1">
-                            {["未着手", "校正中", "印刷済み"].map((s) => (
+                            {["未着手", "校正中", "校正済み", "印刷済み"].map((s) => (
                               <button
                                 key={s}
                                 type="button"

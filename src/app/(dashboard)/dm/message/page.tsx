@@ -45,6 +45,7 @@ const OMOTE_SRC = "/dm/omote.jpg";
 const DM_STATUS_COLOR: Record<string, string> = {
   "未着手": "bg-red-50 text-red-700 border-red-200",
   "校正中": "bg-amber-50 text-amber-700 border-amber-200",
+  "校正済み": "bg-blue-50 text-blue-700 border-blue-200",
   "印刷済み": "bg-green-50 text-green-700 border-green-200",
 };
 
@@ -623,12 +624,12 @@ export default function PostcardMessagePage() {
                   {dmStatus || "未設定"}
                 </span>
                 <div className="inline-flex rounded-md border overflow-hidden ml-auto">
-                  {["未着手", "校正中", "印刷済み"].map((s) => (
+                  {["未着手", "校正中", "校正済み", "印刷済み"].map((s) => (
                     <button key={s} type="button" onClick={() => updateStatus(dmStatus === s ? null : s)}
                       className={cn(
                         "h-8 px-2.5 text-xs font-medium transition-colors",
                         dmStatus === s
-                          ? (s === "印刷済み" ? "bg-green-700 text-white" : s === "校正中" ? "bg-amber-500 text-white" : "bg-gray-600 text-white")
+                          ? (s === "印刷済み" ? "bg-green-700 text-white" : s === "校正済み" ? "bg-blue-600 text-white" : s === "校正中" ? "bg-amber-500 text-white" : "bg-gray-600 text-white")
                           : "bg-white text-gray-500 hover:bg-muted"
                       )}>
                       {s}
