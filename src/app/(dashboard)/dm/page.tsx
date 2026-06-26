@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,8 +8,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import Link from "next/link";
-import { Upload, Search, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Upload, Search, CheckCircle2, AlertTriangle, Plus } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
 import { CustomerImportDialog } from "@/components/customers/CustomerImportDialog";
 import { segKey, type SegmentMaster } from "@/components/customers/types";
@@ -60,6 +61,15 @@ export default function DMListPage() {
   // 名簿CSV取込ダイアログ（対象の催事と、最初から選んでおく区分）
   const [importTarget, setImportTarget] = useState<{ id: string; label: string; segKey?: string } | null>(null);
   const [allSegments, setAllSegments] = useState<SegmentMaster[]>([]);
+  const [venueLabelById, setVenueLabelById] = useState<Map<string, string>>(new Map());
+  // 「他店の区分を追加」ピッカー
+  const [pickerEvent, setPickerEvent] = useState<EventDM | null>(null);
+  const [pickerSearch, setPickerSearch] = useState("");
+  const segByKey = useMemo(() => {
+    const m = new Map<string, SegmentMaster>();
+    for (const s of allSegments) m.set(`${s.kbn_no}-${s.code}`, s);
+    return m;
+  }, [allSegments]);
 
   const fetchData = useCallback(async () => {
     const [evRes, segRes, venRes, linkRes, rosterRes] = await Promise.all([
@@ -89,6 +99,7 @@ export default function DMListPage() {
     setEventSegSel(selMap);
     // 百貨店名+店舗名 → 区分リスト のマップを構築 (events.venue は文字列のため名前で結合)
     const venueById = new Map<string, VenueRow>((venRes.data || []).map((v: VenueRow) => [v.id, v]));
+    setVenueLabelById(new Map((venRes.data || []).map((v: VenueRow) => [v.id, `${v.venue_name}${v.store_name ? ` ${v.store_name}` : ""}`])));
     const map = new Map<string, SegmentRow[]>();
     for (const s of (segRes.data || []) as SegmentRow[]) {
       const v = s.venue_id ? venueById.get(s.venue_id) : null;
@@ -296,30 +307,70 @@ export default function DMListPage() {
                       </Link>
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">
-                      <div className="flex gap-1 flex-wrap">
-                        {(segmentsByVenueKey.get(`${e.venue}|${e.store_name || ""}`) || []).map((s) => {
-                          const key = `${s.kbn_no}-${s.code}`;
-                          const isSel = eventSegSel.get(e.id)?.has(key) ?? false;
-                          const cls = isSel
-                            ? "bg-green-700 border-green-700 text-white font-bold"
-                            : "bg-amber-50 border-amber-200 text-amber-800";
-                          return canEdit ? (
-                            <button
-                              key={key}
-                              type="button"
-                              onClick={() => toggleEventSegment(e.id, s)}
-                              title={`${s.segment_name}${isSel ? "（この催事のDM名簿として選択中）" : "（クリックでこの催事のDM名簿に設定）"}`}
-                              className={`inline-block px-1.5 py-0.5 text-[10px] font-mono rounded border whitespace-nowrap transition-colors hover:opacity-80 ${cls}`}
-                            >
-                              区{s.kbn_no}-{s.code}
-                            </button>
-                          ) : (
-                            <span key={key} title={s.segment_name} className={`inline-block px-1.5 py-0.5 text-[10px] font-mono rounded border whitespace-nowrap ${cls}`}>
-                              区{s.kbn_no}-{s.code}
-                            </span>
-                          );
-                        })}
-                      </div>
+                      {(() => {
+                        const venueSegs = segmentsByVenueKey.get(`${e.venue}|${e.store_name || ""}`) || [];
+                        const venueKeys = new Set(venueSegs.map((s) => `${s.kbn_no}-${s.code}`));
+                        // 会場一致以外で、この催事に追加済みの区分（例：名鉄百貨店）
+                        const extraSegs = Array.from(eventSegSel.get(e.id) || [])
+                          .filter((k) => !venueKeys.has(k))
+                          .map((k) => segByKey.get(k))
+                          .filter((s): s is SegmentMaster => !!s);
+                        return (
+                          <div className="flex gap-1 flex-wrap items-center">
+                            {venueSegs.map((s) => {
+                              const key = `${s.kbn_no}-${s.code}`;
+                              const isSel = eventSegSel.get(e.id)?.has(key) ?? false;
+                              const cls = isSel
+                                ? "bg-green-700 border-green-700 text-white font-bold"
+                                : "bg-amber-50 border-amber-200 text-amber-800";
+                              return canEdit ? (
+                                <button
+                                  key={key}
+                                  type="button"
+                                  onClick={() => toggleEventSegment(e.id, s)}
+                                  title={`${s.segment_name}${isSel ? "（この催事のDM名簿として選択中）" : "（クリックでこの催事のDM名簿に設定）"}`}
+                                  className={`inline-block px-1.5 py-0.5 text-[10px] font-mono rounded border whitespace-nowrap transition-colors hover:opacity-80 ${cls}`}
+                                >
+                                  区{s.kbn_no}-{s.code}
+                                </button>
+                              ) : (
+                                <span key={key} title={s.segment_name} className={`inline-block px-1.5 py-0.5 text-[10px] font-mono rounded border whitespace-nowrap ${cls}`}>
+                                  区{s.kbn_no}-{s.code}
+                                </span>
+                              );
+                            })}
+                            {extraSegs.map((s) => {
+                              const store = s.venue_id ? venueLabelById.get(s.venue_id) || "" : "";
+                              const label = canEdit ? (
+                                <button
+                                  key={`x-${s.kbn_no}-${s.code}`}
+                                  type="button"
+                                  onClick={() => toggleEventSegment(e.id, s)}
+                                  title={`${s.segment_name}${store ? `（${store}）` : ""}（他店の区分・クリックで外す）`}
+                                  className="inline-flex items-center gap-1 max-w-[150px] px-1.5 py-0.5 text-[10px] rounded border whitespace-nowrap bg-blue-600 border-blue-600 text-white font-bold transition-colors hover:opacity-80"
+                                >
+                                  <span className="truncate">＋{store || s.segment_name}</span>
+                                </button>
+                              ) : (
+                                <span key={`x-${s.kbn_no}-${s.code}`} title={`${s.segment_name}${store ? `（${store}）` : ""}`} className="inline-flex items-center gap-1 max-w-[150px] px-1.5 py-0.5 text-[10px] rounded border whitespace-nowrap bg-blue-50 border-blue-200 text-blue-700">
+                                  <span className="truncate">＋{store || s.segment_name}</span>
+                                </span>
+                              );
+                              return label;
+                            })}
+                            {canEdit && (
+                              <button
+                                type="button"
+                                onClick={() => { setPickerEvent(e); setPickerSearch(""); }}
+                                title="他店の区分を追加（例：名鉄百貨店）"
+                                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] rounded border border-dashed border-gray-300 text-gray-500 hover:bg-muted hover:text-foreground transition-colors"
+                              >
+                                <Plus className="h-3 w-3" />区分
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       <div className="max-w-[140px] truncate" title={e.name || undefined}>{e.name || "—"}</div>
@@ -464,6 +515,61 @@ export default function DMListPage() {
         event={importTarget ? { id: importTarget.id, label: importTarget.label } : null}
         defaultSegKey={importTarget?.segKey}
       />
+
+      {/* 他店の区分を追加（例：名古屋タカシマヤに名鉄百貨店の顧客も） */}
+      {pickerEvent && (() => {
+        const evtSel = eventSegSel.get(pickerEvent.id) || new Set<string>();
+        const q = pickerSearch.trim();
+        const list = allSegments.filter((s) => {
+          if (!q) return true;
+          const store = s.venue_id ? venueLabelById.get(s.venue_id) || "" : "";
+          return s.segment_name.includes(q) || `${s.kbn_no}-${s.code}`.includes(q) || `区${s.kbn_no}-${s.code}`.includes(q) || store.includes(q);
+        });
+        return (
+          <Dialog open onOpenChange={(o) => { if (!o) setPickerEvent(null); }}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>区分を追加：{pickerEvent.venue}{pickerEvent.store_name ? ` ${pickerEvent.store_name}` : ""}</DialogTitle>
+              </DialogHeader>
+              <p className="text-xs text-muted-foreground">
+                この催事のDMを、他店のお客様にも出す場合に区分を追加します（例：名古屋タカシマヤに <b>名鉄百貨店</b> の区分）。<br />
+                追加してもこの催事のDM名簿に含めるだけで、百貨店サマリなどの集計には影響しません。
+              </p>
+              <Input value={pickerSearch} onChange={(ev) => setPickerSearch(ev.target.value)} placeholder="名称・コード・百貨店で検索" className="h-9" />
+              <div className="max-h-[50vh] overflow-auto divide-y rounded border">
+                {list.map((s) => {
+                  const key = `${s.kbn_no}-${s.code}`;
+                  const sel = evtSel.has(key);
+                  const store = s.venue_id ? venueLabelById.get(s.venue_id) || "" : "";
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => toggleEventSegment(pickerEvent.id, s)}
+                      className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-left transition-colors ${sel ? "bg-green-50 hover:bg-green-100" : "hover:bg-muted"}`}
+                    >
+                      <span className="min-w-0 flex items-baseline gap-2">
+                        <span className="font-mono text-[11px] text-muted-foreground shrink-0">区{s.kbn_no}-{s.code}</span>
+                        <span className="text-sm truncate">{s.segment_name}</span>
+                        {store && <span className="text-[11px] text-muted-foreground shrink-0">{store}</span>}
+                      </span>
+                      {sel
+                        ? <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+                        : <Plus className="h-4 w-4 text-muted-foreground shrink-0" />}
+                    </button>
+                  );
+                })}
+                {list.length === 0 && (
+                  <p className="text-center text-sm text-muted-foreground py-6">該当する区分がありません</p>
+                )}
+              </div>
+              <DialogFooter>
+                <DialogClose render={<Button variant="outline" />}>閉じる</DialogClose>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
     </div>
   );
 }
