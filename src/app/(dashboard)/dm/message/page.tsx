@@ -506,10 +506,7 @@ export default function PostcardMessagePage() {
           @page { size: A4 portrait; margin: 0; }
           body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           .pc-print { display: none !important; }
-          body.pp-4 .pc-print-4 { display: block !important; }
           body.pp-proof .pc-print-proof { display: block !important; }
-          .pc-sheet { width: 210mm; height: 297mm; display: grid; grid-template-columns: 105mm 105mm; grid-template-rows: 148.5mm 148.5mm; }
-          .pc-sheet > .pc-cell { position: relative; background: #fff; overflow: hidden; box-sizing: border-box; }
           /* 校正: 単票・両面をA4縦に横並び（おもて左／裏面右） */
           .proof-stack { width: 210mm; display: flex; justify-content: center; gap: 5mm; padding-top: 8mm; }
           .proof-card { width: 100mm; height: 148mm; }
@@ -644,7 +641,6 @@ export default function PostcardMessagePage() {
                 <div className="flex items-center gap-2 pt-1 border-t mt-1">
                   <Button onClick={save}><Save className="h-4 w-4 mr-1" />保存</Button>
                   {saved && <span className="text-xs text-green-600 font-medium">✓ 保存しました</span>}
-                  <Button variant="outline" onClick={() => printWith("pp-4")}><Printer className="h-4 w-4 mr-1" />4面印刷（文面）</Button>
                 </div>
               </CardContent>
             </Card>
@@ -783,14 +779,6 @@ export default function PostcardMessagePage() {
       {/* 印刷 — body直下にポータルで出す（印刷時にbodyのクラスでどちらを出すか切替） */}
       {eventId && (
         <PrintPortal>
-          {/* 本番: 文面4面 */}
-          <div className="pc-print pc-print-4">
-            <div className="pc-sheet">
-              {[0, 1, 2, 3].map((i) => (
-                <div key={i} className="pc-cell">{renderPostcard()}</div>
-              ))}
-            </div>
-          </div>
           {/* 校正: 単票・両面（おもて左／裏面右の横並び） */}
           <div className="pc-print pc-print-proof">
             <div className="proof-stack">
