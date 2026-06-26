@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -106,6 +106,34 @@ export function QrAddressPrint({ frontOverlay }: { frontOverlay?: React.ReactNod
     </div>
   );
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // CSVを選ぶ。File System Access API があれば showOpenFilePicker を使い、
+  // id を付けることで「前回開いたフォルダ」をブラウザが記憶する
+  // （= 一度 校正原稿フォルダ を開けば、次回以降はそこから開く）。
+  const pickFile = async () => {
+    const w = window as unknown as {
+      showOpenFilePicker?: (opts: object) => Promise<Array<{ getFile: () => Promise<File> }>>;
+    };
+    if (w.showOpenFilePicker) {
+      try {
+        const [handle] = await w.showOpenFilePicker({
+          id: "dmKouseiRoster", // このIDごとに前回フォルダを記憶する
+          startIn: "documents",
+          types: [{ description: "CSV / テキスト", accept: { "text/csv": [".csv"], "text/plain": [".txt"] } }],
+          excludeAcceptAllOption: false,
+          multiple: false,
+        });
+        if (handle) handleFile(await handle.getFile());
+      } catch {
+        /* ユーザーがキャンセルした場合は何もしない */
+      }
+      return;
+    }
+    // 非対応ブラウザは従来の <input type="file"> にフォールバック
+    fileInputRef.current?.click();
+  };
+
   const handleFile = async (file: File) => {
     setError(""); setCards(null);
     try {
@@ -184,7 +212,11 @@ export function QrAddressPrint({ frontOverlay }: { frontOverlay?: React.ReactNod
         </div>
       </div>
 
-      <label
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={pickFile}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pickFile(); } }}
         onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
         onDragLeave={() => setDragging(false)}
         onDrop={(e) => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files?.[0]; if (f) handleFile(f); }}
@@ -192,9 +224,12 @@ export function QrAddressPrint({ frontOverlay }: { frontOverlay?: React.ReactNod
       >
         <FileSpreadsheet className="h-5 w-5 text-muted-foreground" />
         <span className="text-sm">{fileName || (dragging ? "ここにCSVをドロップ" : "宛名つき名簿CSVを選択／ここにドラッグ＆ドロップ（Shift_JIS / UTF-8）")}</span>
-        <input type="file" accept=".csv,.txt" className="hidden"
+        <input ref={fileInputRef} type="file" accept=".csv,.txt" className="hidden"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }} />
-      </label>
+      </div>
+      <p className="text-[11px] text-muted-foreground text-center max-w-xl mx-auto">
+        初回は <span className="font-mono bg-muted px-1 rounded">…\はがき\★DMハガキ校正印刷\校正原稿</span> を開いてください。次回からはそのフォルダが最初に開きます。
+      </p>
 
       {headers.length > 0 && (
         <Card className="max-w-2xl mx-auto">
