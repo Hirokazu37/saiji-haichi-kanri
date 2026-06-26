@@ -123,6 +123,8 @@ export default function PostcardMessagePage() {
   const [dmStatus, setDmStatus] = useState<string | null>(null);
   const proofRef = useRef<HTMLDivElement>(null);
   const [attachInfo, setAttachInfo] = useState<string | null>(null);
+  const [mailDraft, setMailDraft] = useState<{ subject: string; body: string } | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
   const [proofs, setProofs] = useState<ProofRow[]>([]);
   const [proofRefreshKey, setProofRefreshKey] = useState(0);
 
@@ -327,8 +329,29 @@ export default function PostcardMessagePage() {
 
     // 校正依頼を出したら自動で「校正中」に（印刷済みは降格しない）
     if (dmStatus !== "校正中" && dmStatus !== "印刷済み") updateStatus("校正中");
-    // メールの新規下書きを開くだけ（PDFは「PDFを保存」で別途保存して添付）
-    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+    // メーラーが開かない端末（既定のメールアプリ未設定など）でも詰まないよう、
+    // 件名・本文をいつでもコピーできるフォールバックを表示しておく
+    setMailDraft({ subject, body });
+
+    // 新規下書きを開く（mailto はその端末の既定メールアプリに依存）。
+    // window.location.href だと開けない環境があるため、一時 <a> のクリックで起動する
+    const a = document.createElement("a");
+    a.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
+  const copyToClipboard = async (text: string, which: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(which);
+      setTimeout(() => setCopied((p) => (p === which ? null : p)), 1500);
+    } catch {
+      // クリップボード非対応時はテキストエリア選択で代替できるよう、何もせず通す
+    }
   };
 
   // 通常ダウンロード（保存先はブラウザ設定のフォルダ）
@@ -683,6 +706,29 @@ export default function PostcardMessagePage() {
               <div className="flex items-start gap-2 rounded-md bg-emerald-50 border border-emerald-200 px-3 py-2 text-sm text-emerald-900 max-w-2xl mx-auto">
                 <FileText className="h-4 w-4 mt-0.5 shrink-0 text-emerald-700" />
                 <span>{attachInfo}</span>
+              </div>
+            )}
+
+            {/* メーラーが開かない端末向けフォールバック（件名・本文をコピーしてWebメールに貼る） */}
+            {mailDraft && (
+              <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2.5 space-y-2 max-w-2xl mx-auto text-sm">
+                <div className="flex items-start gap-2 text-amber-900">
+                  <Mail className="h-4 w-4 mt-0.5 shrink-0 text-amber-700" />
+                  <span>
+                    メールソフトが開かない場合（既定のメールアプリ未設定の端末など）は、下の<span className="font-medium">件名・本文をコピー</span>して、GmailやOutlookなどのWebメールに貼り付けてください。
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button size="sm" variant="outline" onClick={() => copyToClipboard(mailDraft.subject, "subject")}>
+                    件名をコピー{copied === "subject" && <span className="ml-1 text-green-600">✓</span>}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => copyToClipboard(mailDraft.body, "body")}>
+                    本文をコピー{copied === "body" && <span className="ml-1 text-green-600">✓</span>}
+                  </Button>
+                  <button type="button" onClick={() => setMailDraft(null)} className="text-xs text-muted-foreground hover:text-foreground underline ml-auto">閉じる</button>
+                </div>
+                <textarea readOnly value={`件名: ${mailDraft.subject}\n\n${mailDraft.body}`} rows={6} className="w-full text-xs font-mono rounded border border-input bg-white p-2" onFocus={(e) => e.currentTarget.select()} />
+                <p className="text-[11px] text-amber-800">PDFは「PDFを保存」で保存したファイルを、Webメールの添付に手で付けてください。</p>
               </div>
             )}
 
