@@ -312,7 +312,7 @@ export default function PostcardMessagePage() {
     }
   };
 
-  const sendMail = async () => {
+  const buildMail = () => {
     const { venue, title, period } = proofInfo();
     const subject = `DMハガキ校正のお願い（${venue}${title ? ` / ${title}` : ""}）`;
     const body =
@@ -326,14 +326,13 @@ export default function PostcardMessagePage() {
       `------------------------------\n` +
       `有限会社 安岡蒲鉾店\n〒798-1133 愛媛県宇和島市三間町中野中293番地\n` +
       `TEL 0895-58-2155 / FAX 0895-58-2706 / フリーダイヤル 0120-58-7771`;
+    return { subject, body };
+  };
 
+  const sendMail = async () => {
+    const { subject, body } = buildMail();
     // 校正依頼を出したら自動で「校正中」に（印刷済みは降格しない）
     if (dmStatus !== "校正中" && dmStatus !== "印刷済み") updateStatus("校正中");
-
-    // メーラーが開かない端末（既定のメールアプリ未設定など）でも詰まないよう、
-    // 件名・本文をいつでもコピーできるフォールバックを表示しておく
-    setMailDraft({ subject, body });
-
     // 新規下書きを開く（mailto はその端末の既定メールアプリに依存）。
     // window.location.href だと開けない環境があるため、一時 <a> のクリックで起動する
     const a = document.createElement("a");
@@ -696,6 +695,12 @@ export default function PostcardMessagePage() {
               <Button variant="ghost" size="sm" onClick={saveToApp}>
                 <Save className="h-4 w-4 mr-1" />アプリに記録（履歴）
               </Button>
+            </div>
+            <div className="text-center">
+              <button type="button" onClick={() => setMailDraft(mailDraft ? null : buildMail())}
+                className="text-[11px] text-muted-foreground hover:text-foreground underline">
+                メールが開かない時は、本文をコピーして使う
+              </button>
             </div>
             <p className="text-xs text-muted-foreground text-center max-w-3xl mx-auto">
               送付用：<span className="font-medium">「PDFを保存」</span>でパソコンに保存 →「メールで校正依頼」で開いた下書きに添付（スマホは共有でそのまま添付）。FAXは「FAX送信状」、紙に刷るなら「印刷」。「アプリに記録」は社内で後から見返す控えです。
