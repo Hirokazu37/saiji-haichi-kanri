@@ -319,8 +319,8 @@ export default function DMListPage() {
                         const renderChip = (s: SegmentMaster, extra: boolean) => {
                           const key = `${s.kbn_no}-${s.code}`;
                           const isSel = eventSegSel.get(e.id)?.has(key) ?? false;
-                          const store = s.venue_id ? venueLabelById.get(s.venue_id) || "" : "";
-                          const caption = store || s.segment_name || "";
+                          // キャプションは産直くんの汎用マスター表記（取り込んだ区分名）をそのまま使う
+                          const caption = s.segment_name || (s.venue_id ? venueLabelById.get(s.venue_id) || "" : "");
                           const cls = extra
                             ? "bg-blue-600 border-blue-600 text-white"
                             : isSel
