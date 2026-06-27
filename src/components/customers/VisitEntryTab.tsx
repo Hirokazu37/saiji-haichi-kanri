@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Combobox, type ComboboxItem } from "@/components/ui/combobox";
 import {
-  CheckCircle2, AlertTriangle, XCircle, Undo2, UserSearch, ArrowLeft, UserCheck, StickyNote,
+  CheckCircle2, AlertTriangle, XCircle, Undo2, UserSearch, ArrowLeft, UserCheck, StickyNote, QrCode,
 } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
 import { EventCalendar } from "./EventCalendar";
@@ -60,6 +60,20 @@ export function VisitEntryTab({ segments }: Props) {
   const [nameQuery, setNameQuery] = useState("");
   const [nameResults, setNameResults] = useState<Customer[]>([]);
   const [busy, setBusy] = useState(false);
+  // QR読み取りモード: USBのQRリーダー（番号+Enterをキー入力）で読んだら、
+  // 確認カードを出さずに即登録する（番号は確実なので連続スキャン向き）。
+  const [qrMode, setQrMode] = useState(false);
+  useEffect(() => {
+    try { setQrMode(localStorage.getItem("visit_qr_mode") === "1"); } catch { /* ignore */ }
+  }, []);
+  const toggleQrMode = () => {
+    setQrMode((v) => {
+      const nv = !v;
+      try { localStorage.setItem("visit_qr_mode", nv ? "1" : "0"); } catch { /* ignore */ }
+      return nv;
+    });
+    setTimeout(() => numberRef.current?.focus(), 0);
+  };
   // 選択中の催事にひも付いたDM区分名（DMハガキ画面で設定したもの）
   const [eventSegNames, setEventSegNames] = useState<string[]>([]);
   // この催事のDM名簿の人数（名簿CSVをDMハガキ画面で取込済みの場合）
@@ -267,6 +281,11 @@ export function VisitEntryTab({ segments }: Props) {
         setNumberInput("");
       } else if (found.length === 1) {
         foundPending = true;
+        // QR読み取りモード: 番号は確実なので確認カードを出さず即登録（連続スキャン向き）
+        if (qrMode) {
+          await register(found[0]);
+          return;
+        }
         // 名簿CSVを取込済みなら「この催事の名簿に載っているか」を照合
         let inRoster: boolean | null = null;
         if (rosterCount > 0) {
@@ -290,7 +309,7 @@ export function VisitEntryTab({ segments }: Props) {
     } finally {
       setBusy(false);
     }
-  }, [numberInput, eventId, busy, supabase, rosterCount]);
+  }, [numberInput, eventId, busy, supabase, rosterCount, qrMode, register]);
 
   // 確認カード表示中は、フォーカスがどこにあっても Enter=登録 / Esc=やめる を効かせる
   // （入力欄のフォーカス頼みだと環境によって2回目のEnterが落ちるため、画面全体で受ける）
@@ -457,7 +476,31 @@ export function VisitEntryTab({ segments }: Props) {
       {canRegister ? (
         <Card>
           <CardContent className="pt-4 space-y-3">
-            <Label className="text-base font-semibold">お客様番号を入力して Enter</Label>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <Label className="text-base font-semibold">
+                お客様番号を入力／QRリーダーで読み取り（Enter）
+              </Label>
+              <button
+                type="button"
+                onClick={toggleQrMode}
+                title="USBのQRリーダーで読み取ったら、確認カードを出さずにそのまま登録します"
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium transition-colors ${
+                  qrMode ? "bg-green-700 text-white border-green-700" : "bg-white text-gray-600 border-gray-300 hover:bg-muted"
+                }`}
+              >
+                <QrCode className="h-4 w-4" />
+                QR即登録 {qrMode ? "ON" : "OFF"}
+              </button>
+            </div>
+            {qrMode && (
+              <div className="flex items-start gap-2 rounded-md bg-green-50 border border-green-200 px-3 py-2 text-xs text-green-800 max-w-xl">
+                <QrCode className="h-4 w-4 mt-0.5 shrink-0" />
+                <span>
+                  QR即登録モード：下の欄にカーソルを置いたまま、ハガキのQRをリーダーで読み取ると<span className="font-semibold">確認なしでそのまま来場登録</span>します。連続でスキャンできます。
+                  手入力で確認したい時は OFF にしてください。
+                </span>
+              </div>
+            )}
             <Input
               ref={numberRef}
               value={numberInput}
