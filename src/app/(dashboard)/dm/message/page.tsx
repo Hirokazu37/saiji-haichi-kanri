@@ -333,14 +333,10 @@ export default function PostcardMessagePage() {
     const { subject, body } = buildMail();
     // 校正依頼を出したら自動で「校正中」に（印刷済みは降格しない）
     if (dmStatus !== "校正中" && dmStatus !== "印刷済み") updateStatus("校正中");
-    // 新規下書きを開く（mailto はその端末の既定メールアプリに依存）。
-    // window.location.href だと開けない環境があるため、一時 <a> のクリックで起動する
-    const a = document.createElement("a");
-    a.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    a.rel = "noopener";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    // 既定のメールソフト（Outlook等）で新規メールを開く。
+    // mailto の起動は location.href が最も確実（OSの規定メールアプリに渡す）。
+    // ※開かない端末は Windows の「既定のアプリ → メール」が未設定。下のリンクでコピーも可。
+    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
   const copyToClipboard = async (text: string, which: string) => {
