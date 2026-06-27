@@ -330,7 +330,7 @@ export default function DMListPage() {
                             (extra ? "（他店の区分・クリックで外す）" : isSel ? "（この催事のDM名簿として選択中）" : "（クリックでこの催事のDM名簿に設定）");
                           const inner = (
                             <span className="flex flex-col items-center leading-tight">
-                              <span className="font-mono text-sm font-bold">{extra ? "＋" : ""}区{s.kbn_no}-{s.code}</span>
+                              <span className="font-mono text-base font-bold">{extra ? "＋" : ""}区{s.kbn_no}-{s.code}</span>
                               {caption && <span className="text-[9px] max-w-[110px] truncate opacity-90">{caption}</span>}
                             </span>
                           );
