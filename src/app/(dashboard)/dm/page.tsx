@@ -315,49 +315,41 @@ export default function DMListPage() {
                           .filter((k) => !venueKeys.has(k))
                           .map((k) => segByKey.get(k))
                           .filter((s): s is SegmentMaster => !!s);
+                        // コード（区10-50）を主に、その下へデパート名を小さく添えた統一チップ
+                        const renderChip = (s: SegmentMaster, extra: boolean) => {
+                          const key = `${s.kbn_no}-${s.code}`;
+                          const isSel = eventSegSel.get(e.id)?.has(key) ?? false;
+                          const store = s.venue_id ? venueLabelById.get(s.venue_id) || "" : "";
+                          const caption = store || s.segment_name || "";
+                          const cls = extra
+                            ? "bg-blue-600 border-blue-600 text-white"
+                            : isSel
+                              ? "bg-green-700 border-green-700 text-white"
+                              : "bg-amber-50 border-amber-200 text-amber-800";
+                          const title = `区${s.kbn_no}-${s.code}${caption ? ` ／ ${caption}` : ""}` +
+                            (extra ? "（他店の区分・クリックで外す）" : isSel ? "（この催事のDM名簿として選択中）" : "（クリックでこの催事のDM名簿に設定）");
+                          const inner = (
+                            <span className="flex flex-col items-center leading-tight">
+                              <span className="font-mono text-[10px] font-bold">{extra ? "＋" : ""}区{s.kbn_no}-{s.code}</span>
+                              {caption && <span className="text-[8px] max-w-[90px] truncate opacity-90">{caption}</span>}
+                            </span>
+                          );
+                          return canEdit ? (
+                            <button key={(extra ? "x-" : "") + key} type="button" onClick={() => toggleEventSegment(e.id, s)} title={title}
+                              className={`inline-flex px-1.5 py-0.5 rounded border transition-colors hover:opacity-80 ${cls}`}>
+                              {inner}
+                            </button>
+                          ) : (
+                            <span key={(extra ? "x-" : "") + key} title={title}
+                              className={`inline-flex px-1.5 py-0.5 rounded border ${cls}`}>
+                              {inner}
+                            </span>
+                          );
+                        };
                         return (
                           <div className="flex gap-1 flex-wrap items-center">
-                            {venueSegs.map((s) => {
-                              const key = `${s.kbn_no}-${s.code}`;
-                              const isSel = eventSegSel.get(e.id)?.has(key) ?? false;
-                              const cls = isSel
-                                ? "bg-green-700 border-green-700 text-white font-bold"
-                                : "bg-amber-50 border-amber-200 text-amber-800";
-                              return canEdit ? (
-                                <button
-                                  key={key}
-                                  type="button"
-                                  onClick={() => toggleEventSegment(e.id, s)}
-                                  title={`${s.segment_name}${isSel ? "（この催事のDM名簿として選択中）" : "（クリックでこの催事のDM名簿に設定）"}`}
-                                  className={`inline-block px-1.5 py-0.5 text-[10px] font-mono rounded border whitespace-nowrap transition-colors hover:opacity-80 ${cls}`}
-                                >
-                                  区{s.kbn_no}-{s.code}
-                                </button>
-                              ) : (
-                                <span key={key} title={s.segment_name} className={`inline-block px-1.5 py-0.5 text-[10px] font-mono rounded border whitespace-nowrap ${cls}`}>
-                                  区{s.kbn_no}-{s.code}
-                                </span>
-                              );
-                            })}
-                            {extraSegs.map((s) => {
-                              const store = s.venue_id ? venueLabelById.get(s.venue_id) || "" : "";
-                              const label = canEdit ? (
-                                <button
-                                  key={`x-${s.kbn_no}-${s.code}`}
-                                  type="button"
-                                  onClick={() => toggleEventSegment(e.id, s)}
-                                  title={`${s.segment_name}${store ? `（${store}）` : ""}（他店の区分・クリックで外す）`}
-                                  className="inline-flex items-center gap-1 max-w-[150px] px-1.5 py-0.5 text-[10px] rounded border whitespace-nowrap bg-blue-600 border-blue-600 text-white font-bold transition-colors hover:opacity-80"
-                                >
-                                  <span className="truncate">＋{store || s.segment_name}</span>
-                                </button>
-                              ) : (
-                                <span key={`x-${s.kbn_no}-${s.code}`} title={`${s.segment_name}${store ? `（${store}）` : ""}`} className="inline-flex items-center gap-1 max-w-[150px] px-1.5 py-0.5 text-[10px] rounded border whitespace-nowrap bg-blue-50 border-blue-200 text-blue-700">
-                                  <span className="truncate">＋{store || s.segment_name}</span>
-                                </span>
-                              );
-                              return label;
-                            })}
+                            {venueSegs.map((s) => renderChip(s, false))}
+                            {extraSegs.map((s) => renderChip(s, true))}
                             {canEdit && (
                               <button
                                 type="button"
