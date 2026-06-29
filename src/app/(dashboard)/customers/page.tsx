@@ -3,11 +3,12 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Users, ClipboardCheck, Filter, Store } from "lucide-react";
+import { Users, ClipboardCheck, Filter, Store, Sparkles } from "lucide-react";
 import { CustomerListTab } from "@/components/customers/CustomerListTab";
 import { VisitEntryTab } from "@/components/customers/VisitEntryTab";
 import { ExtractTab } from "@/components/customers/ExtractTab";
 import { SegmentSummaryTab } from "@/components/customers/SegmentSummaryTab";
+import { VisitReportTab } from "@/components/customers/VisitReportTab";
 import { segKey, type SegmentMaster } from "@/components/customers/types";
 
 export default function CustomersPage() {
@@ -54,6 +55,10 @@ export default function CustomersPage() {
             <Store className="h-3.5 w-3.5" />
             百貨店サマリ
           </TabsTrigger>
+          <TabsTrigger value="report">
+            <Sparkles className="h-3.5 w-3.5" />
+            月次レポート
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="visits">
@@ -70,6 +75,9 @@ export default function CustomersPage() {
             segments={segments}
             onOpenStore={(kbn, code) => { setListSegFilter(segKey(kbn, code)); setTab("list"); }}
           />
+        </TabsContent>
+        <TabsContent value="report">
+          <VisitReportTab />
         </TabsContent>
       </Tabs>
     </div>
