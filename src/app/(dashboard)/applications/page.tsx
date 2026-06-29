@@ -159,9 +159,15 @@ export default function ApplicationsListPage() {
                 const isPast = e.end_date < todayStr;
                 const ds = daysToStart(e.start_date);
                 const urgent = !isSubmitted && !isPast && e.status !== "終了" && ds >= 0 && ds <= 14;
+                // 売上分析のように状態で色分け: 提出済=緑 / 未提出=赤（会期が迫るほど濃い）
+                const rowCls = isSubmitted
+                  ? "bg-emerald-50 hover:bg-emerald-100/70"
+                  : urgent
+                    ? (ds <= 7 ? "bg-red-100 hover:bg-red-200" : "bg-amber-50 hover:bg-amber-100")
+                    : "bg-red-50/60 hover:bg-red-100/60";
                 return (
-                  <TableRow key={e.id} className={urgent ? (ds <= 7 ? "bg-red-50 hover:bg-red-100" : "bg-amber-50 hover:bg-amber-100") : ""}>
-                    <TableCell>
+                  <TableRow key={e.id} className={rowCls}>
+                    <TableCell className={isSubmitted ? "border-l-4 border-l-emerald-500" : "border-l-4 border-l-red-400"}>
                       <Link href={`/events/${e.id}`} className="text-primary hover:underline text-sm font-medium">
                         {e.venue}{e.store_name ? ` ${e.store_name}` : ""}
                       </Link>
