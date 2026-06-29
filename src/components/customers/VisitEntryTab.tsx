@@ -188,7 +188,9 @@ export function VisitEntryTab({ segments }: Props) {
       .then(({ data }) => {
         const names = ((data as { kbn_no: number; code: number }[]) || []).map((l) => {
           const seg = segments.find((s) => s.kbn_no === l.kbn_no && s.code === l.code);
-          return seg ? seg.segment_name : `区分${l.kbn_no}-${l.code}`;
+          // 区分コード（区5-114 など）と区分名の両方を表示する
+          const code = `区${l.kbn_no}-${l.code}`;
+          return seg ? `${code} ${seg.segment_name}` : code;
         });
         setEventSegNames(names);
       });
