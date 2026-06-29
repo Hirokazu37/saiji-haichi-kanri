@@ -96,7 +96,13 @@ export default function ApplicationsListPage() {
     : filter === "submitted" ? e.application_status === "提出済"
     : e.application_status !== "提出済"; // unsubmitted
 
-  const filtered = baseEvents.filter(matchesFilter).filter(matchesQuery);
+  const filtered = baseEvents.filter(matchesFilter).filter(matchesQuery).sort((a, b) => {
+    const ap = isPast(a), bp = isPast(b);
+    // 未来の催事を上に、過去の催事を下に
+    if (ap !== bp) return ap ? 1 : -1;
+    // 未来: 開催が近い順（昇順）。過去: 終わったばかりが先（会期末の降順）
+    return ap ? b.end_date.localeCompare(a.end_date) : a.start_date.localeCompare(b.start_date);
+  });
 
   if (loading) return <p className="text-muted-foreground">読み込み中...</p>;
 
