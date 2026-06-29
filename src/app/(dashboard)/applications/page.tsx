@@ -38,7 +38,7 @@ export default function ApplicationsListPage() {
   const supabase = createClient();
   const [events, setEvents] = useState<EventApp[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<"all" | "unsubmitted" | "submitted">("unsubmitted");
+  const [filter, setFilter] = useState<"all" | "unsubmitted" | "submitted">("all");
   // 会期が終了した催事は通常は隠す（履歴ページに残す）。必要なときだけ過去ログとして表示。
   const [includePast, setIncludePast] = useState(false);
   const [query, setQuery] = useState("");
