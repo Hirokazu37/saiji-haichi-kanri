@@ -38,7 +38,10 @@ export default function ApplicationsListPage() {
   const supabase = createClient();
   const [events, setEvents] = useState<EventApp[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<"all" | "unsubmitted">("all");
+  const [filter, setFilter] = useState<"all" | "unsubmitted">("unsubmitted");
+  // 会期が終了した催事は通常は隠す（履歴ページに残す）。必要なときだけ過去ログとして表示。
+  const [includePast, setIncludePast] = useState(false);
+  const [query, setQuery] = useState("");
   const [savedId, setSavedId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -78,22 +81,47 @@ export default function ApplicationsListPage() {
   const todayStr = new Date().toISOString().slice(0, 10);
   const daysToStart = (s: string) => Math.ceil((new Date(s + "T00:00:00").getTime() - new Date(todayStr + "T00:00:00").getTime()) / 86400000);
 
-  const filtered = filter === "unsubmitted"
-    ? events.filter((e) => e.application_status !== "提出済" && e.status !== "終了")
-    : events;
+  // 会期終了（終了済 or 会期末が過ぎた）＝履歴側。通常は非表示。
+  const isPast = (e: EventApp) => e.status === "終了" || e.end_date < todayStr;
+
+  // 母集団: 過去（終了）は includePast のときだけ含める
+  const baseEvents = events.filter((e) => includePast || !isPast(e));
+
+  const q = query.trim().toLowerCase();
+  const matchesQuery = (e: EventApp) =>
+    q === "" || `${e.venue} ${e.store_name || ""} ${e.name || ""}`.toLowerCase().includes(q);
+
+  const filtered = baseEvents
+    .filter((e) => (filter === "unsubmitted" ? e.application_status !== "提出済" : true))
+    .filter(matchesQuery);
 
   if (loading) return <p className="text-muted-foreground">読み込み中...</p>;
 
-  const unsubmittedCount = events.filter((e) => e.application_status !== "提出済" && e.status !== "終了").length;
+  const allCount = baseEvents.length;
+  const unsubmittedCount = baseEvents.filter((e) => e.application_status !== "提出済").length;
 
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">出店申込書一覧</h1>
 
-      <div className="flex gap-2 print:hidden">
-        <Button variant={filter === "all" ? "default" : "outline"} size="sm" onClick={() => setFilter("all")}>すべて ({events.length})</Button>
+      <div className="flex gap-2 flex-wrap items-center print:hidden">
         <Button variant={filter === "unsubmitted" ? "default" : "outline"} size="sm" onClick={() => setFilter("unsubmitted")}>未提出のみ ({unsubmittedCount})</Button>
+        <Button variant={filter === "all" ? "default" : "outline"} size="sm" onClick={() => setFilter("all")}>すべて ({allCount})</Button>
+        <Button variant={includePast ? "secondary" : "outline"} size="sm" onClick={() => setIncludePast((v) => !v)} title="会期が終了した催事（去年の申込書など）も表示します">
+          {includePast ? "過去も表示中" : "過去ログも見る"}
+        </Button>
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="百貨店名・催事名で検索"
+          className="h-9 w-56 ml-auto bg-white"
+        />
       </div>
+      {includePast && (
+        <p className="text-xs text-muted-foreground print:hidden">
+          会期が終了した催事も表示しています（去年はどう出したかの確認用）。通常はオフにしておくと、今後の申込みだけに集中できます。
+        </p>
+      )}
 
       <Card>
         <CardContent className="p-0 overflow-auto max-h-[75vh]">
