@@ -177,8 +177,9 @@ export default function DMListPage() {
     return Math.round((start.getTime() - now.getTime()) / 86400000);
   };
 
-  // DM対象（dm_status が設定されている）かつ過去フィルタを満たす催事が母集団
-  const baseEvents = events.filter((e) => e.dm_status !== null && (includePast || isUpcoming(e)));
+  // 催事はすべてDM対象。DMステータス未設定（null＝未着手）でも表示する。
+  // 過去（会期終了済）はデフォルト除外し、「過去も見る」で含める。
+  const baseEvents = events.filter((e) => includePast || isUpcoming(e));
 
   const q = query.trim().toLowerCase();
   const matchesQuery = (e: EventDM) =>
@@ -488,7 +489,7 @@ export default function DMListPage() {
                 <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                   {filter === "all"
                     ? includePast
-                      ? "DMハガキが登録された催事がありません"
+                      ? "催事がありません"
                       : "今日以降に会期が残っている催事がありません。過去も含めて見たい場合は「過去も見る」を ON にしてください。"
                     : "該当する催事がありません"}
                 </TableCell></TableRow>
