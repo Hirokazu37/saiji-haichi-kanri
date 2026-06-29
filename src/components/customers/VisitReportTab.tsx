@@ -41,7 +41,9 @@ export function VisitReportTab() {
 
   const now = new Date();
   const [mode, setMode] = useState<"month" | "year">("month");
-  const [denom, setDenom] = useState<Denom>("dm");
+  // DM枚数は events.dm_count（＝カレンダー等と同じ「発送したハガキ枚数」）で固定。
+  // 名簿の実人数（event_dm_recipients）は来場照合用の全リストで発送枚数とは別物のため分母には使わない。
+  const denom: Denom = "dm";
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1); // 1-12
 
@@ -252,17 +254,6 @@ export function VisitReportTab() {
                 </button>
               ))}
             </div>
-            <div className="inline-flex items-center gap-1.5">
-              <span className="text-xs text-muted-foreground">ヒット率の分母:</span>
-              <div className="inline-flex rounded-md border overflow-hidden">
-                {(["dm", "roster"] as const).map((d) => (
-                  <button key={d} type="button" onClick={() => setDenom(d)}
-                    className={`h-8 px-3 text-xs font-bold transition-colors ${denom === d ? "bg-blue-600 text-white" : "bg-white text-muted-foreground hover:bg-muted"}`}>
-                    {DENOM_LABEL[d]}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-bold text-muted-foreground inline-flex items-center gap-1">
@@ -288,8 +279,9 @@ export function VisitReportTab() {
             </div>
           )}
           <p className="text-[11px] text-muted-foreground border-t pt-2">
-            「DM枚数」＝その催事で<span className="font-medium">発送した対象数（取り込んだ名簿の人数）</span>です。
-            来場者数（DM持参）÷ DM枚数 が「ヒット率」になります。
+            「DM枚数」＝その催事で<span className="font-medium">発送したハガキの枚数</span>（カレンダーや催事編集と同じ値）。
+            来場者数（DM持参）÷ DM枚数 が「ヒット率」です。
+            ※来場照合用に取り込んだ名簿の実人数（顧客リスト全体）とは別の数字です。
           </p>
         </CardContent>
       </Card>
