@@ -287,6 +287,10 @@ export function VisitReportTab() {
               ))}
             </div>
           )}
+          <p className="text-[11px] text-muted-foreground border-t pt-2">
+            「DM枚数」＝その催事で<span className="font-medium">発送した対象数（取り込んだ名簿の人数）</span>です。
+            来場者数（DM持参）÷ DM枚数 が「ヒット率」になります。
+          </p>
         </CardContent>
       </Card>
 
