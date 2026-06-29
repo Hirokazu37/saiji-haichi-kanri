@@ -49,6 +49,8 @@ export default function DMListPage() {
   // ステータス絞り込み: すべて / 未完了 / ステータス単体
   const [filter, setFilter] = useState<"all" | "notDone" | "未着手" | "校正中" | "校正済み" | "印刷済み">("all");
   const [includePast, setIncludePast] = useState(false);
+  // 過去表示時に年で絞り込む（"all" or "2025" など）
+  const [yearFilter, setYearFilter] = useState<string>("all");
   const [query, setQuery] = useState("");
   // 並び順: 会期が近い順（昇順）/ 新しい順（降順）
   const [sortDesc, setSortDesc] = useState(false);
@@ -192,8 +194,12 @@ export default function DMListPage() {
     return e.dm_status === filter;
   };
 
+  const matchesYear = (e: EventDM) => yearFilter === "all" || e.start_date.slice(0, 4) === yearFilter;
+  // データに存在する年（新しい順）
+  const years = Array.from(new Set(events.map((e) => e.start_date.slice(0, 4)))).sort((a, b) => b.localeCompare(a));
+
   const filtered = baseEvents
-    .filter((e) => matchesStatus(e) && matchesQuery(e))
+    .filter((e) => matchesStatus(e) && matchesQuery(e) && matchesYear(e))
     .sort((a, b) =>
       sortDesc ? b.start_date.localeCompare(a.start_date) : a.start_date.localeCompare(b.start_date)
     );
@@ -266,12 +272,28 @@ export default function DMListPage() {
             <input
               type="checkbox"
               checked={includePast}
-              onChange={(e) => setIncludePast(e.target.checked)}
+              onChange={(e) => { setIncludePast(e.target.checked); setYearFilter("all"); }}
               className="h-3.5 w-3.5"
             />
             過去も見る（会期終了済）
           </label>
         </div>
+        {/* 過去表示時の年フィルター（データが増えても目的の年へすぐ切替） */}
+        {includePast && years.length > 1 && (
+          <div className="flex gap-1.5 flex-wrap items-center">
+            <span className="text-xs font-bold text-muted-foreground">年で絞り込み:</span>
+            <button type="button" onClick={() => setYearFilter("all")}
+              className={`h-7 px-3 rounded-full border text-xs font-bold transition-colors ${yearFilter === "all" ? "bg-foreground text-background border-foreground" : "bg-white text-foreground border-input hover:bg-muted"}`}>
+              すべて
+            </button>
+            {years.map((y) => (
+              <button key={y} type="button" onClick={() => setYearFilter(y)}
+                className={`h-7 px-3 rounded-full border text-xs font-bold transition-colors ${yearFilter === y ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-foreground border-input hover:bg-emerald-50"}`}>
+                {y}年
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <Card>

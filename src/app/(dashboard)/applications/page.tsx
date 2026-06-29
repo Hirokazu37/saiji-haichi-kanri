@@ -41,6 +41,8 @@ export default function ApplicationsListPage() {
   const [filter, setFilter] = useState<"all" | "unsubmitted" | "submitted">("all");
   // 会期が終了した催事は通常は隠す（履歴ページに残す）。必要なときだけ過去ログとして表示。
   const [includePast, setIncludePast] = useState(false);
+  // 過去ログ表示時に、年で素早く絞り込む（"all" or "2025" など）
+  const [yearFilter, setYearFilter] = useState<string>("all");
   const [query, setQuery] = useState("");
   const [savedId, setSavedId] = useState<string | null>(null);
 
@@ -96,13 +98,18 @@ export default function ApplicationsListPage() {
     : filter === "submitted" ? e.application_status === "提出済"
     : e.application_status !== "提出済"; // unsubmitted
 
+  const matchesYear = (e: EventApp) => yearFilter === "all" || e.start_date.slice(0, 4) === yearFilter;
+
+  // データに存在する年（新しい順）— 年フィルターの選択肢
+  const years = Array.from(new Set(events.map((e) => e.start_date.slice(0, 4)))).sort((a, b) => b.localeCompare(a));
+
   // 「今日」起点のグループ: 0=開催中 / 1=終了したばかり / 2=これからの予定
   const sortGroup = (e: EventApp) => {
     if (isPast(e)) return 1;                 // 終了（status 終了 or 会期末が過去）
     if (e.start_date <= todayStr) return 0;  // 開催中（始まっていて、まだ終わっていない）
     return 2;                                 // これから
   };
-  const filtered = baseEvents.filter(matchesFilter).filter(matchesQuery).sort((a, b) => {
+  const filtered = baseEvents.filter(matchesFilter).filter(matchesQuery).filter(matchesYear).sort((a, b) => {
     const ga = sortGroup(a), gb = sortGroup(b);
     if (ga !== gb) return ga - gb;            // 開催中 → 終了したばかり → これから
     if (ga === 1) return b.end_date.localeCompare(a.end_date); // 終了: 終わったばかりが先（降順）
@@ -123,7 +130,7 @@ export default function ApplicationsListPage() {
         <Button variant={filter === "unsubmitted" ? "default" : "outline"} size="sm" onClick={() => setFilter("unsubmitted")}>未提出 ({unsubmittedCount})</Button>
         <Button variant={filter === "submitted" ? "default" : "outline"} size="sm" onClick={() => setFilter("submitted")}>提出済み ({submittedCount})</Button>
         <Button variant={filter === "all" ? "default" : "outline"} size="sm" onClick={() => setFilter("all")}>すべて ({allCount})</Button>
-        <Button variant={includePast ? "secondary" : "outline"} size="sm" onClick={() => setIncludePast((v) => !v)} title="会期が終了した催事（去年の申込書など）も表示します">
+        <Button variant={includePast ? "secondary" : "outline"} size="sm" onClick={() => { setIncludePast((v) => !v); setYearFilter("all"); }} title="会期が終了した催事（去年の申込書など）も表示します">
           {includePast ? "過去も表示中" : "過去ログも見る"}
         </Button>
         <Input
@@ -133,6 +140,23 @@ export default function ApplicationsListPage() {
           className="h-9 w-56 ml-auto bg-white"
         />
       </div>
+
+      {/* 過去ログ表示時の年フィルター（データが増えても目的の年へすぐ切替） */}
+      {includePast && years.length > 1 && (
+        <div className="flex gap-1.5 flex-wrap items-center print:hidden">
+          <span className="text-xs font-bold text-muted-foreground">年で絞り込み:</span>
+          <button type="button" onClick={() => setYearFilter("all")}
+            className={`h-7 px-3 rounded-full border text-xs font-bold transition-colors ${yearFilter === "all" ? "bg-foreground text-background border-foreground" : "bg-white text-foreground border-input hover:bg-muted"}`}>
+            すべて
+          </button>
+          {years.map((y) => (
+            <button key={y} type="button" onClick={() => setYearFilter(y)}
+              className={`h-7 px-3 rounded-full border text-xs font-bold transition-colors ${yearFilter === y ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-foreground border-input hover:bg-emerald-50"}`}>
+              {y}年
+            </button>
+          ))}
+        </div>
+      )}
       {includePast && (
         <p className="text-xs text-muted-foreground print:hidden">
           会期が終了した催事も表示しています（去年はどう出したかの確認用）。通常はオフにしておくと、今後の申込みだけに集中できます。
