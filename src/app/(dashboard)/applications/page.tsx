@@ -38,7 +38,7 @@ export default function ApplicationsListPage() {
   const supabase = createClient();
   const [events, setEvents] = useState<EventApp[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<"all" | "unsubmitted">("unsubmitted");
+  const [filter, setFilter] = useState<"all" | "unsubmitted" | "submitted">("unsubmitted");
   // 会期が終了した催事は通常は隠す（履歴ページに残す）。必要なときだけ過去ログとして表示。
   const [includePast, setIncludePast] = useState(false);
   const [query, setQuery] = useState("");
@@ -91,21 +91,26 @@ export default function ApplicationsListPage() {
   const matchesQuery = (e: EventApp) =>
     q === "" || `${e.venue} ${e.store_name || ""} ${e.name || ""}`.toLowerCase().includes(q);
 
-  const filtered = baseEvents
-    .filter((e) => (filter === "unsubmitted" ? e.application_status !== "提出済" : true))
-    .filter(matchesQuery);
+  const matchesFilter = (e: EventApp) =>
+    filter === "all" ? true
+    : filter === "submitted" ? e.application_status === "提出済"
+    : e.application_status !== "提出済"; // unsubmitted
+
+  const filtered = baseEvents.filter(matchesFilter).filter(matchesQuery);
 
   if (loading) return <p className="text-muted-foreground">読み込み中...</p>;
 
   const allCount = baseEvents.length;
   const unsubmittedCount = baseEvents.filter((e) => e.application_status !== "提出済").length;
+  const submittedCount = baseEvents.filter((e) => e.application_status === "提出済").length;
 
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">出店申込書一覧</h1>
 
       <div className="flex gap-2 flex-wrap items-center print:hidden">
-        <Button variant={filter === "unsubmitted" ? "default" : "outline"} size="sm" onClick={() => setFilter("unsubmitted")}>未提出のみ ({unsubmittedCount})</Button>
+        <Button variant={filter === "unsubmitted" ? "default" : "outline"} size="sm" onClick={() => setFilter("unsubmitted")}>未提出 ({unsubmittedCount})</Button>
+        <Button variant={filter === "submitted" ? "default" : "outline"} size="sm" onClick={() => setFilter("submitted")}>提出済み ({submittedCount})</Button>
         <Button variant={filter === "all" ? "default" : "outline"} size="sm" onClick={() => setFilter("all")}>すべて ({allCount})</Button>
         <Button variant={includePast ? "secondary" : "outline"} size="sm" onClick={() => setIncludePast((v) => !v)} title="会期が終了した催事（去年の申込書など）も表示します">
           {includePast ? "過去も表示中" : "過去ログも見る"}
