@@ -96,12 +96,17 @@ export default function ApplicationsListPage() {
     : filter === "submitted" ? e.application_status === "提出済"
     : e.application_status !== "提出済"; // unsubmitted
 
+  // 「今日」起点のグループ: 0=開催中 / 1=終了したばかり / 2=これからの予定
+  const sortGroup = (e: EventApp) => {
+    if (isPast(e)) return 1;                 // 終了（status 終了 or 会期末が過去）
+    if (e.start_date <= todayStr) return 0;  // 開催中（始まっていて、まだ終わっていない）
+    return 2;                                 // これから
+  };
   const filtered = baseEvents.filter(matchesFilter).filter(matchesQuery).sort((a, b) => {
-    const ap = isPast(a), bp = isPast(b);
-    // 未来の催事を上に、過去の催事を下に
-    if (ap !== bp) return ap ? 1 : -1;
-    // 未来: 開催が近い順（昇順）。過去: 終わったばかりが先（会期末の降順）
-    return ap ? b.end_date.localeCompare(a.end_date) : a.start_date.localeCompare(b.start_date);
+    const ga = sortGroup(a), gb = sortGroup(b);
+    if (ga !== gb) return ga - gb;            // 開催中 → 終了したばかり → これから
+    if (ga === 1) return b.end_date.localeCompare(a.end_date); // 終了: 終わったばかりが先（降順）
+    return a.start_date.localeCompare(b.start_date);           // 開催中・これから: 近い順（昇順）
   });
 
   if (loading) return <p className="text-muted-foreground">読み込み中...</p>;
