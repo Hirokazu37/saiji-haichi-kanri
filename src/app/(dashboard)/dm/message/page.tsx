@@ -122,11 +122,30 @@ export default function PostcardMessagePage() {
   const [tplSaved, setTplSaved] = useState(false);
   const [dmStatus, setDmStatus] = useState<string | null>(null);
   const proofRef = useRef<HTMLDivElement>(null);
+  // 案内文面ボックス内の上下中央寄せ用「詰め物」の高さ(px)。内容の高さから算出する。
+  const [annoPad, setAnnoPad] = useState(0);
   const [attachInfo, setAttachInfo] = useState<string | null>(null);
   const [mailDraft, setMailDraft] = useState<{ subject: string; body: string } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [proofs, setProofs] = useState<ProofRow[]>([]);
   const [proofRefreshKey, setProofRefreshKey] = useState(0);
+
+  // 案内文面の内容の高さを測り、枠(53mm)の中で上下中央になる詰め物の高さを算出する。
+  // flex/table/transform は html2canvas(PDF) が再現しないため、明示的な高さで中央化する。
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const measure = () => {
+      const frame = document.querySelector(".pc-anno") as HTMLElement | null;
+      const content = document.querySelector(".pc-anno-content") as HTMLElement | null;
+      if (!frame || !content) return;
+      const pad = Math.max(0, Math.round((frame.clientHeight - content.offsetHeight) / 2));
+      setAnnoPad((prev) => (Math.abs(prev - pad) > 1 ? pad : prev));
+    };
+    measure();
+    // フォント読み込み完了後にも測り直す（初回のズレ防止）
+    const t = setTimeout(measure, 300);
+    return () => clearTimeout(t);
+  }, [blocks, eventId]);
 
   const printWith = (cls: string) => {
     document.body.classList.add(cls);
@@ -467,7 +486,9 @@ export default function PostcardMessagePage() {
   const renderPostcard = () => (
     <div className="pc-msg">
       <div className="pc-anno">
-        <div className="pc-anno-cell">
+        {/* 上下中央寄せ用の詰め物（高さはJSで算出。flex/table/transformは html2canvas が再現しないため） */}
+        <div aria-hidden style={{ height: `${annoPad}px` }} />
+        <div className="pc-anno-content">
           {blocks.filter((b) => b.text.trim() || b.label.trim()).map((b) => {
             const s = STYLE_MAP[normStyle(b.style)];
             return (
@@ -492,12 +513,13 @@ export default function PostcardMessagePage() {
     <div className="space-y-4 pb-8">
       <style>{`
         /* 案内文面ボックス: 横98mm。QR・宛名(〜73mm)と下部バンド(〜128mm)の間の
-           枠(top75mm・高さ53mm)に置き、table-cellのvertical-align:middleで上下中央寄せ。
-           ※flexのjustify-contentは html2canvas(PDF保存)が再現できず上詰めになるため、
-             html2canvasが正しく扱える table 縦中央方式を使う。transformも印刷でずれるので不可。 */
+           枠(top75mm・高さ53mm)に置く。上下中央寄せは flex/table/transform を使わず、
+           内容の高さをJSで測って算出した「詰め物(spacer)の高さ」で content を下げる方式。
+           ※html2canvas(PDF保存)は flex/table/transform の縦中央を再現できず、
+             高さ指定の spacer なら印刷・PDF・プレビューで同じ位置になるため。 */
         .pc-msg { box-sizing: border-box; position: absolute; inset: 0; color: #1a1a1a; }
-        .pc-anno { position: absolute; left: 0; right: 0; top: 75mm; height: 53mm; margin: 0 auto; width: 98mm; padding: 1.5mm 3mm; box-sizing: border-box; display: table; }
-        .pc-anno-cell { display: table-cell; vertical-align: middle; }
+        .pc-anno { position: absolute; left: 0; right: 0; top: 75mm; height: 53mm; margin: 0 auto; width: 98mm; box-sizing: border-box; overflow: hidden; }
+        .pc-anno-content { padding: 0 3mm; }
         /* はがき台紙（校正で背景画像を敷く） */
         .hagaki { position: relative; overflow: hidden; background: #fff; }
         .hagaki > img.bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
