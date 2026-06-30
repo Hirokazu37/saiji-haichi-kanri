@@ -490,10 +490,11 @@ export default function PostcardMessagePage() {
     <div className="space-y-4 pb-8">
       <style>{`
         /* 案内文面ボックス: 横98mm。QR・宛名(〜73mm)と下部バンド(〜128mm)の間の
-           枠(top75mm〜bottom20mm)に置き、flexで上下中央寄せ。
-           ※transformは印刷で中央位置がずれるため使わない（プレビューと印刷を一致させる） */
+           枠(top75mm・高さ53mm)に置き、flexで上下中央寄せ。
+           ※高さは明示指定(height)にする。top+bottomの自動高さだと html2canvas(PDF保存)で
+             中央寄せが効かず上詰めになるため。transformも印刷でずれるので使わない。 */
         .pc-msg { box-sizing: border-box; position: absolute; inset: 0; color: #1a1a1a; }
-        .pc-anno { position: absolute; left: 0; right: 0; top: 75mm; bottom: 20mm; margin: 0 auto; width: 98mm; padding: 1.5mm 3mm; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; }
+        .pc-anno { position: absolute; left: 0; right: 0; top: 75mm; height: 53mm; margin: 0 auto; width: 98mm; padding: 1.5mm 3mm; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; }
         /* はがき台紙（校正で背景画像を敷く） */
         .hagaki { position: relative; overflow: hidden; background: #fff; }
         .hagaki > img.bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
