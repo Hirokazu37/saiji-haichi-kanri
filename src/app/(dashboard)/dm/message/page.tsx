@@ -309,6 +309,30 @@ export default function PostcardMessagePage() {
   // 校正プレビューをPDFに変換（原稿の添付・共有用）
   const renderProofPdf = async (): Promise<File | null> => {
     if (!proofRef.current) return null;
+    // html2canvas は flex/table/transform/padding の縦中央寄せを再現しないため、
+    // 取り込み直前に案内文を実測し「絶対位置 top」で中央へ置く（top は html2canvas が確実に効く）。
+    // 撮影後に必ず元へ戻す。
+    const restore: (() => void)[] = [];
+    proofRef.current.querySelectorAll(".pc-anno").forEach((a) => {
+      const frame = a as HTMLElement;
+      const content = frame.querySelector(".pc-anno-content") as HTMLElement | null;
+      if (!content) return;
+      const prevPad = frame.style.paddingTop;
+      frame.style.paddingTop = "0px";
+      const pad = Math.max(0, Math.round((frame.clientHeight - content.offsetHeight) / 2));
+      const prev = { position: content.style.position, top: content.style.top, left: content.style.left, right: content.style.right };
+      content.style.position = "absolute";
+      content.style.top = `${pad}px`;
+      content.style.left = "0";
+      content.style.right = "0";
+      restore.push(() => {
+        frame.style.paddingTop = prevPad;
+        content.style.position = prev.position;
+        content.style.top = prev.top;
+        content.style.left = prev.left;
+        content.style.right = prev.right;
+      });
+    });
     try {
       const html2canvas = (await import("html2canvas-pro")).default;
       const { jsPDF } = await import("jspdf");
@@ -330,6 +354,8 @@ export default function PostcardMessagePage() {
       return new File([blob], `DMハガキ校正_${venue || "原稿"}.pdf`, { type: "application/pdf" });
     } catch {
       return null;
+    } finally {
+      restore.forEach((fn) => fn());
     }
   };
 
