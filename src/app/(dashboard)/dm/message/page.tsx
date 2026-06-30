@@ -466,18 +466,20 @@ export default function PostcardMessagePage() {
 
   const renderPostcard = () => (
     <div className="pc-msg">
-      <div className="pc-anno" style={{ justifyContent: "center" }}>
-        {blocks.filter((b) => b.text.trim() || b.label.trim()).map((b) => {
-          const s = STYLE_MAP[normStyle(b.style)];
-          return (
-            <div key={b.id} style={{ textAlign: b.align, margin: SPACE_MARGIN[normSpace(b.space)] }}>
-              <span style={{ ...spanStyle(s), whiteSpace: "pre-line" }}>
-                {b.label.trim() && <span>{b.label} </span>}
-                {b.text}
-              </span>
-            </div>
-          );
-        })}
+      <div className="pc-anno">
+        <div className="pc-anno-cell">
+          {blocks.filter((b) => b.text.trim() || b.label.trim()).map((b) => {
+            const s = STYLE_MAP[normStyle(b.style)];
+            return (
+              <div key={b.id} style={{ textAlign: b.align, margin: SPACE_MARGIN[normSpace(b.space)] }}>
+                <span style={{ ...spanStyle(s), whiteSpace: "pre-line" }}>
+                  {b.label.trim() && <span>{b.label} </span>}
+                  {b.text}
+                </span>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -490,11 +492,12 @@ export default function PostcardMessagePage() {
     <div className="space-y-4 pb-8">
       <style>{`
         /* 案内文面ボックス: 横98mm。QR・宛名(〜73mm)と下部バンド(〜128mm)の間の
-           枠(top75mm・高さ53mm)に置き、flexで上下中央寄せ。
-           ※高さは明示指定(height)にする。top+bottomの自動高さだと html2canvas(PDF保存)で
-             中央寄せが効かず上詰めになるため。transformも印刷でずれるので使わない。 */
+           枠(top75mm・高さ53mm)に置き、table-cellのvertical-align:middleで上下中央寄せ。
+           ※flexのjustify-contentは html2canvas(PDF保存)が再現できず上詰めになるため、
+             html2canvasが正しく扱える table 縦中央方式を使う。transformも印刷でずれるので不可。 */
         .pc-msg { box-sizing: border-box; position: absolute; inset: 0; color: #1a1a1a; }
-        .pc-anno { position: absolute; left: 0; right: 0; top: 75mm; height: 53mm; margin: 0 auto; width: 98mm; padding: 1.5mm 3mm; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; }
+        .pc-anno { position: absolute; left: 0; right: 0; top: 75mm; height: 53mm; margin: 0 auto; width: 98mm; padding: 1.5mm 3mm; box-sizing: border-box; display: table; }
+        .pc-anno-cell { display: table-cell; vertical-align: middle; }
         /* はがき台紙（校正で背景画像を敷く） */
         .hagaki { position: relative; overflow: hidden; background: #fff; }
         .hagaki > img.bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
