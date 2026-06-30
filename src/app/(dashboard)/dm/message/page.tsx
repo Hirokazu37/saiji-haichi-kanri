@@ -410,10 +410,13 @@ export default function PostcardMessagePage() {
   };
 
   // 原稿PDFだけを保存（メールやFAXに添付する用）
-  const savePdf = async () => {
-    const file = await renderProofPdf();
-    if (!file) { setAttachInfo("原稿PDFの生成に失敗しました。少し待って再度お試しください。"); return; }
-    await saveProofFile(file);
+  const savePdf = () => {
+    // html2canvas は縦中央寄せ(flex/table/transform/padding)を正しく再現できず、
+    // 出店のご案内が中央にならないため、PDF保存は「紙印刷と同じ印刷経路」を使う。
+    // 印刷ダイアログで送信先＝「PDFに保存」を選べば、紙印刷とまったく同じ中央寄せのPDFになる。
+    if (dmStatus !== "校正中" && dmStatus !== "印刷済み" && dmStatus !== "投函済み") updateStatus("校正中");
+    setAttachInfo("印刷ダイアログが開きます。送信先（プリンター）で「PDF に保存」を選ぶと、紙と同じレイアウトのPDFが作れます。");
+    printWith("pp-proof");
   };
 
   // 校正PDFをアプリ（Storage）に履歴として保存
@@ -708,8 +711,8 @@ export default function PostcardMessagePage() {
               <Button size="sm" onClick={sendMail}>
                 <Mail className="h-4 w-4 mr-1" />メールで校正依頼
               </Button>
-              <Button variant="outline" size="sm" onClick={savePdf}>
-                <FileText className="h-4 w-4 mr-1" />PDFを保存（パソコンに）
+              <Button variant="outline" size="sm" onClick={savePdf} title="印刷ダイアログで送信先を「PDFに保存」にすると、紙と同じレイアウトのPDFが作れます">
+                <FileText className="h-4 w-4 mr-1" />PDFを保存
               </Button>
               <Button variant="outline" size="sm" onClick={downloadFax}>
                 <FileText className="h-4 w-4 mr-1" />FAX送信状（Word）
@@ -728,7 +731,7 @@ export default function PostcardMessagePage() {
               </button>
             </div>
             <p className="text-xs text-muted-foreground text-center max-w-3xl mx-auto">
-              送付用：<span className="font-medium">「PDFを保存」</span>でパソコンに保存 →「メールで校正依頼」で開いた下書きに添付（スマホは共有でそのまま添付）。FAXは「FAX送信状」、紙に刷るなら「印刷」。「アプリに記録」は社内で後から見返す控えです。
+              送付用：<span className="font-medium">「PDFを保存」</span>を押すと印刷ダイアログが開くので、送信先で<span className="font-medium">「PDFに保存」</span>を選んで保存 →「メールで校正依頼」で開いた下書きに添付。FAXは「FAX送信状」、紙に刷るなら「印刷」。「アプリに記録」は社内で後から見返す控えです。
             </p>
             {attachInfo && (
               <div className="flex items-start gap-2 rounded-md bg-emerald-50 border border-emerald-200 px-3 py-2 text-sm text-emerald-900 max-w-2xl mx-auto">
