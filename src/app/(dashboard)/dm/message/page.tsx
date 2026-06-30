@@ -135,9 +135,11 @@ export default function PostcardMessagePage() {
   useEffect(() => {
     if (typeof document === "undefined") return;
     const measure = () => {
-      const frame = document.querySelector(".pc-anno") as HTMLElement | null;
-      const content = document.querySelector(".pc-anno-content") as HTMLElement | null;
-      if (!frame || !content) return;
+      // PDF化する要素(proofRef)内を優先して測る（画面に見えている実寸）
+      const root: ParentNode = proofRef.current ?? document;
+      const frame = root.querySelector(".pc-anno") as HTMLElement | null;
+      const content = root.querySelector(".pc-anno-content") as HTMLElement | null;
+      if (!frame || !content || frame.clientHeight === 0) return;
       const pad = Math.max(0, Math.round((frame.clientHeight - content.offsetHeight) / 2));
       setAnnoPad((prev) => (Math.abs(prev - pad) > 1 ? pad : prev));
     };
@@ -485,9 +487,8 @@ export default function PostcardMessagePage() {
 
   const renderPostcard = () => (
     <div className="pc-msg">
-      <div className="pc-anno">
-        {/* 上下中央寄せ用の詰め物（高さはJSで算出。flex/table/transformは html2canvas が再現しないため） */}
-        <div aria-hidden style={{ height: `${annoPad}px` }} />
+      {/* 上下中央寄せは padding-top で行う（高さはJSで算出。flex/table/transform/空divは html2canvas が再現しないため、確実な padding を使う） */}
+      <div className="pc-anno" style={{ paddingTop: `${annoPad}px` }}>
         <div className="pc-anno-content">
           {blocks.filter((b) => b.text.trim() || b.label.trim()).map((b) => {
             const s = STYLE_MAP[normStyle(b.style)];
