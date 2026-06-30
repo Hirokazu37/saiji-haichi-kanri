@@ -26,7 +26,7 @@ import {
   DialogFooter,
   DialogClose,
 } from "@/components/ui/dialog";
-import { Trash2, ArrowLeft, X, Building2, Save, Check, Copy, TrendingUp, MapPin, CalendarPlus } from "lucide-react";
+import { Trash2, ArrowLeft, X, Building2, Save, Check, Copy, TrendingUp, MapPin, CalendarPlus, Mail } from "lucide-react";
 import Link from "next/link";
 import { prefectures, eventStatuses } from "@/lib/prefectures";
 import { ArrangementEditor, type ArrangementEditorHandle } from "@/components/arrangements/ArrangementEditor";
@@ -738,6 +738,12 @@ export default function EventDetailPage({
           >
             <CalendarPlus className="h-4 w-4 mr-1" />
             カレンダー
+          </Button>
+          <Button variant="outline" size="sm" asChild title="この催事のDMハガキ文面を作成・印刷">
+            <Link href={`/dm/message?event=${id}`}>
+              <Mail className="h-4 w-4 mr-1" />
+              DMハガキ文面
+            </Link>
           </Button>
           {canEdit && <SaveButton />}
           {canEdit && (
