@@ -21,15 +21,28 @@ type Evt = { id: string; name: string | null; venue: string; store_name: string 
 type ProofRow = { id: string; path: string; file_name: string | null; kind: string | null; note: string | null; created_by: string | null; created_at: string };
 type Align = "left" | "center" | "right";
 type Space = "wide" | "normal" | "tight";
-type Block = { id: string; style: string; align: Align; space: Space; label: string; text: string };
+type Block = {
+  id: string;
+  align: Align;
+  label: string;
+  text: string;
+  // 見た目はポイントで直接指定（無い場合は旧 style/space から導出）
+  fs?: number;     // 文字サイズ(pt)
+  bold?: boolean;  // 太字
+  boxed?: boolean; // 囲み枠
+  gap?: number;    // 行間（上下の余白, pt）
+  color?: string;
+  // 旧データ互換
+  style?: string;
+  space?: Space;
+};
 
-const SPACE_OPTIONS: { value: Space; name: string }[] = [
-  { value: "wide", name: "ひろめ" },
-  { value: "normal", name: "標準" },
-  { value: "tight", name: "つめる" },
-];
-const SPACE_MARGIN: Record<Space, string> = { wide: "2mm 0", normal: "0.7mm 0", tight: "0.1mm 0" };
+// 文字サイズ(pt)・行間(pt)の選択肢
+const SIZE_OPTIONS = [6, 7, 8, 9, 10, 11, 12, 14, 18];
+const GAP_OPTIONS = [0, 1, 2, 3, 4, 6, 8, 10, 12];
 const normSpace = (v: unknown): Space => (v === "wide" || v === "tight" ? v : "normal");
+// 旧 space（ひろめ/標準/つめる）→ 行間ptの換算
+const SPACE_GAP: Record<Space, number> = { wide: 8, normal: 3, tight: 0 };
 
 // 裏面（ビジュアル面）の種別。画像は public/dm に同梱
 type Kind = "jisshin" | "sokubai";
@@ -63,6 +76,14 @@ const STYLE_MAP: Record<string, StyleDef> = Object.fromEntries(STYLES.map((s) =>
 const MIGRATE: Record<string, string> = { lead: "box", title: "xl", venue: "lg", normal: "normal", small: "sm" };
 const normStyle = (v: string) => (STYLE_MAP[v] ? v : MIGRATE[v] || "normal");
 
+// ブロックの「効いている値」を返す（ポイント指定があればそれ、無ければ旧styleから導出）
+const styleOf = (b: Block) => STYLE_MAP[normStyle(b.style ?? "normal")];
+const effFs = (b: Block) => b.fs ?? styleOf(b).fs;
+const effBold = (b: Block) => b.bold ?? styleOf(b).fw >= 600;
+const effBoxed = (b: Block) => b.boxed ?? !!styleOf(b).boxed;
+const effColor = (b: Block) => b.color ?? styleOf(b).color;
+const effGap = (b: Block) => b.gap ?? SPACE_GAP[normSpace(b.space)];
+
 const newId = () =>
   typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `b${Math.random().toString(36).slice(2)}`;
 
@@ -76,17 +97,17 @@ function periodFromDates(start: string, end: string): string {
   return `${f(start)}〜${f(end)}`;
 }
 
-function spanStyle(s: StyleDef): React.CSSProperties {
+function spanStyle(fs: number, bold: boolean, boxed: boolean, color?: string): React.CSSProperties {
   return {
-    fontSize: `${s.fs}pt`,
-    fontWeight: s.fw,
-    color: s.color,
+    fontSize: `${fs}pt`,
+    fontWeight: bold ? 700 : 400,
+    color,
     lineHeight: 1.5,
-    letterSpacing: s.boxed ? "3px" : undefined,
+    letterSpacing: boxed ? "3px" : undefined,
     // 字間(letterSpacing)は最後の文字の右にも余白が付くため、囲み内で文字が左に寄って見える。
     // 同じ幅だけ字下げして左右の余白を均等にし、画面・PDF（html2canvas）で中央に揃える。
-    textIndent: s.boxed ? "3px" : undefined,
-    ...(s.boxed ? { display: "inline-block", border: "0.8pt solid #222", padding: "0.8mm 5mm" } : {}),
+    textIndent: boxed ? "3px" : undefined,
+    ...(boxed ? { display: "inline-block", border: "0.8pt solid #222", padding: "0.8mm 5mm" } : {}),
   };
 }
 
@@ -218,13 +239,20 @@ export default function PostcardMessagePage() {
       setDmStatus(evt?.dm_status ?? null);
       setStoreNote((tpl as { note?: string } | null)?.note || "");
       setHasTemplate(!!tpl);
-      const mapBlocks = (arr: Block[]) => arr.map((b) => ({
+      const mapBlocks = (arr: Block[]): Block[] => arr.map((b) => ({
         id: b.id || newId(),
-        style: normStyle(b.style),
         align: (b.align as Align) || "center",
-        space: normSpace(b.space),
         label: b.label || "",
         text: b.text || "",
+        // ポイント指定（保存済みなら保持）
+        fs: typeof b.fs === "number" ? b.fs : undefined,
+        bold: typeof b.bold === "boolean" ? b.bold : undefined,
+        boxed: typeof b.boxed === "boolean" ? b.boxed : undefined,
+        gap: typeof b.gap === "number" ? b.gap : undefined,
+        color: b.color,
+        // 旧データ互換（未指定なら従来styleから導出される）
+        style: b.style ? normStyle(b.style) : undefined,
+        space: b.space ? normSpace(b.space) : undefined,
       }));
       const tplBlocks = (tpl as { blocks?: Block[] } | null)?.blocks;
       if (data?.blocks && Array.isArray(data.blocks) && data.blocks.length > 0) {
@@ -516,17 +544,14 @@ export default function PostcardMessagePage() {
       {/* 上下中央寄せは padding-top で行う（高さはJSで算出。flex/table/transform/空divは html2canvas が再現しないため、確実な padding を使う） */}
       <div className="pc-anno" style={{ paddingTop: `${annoPad}px` }}>
         <div className="pc-anno-content">
-          {blocks.filter((b) => b.text.trim() || b.label.trim()).map((b) => {
-            const s = STYLE_MAP[normStyle(b.style)];
-            return (
-              <div key={b.id} style={{ textAlign: b.align, margin: SPACE_MARGIN[normSpace(b.space)] }}>
-                <span style={{ ...spanStyle(s), whiteSpace: "pre-line" }}>
-                  {b.label.trim() && <span>{b.label} </span>}
-                  {b.text}
-                </span>
-              </div>
-            );
-          })}
+          {blocks.filter((b) => b.text.trim() || b.label.trim()).map((b) => (
+            <div key={b.id} style={{ textAlign: b.align, margin: `${effGap(b)}pt 0` }}>
+              <span style={{ ...spanStyle(effFs(b), effBold(b), effBoxed(b), effColor(b)), whiteSpace: "pre-line" }}>
+                {b.label.trim() && <span>{b.label} </span>}
+                {b.text}
+              </span>
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -656,15 +681,21 @@ export default function PostcardMessagePage() {
                           );
                         })}
                       </div>
-                      {/* 文字サイズ（チップ） */}
-                      <div className="inline-flex rounded-md border overflow-hidden shrink-0">
-                        {STYLES.map((s) => (
-                          <button key={s.value} type="button" onClick={() => update(b.id, { style: s.value })} title={s.name}
-                            className={cn("h-8 px-2 text-xs", normStyle(b.style) === s.value ? "bg-primary text-primary-foreground" : "bg-white text-muted-foreground hover:bg-muted")}>
-                            {s.short}
-                          </button>
-                        ))}
-                      </div>
+                      {/* 文字サイズ(pt) */}
+                      <select value={effFs(b)} onChange={(e) => update(b.id, { fs: Number(e.target.value) })} title="文字サイズ（ポイント）"
+                        className="h-8 rounded-md border bg-white px-1.5 text-xs shrink-0">
+                        {SIZE_OPTIONS.map((pt) => <option key={pt} value={pt}>{pt}pt</option>)}
+                      </select>
+                      {/* 太字 */}
+                      <button type="button" onClick={() => update(b.id, { bold: !effBold(b) })} title="太字"
+                        className={cn("h-8 w-8 rounded-md border text-sm font-bold shrink-0", effBold(b) ? "bg-primary text-primary-foreground" : "bg-white text-muted-foreground hover:bg-muted")}>
+                        B
+                      </button>
+                      {/* 囲み枠 */}
+                      <button type="button" onClick={() => update(b.id, { boxed: !effBoxed(b) })} title="囲み枠"
+                        className={cn("h-8 px-2 text-xs rounded-md border shrink-0", effBoxed(b) ? "bg-primary text-primary-foreground" : "bg-white text-muted-foreground hover:bg-muted")}>
+                        囲み
+                      </button>
                       {/* 並べ替え・削除 */}
                       <div className="flex items-center gap-1 ml-auto">
                         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => move(i, -1)} disabled={i === 0} title="上へ"><ArrowUp className="h-4 w-4" /></Button>
@@ -672,16 +703,15 @@ export default function PostcardMessagePage() {
                         <Button variant="ghost" size="icon" className="h-8 w-8 ml-1 text-destructive hover:bg-destructive/10" onClick={() => { if (window.confirm("この行を削除しますか？")) remove(b.id); }} title="この行を削除"><Trash2 className="h-4 w-4" /></Button>
                       </div>
                     </div>
-                    {/* 下段: 上下余白（チップ） + ラベル（補助） */}
+                    {/* 下段: 行間(pt) + ラベル（補助） */}
                     <div className="flex items-center gap-1.5">
-                      <div className="inline-flex rounded-md border overflow-hidden shrink-0">
-                        {SPACE_OPTIONS.map((o) => (
-                          <button key={o.value} type="button" onClick={() => update(b.id, { space: o.value })} title={`上下余白：${o.name}`}
-                            className={cn("h-8 px-2.5 text-xs", normSpace(b.space) === o.value ? "bg-primary text-primary-foreground" : "bg-white text-muted-foreground hover:bg-muted")}>
-                            {o.name}
-                          </button>
-                        ))}
-                      </div>
+                      <label className="inline-flex items-center gap-1 text-xs text-muted-foreground shrink-0">
+                        行間
+                        <select value={effGap(b)} onChange={(e) => update(b.id, { gap: Number(e.target.value) })} title="行間（上下の余白・ポイント）"
+                          className="h-8 rounded-md border bg-white px-1.5 text-xs">
+                          {GAP_OPTIONS.map((pt) => <option key={pt} value={pt}>{pt}pt</option>)}
+                        </select>
+                      </label>
                       <Input value={b.label} onChange={(e) => update(b.id, { label: e.target.value })} placeholder="ラベル（任意）" className="h-8 text-sm flex-1 bg-muted/50 border-transparent focus-visible:bg-white" />
                     </div>
                     <Textarea value={b.text} onChange={(e) => update(b.id, { text: e.target.value })} rows={2} placeholder="本文（改行可）" />

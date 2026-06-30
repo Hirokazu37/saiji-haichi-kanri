@@ -809,12 +809,15 @@ export default function EventsPage() {
 
           <style>{`
             @media print {
-              @page { size: A4 ${printOpts.orientation}; margin: 8mm; }
+              @page { size: A4 ${printOpts.orientation}; margin: 10mm; }
               body { -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 11px; }
               nav, aside, header, footer { display: none !important; }
               main, [data-slot="main"] { margin: 0 !important; padding: 0 !important; max-width: 100% !important; }
               .md\\:pl-60 { padding-left: 0 !important; }
               .print\\:overflow-visible { overflow: visible !important; }
+              /* 左端の月列(7月/8月)がプリンタの余白で見切れないよう、用紙幅に確実に収める */
+              .events-cards-container { padding: 0 2mm !important; box-sizing: border-box !important; }
+              .events-cards-container [class*="min-w-"] { min-width: 0 !important; }
 
               /* ===== 1ページ強制 + 行数比例レイアウト ===== */
               /* ページ区切りは使わない（全部1ページ強制） */
