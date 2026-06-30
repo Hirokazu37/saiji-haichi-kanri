@@ -503,11 +503,13 @@ export default function PostcardMessagePage() {
         .hagaki > img.bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
         @media print {
           @page { size: A4 portrait; margin: 0; }
+          /* 校正だけA4横（おもて左・裏面右を横並びで大きく出す） */
+          @page proofpage { size: A4 landscape; margin: 0; }
           body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           .pc-print { display: none !important; }
-          body.pp-proof .pc-print-proof { display: block !important; }
-          /* 校正: 単票・両面をA4縦に横並び（おもて左／裏面右） */
-          .proof-stack { width: 210mm; display: flex; justify-content: center; gap: 5mm; padding-top: 8mm; }
+          body.pp-proof .pc-print-proof { display: block !important; page: proofpage; }
+          /* 校正: 単票・両面をA4横に横並び（おもて左／裏面右） */
+          .proof-stack { width: 297mm; display: flex; justify-content: center; align-items: flex-start; gap: 12mm; padding-top: 16mm; }
           .proof-card { width: 100mm; height: 148mm; }
         }
         .pc-print { display: none; }

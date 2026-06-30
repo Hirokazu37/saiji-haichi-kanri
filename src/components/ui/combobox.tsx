@@ -46,15 +46,17 @@ export function Combobox({
   const inputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // valueがマスター候補に無い文字列 & 非空なら自動で自由入力モードに
+  // valueがマスター候補に無い文字列 & 非空なら自動で自由入力モードに。
+  // ・allowCustom=false のときは自由入力にしない（候補読込前のID等を生表示しない）
+  // ・候補が後から揃って一致した場合は自由入力モードを解除する
   useEffect(() => {
     if (!value) {
       setCustomMode(false);
       return;
     }
     const hit = items.some((it) => it.value === value);
-    if (!hit) setCustomMode(true);
-  }, [value, items]);
+    setCustomMode(allowCustom && !hit);
+  }, [value, items, allowCustom]);
 
   const matched = useMemo(() => {
     const q = search.trim().toLowerCase();
