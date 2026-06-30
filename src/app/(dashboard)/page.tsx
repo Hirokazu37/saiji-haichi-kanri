@@ -186,13 +186,17 @@ export default function DashboardPage() {
     setDeadlineAlerts(dAlerts);
 
     // 投函待ちアラート: 印刷済みだが未投函（投函期限＝会期7日前）
+    // 会期がまだ終わっていない(end_date>=今日)印刷済みはすべて対象にする。
+    // ＝会期開始後でも「投函漏れ（期限超過）」として赤で出し、見落としを防ぐ。
     const DM_MAIL_LEAD = 7;
-    const mAlerts: DeadlineAlert[] = [];
-    for (const e of horizon) {
-      if (e.dm_status !== "印刷済み") continue; // 印刷済み＝投函待ち（投函済みは完了）
-      const deadline = addDays(e.start_date, -DM_MAIL_LEAD);
-      mAlerts.push({ event: e, deadline, daysUntilDeadline: diffDays(t, deadline) });
+    const printedById = new Map<string, Event>();
+    for (const e of [...horizon, ...(me as Event[])]) {
+      if (e.dm_status === "印刷済み" && e.end_date >= t) printedById.set(e.id, e);
     }
+    const mAlerts: DeadlineAlert[] = Array.from(printedById.values()).map((e) => {
+      const deadline = addDays(e.start_date, -DM_MAIL_LEAD);
+      return { event: e, deadline, daysUntilDeadline: diffDays(t, deadline) };
+    });
     mAlerts.sort((a, b) => a.daysUntilDeadline - b.daysUntilDeadline);
     setMailAlerts(mAlerts);
 
@@ -255,14 +259,16 @@ export default function DashboardPage() {
 
   const handleMarkSubmitted = async (evtId: string) => {
     const t = todayStr();
-    await supabase.from("events").update({ application_status: "提出済", application_submitted_date: t }).eq("id", evtId);
+    const { error } = await supabase.from("events").update({ application_status: "提出済", application_submitted_date: t }).eq("id", evtId);
+    if (error) { alert(`「提出済」への更新に失敗しました。\n${error.message}`); return; }
     setDeadlineAlerts((prev) => prev.filter((d) => d.event.id !== evtId));
     setUnarrangedAlerts((prev) => prev.map((a) => a.event.id === evtId ? { ...a, missing: a.missing.filter((m) => m.key !== "app") } : a).filter((a) => a.missing.length > 0));
   };
 
   // 投函した → dm_status を投函済みにして、投函待ちリストから消す
   const handleMarkMailed = async (evtId: string) => {
-    await supabase.from("events").update({ dm_status: "投函済み" }).eq("id", evtId);
+    const { error } = await supabase.from("events").update({ dm_status: "投函済み" }).eq("id", evtId);
+    if (error) { alert(`「投函済み」への更新に失敗しました。\n${error.message}`); return; }
     setMailAlerts((prev) => prev.filter((d) => d.event.id !== evtId));
   };
 
