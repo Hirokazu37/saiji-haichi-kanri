@@ -128,6 +128,8 @@ export default function DashboardPage() {
   const [todayStaff, setTodayStaff] = useState<StaffRow[]>([]);
   const [deadlineAlerts, setDeadlineAlerts] = useState<DeadlineAlert[]>([]);
   const [unarrangedAlerts, setUnarrangedAlerts] = useState<UnarrangedAlert[]>([]);
+  // 投函待ち: 印刷済みだが未投函のDMハガキ（事務所保管中・出し忘れ防止）
+  const [mailAlerts, setMailAlerts] = useState<DeadlineAlert[]>([]);
 
   const [calYear, setCalYear] = useState(() => new Date().getFullYear());
   const [calMonth, setCalMonth] = useState(() => new Date().getMonth() + 1);
@@ -182,6 +184,17 @@ export default function DashboardPage() {
     }
     dAlerts.sort((a, b) => a.daysUntilDeadline - b.daysUntilDeadline);
     setDeadlineAlerts(dAlerts);
+
+    // 投函待ちアラート: 印刷済みだが未投函（投函期限＝会期7日前）
+    const DM_MAIL_LEAD = 7;
+    const mAlerts: DeadlineAlert[] = [];
+    for (const e of horizon) {
+      if (e.dm_status !== "印刷済み") continue; // 印刷済み＝投函待ち（投函済みは完了）
+      const deadline = addDays(e.start_date, -DM_MAIL_LEAD);
+      mAlerts.push({ event: e, deadline, daysUntilDeadline: diffDays(t, deadline) });
+    }
+    mAlerts.sort((a, b) => a.daysUntilDeadline - b.daysUntilDeadline);
+    setMailAlerts(mAlerts);
 
     // 未手配アラート: 直近1ヶ月 の催事のうち、未完成の項目がある
     const oneMonth = addDays(t, 30);
@@ -245,6 +258,12 @@ export default function DashboardPage() {
     await supabase.from("events").update({ application_status: "提出済", application_submitted_date: t }).eq("id", evtId);
     setDeadlineAlerts((prev) => prev.filter((d) => d.event.id !== evtId));
     setUnarrangedAlerts((prev) => prev.map((a) => a.event.id === evtId ? { ...a, missing: a.missing.filter((m) => m.key !== "app") } : a).filter((a) => a.missing.length > 0));
+  };
+
+  // 投函した → dm_status を投函済みにして、投函待ちリストから消す
+  const handleMarkMailed = async (evtId: string) => {
+    await supabase.from("events").update({ dm_status: "投函済み" }).eq("id", evtId);
+    setMailAlerts((prev) => prev.filter((d) => d.event.id !== evtId));
   };
 
   const holidays = useMemo(() => getHolidaysForRange([calYear]), [calYear]);
@@ -499,6 +518,43 @@ export default function DashboardPage() {
                     {canEdit && (
                       <Button size="sm" variant="outline" className="h-7 text-xs shrink-0 bg-white" onClick={() => handleMarkSubmitted(a.event.id)}>
                         <CheckCircle className="h-3 w-3 mr-1" />提出済
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 投函待ち（印刷済みDMハガキ）アラート */}
+      {mailAlerts.length > 0 && (
+        <Card className="border-l-4 border-l-sky-500">
+          <CardHeader className="pb-2 pt-3 px-4">
+            <CardTitle className="text-sm font-bold text-sky-800 flex items-center gap-2">
+              📮 投函待ちのDMハガキ
+              <Badge variant="outline" className="bg-sky-100 text-sky-800 text-xs">{mailAlerts.length}</Badge>
+            </CardTitle>
+            <p className="text-[10px] text-muted-foreground mt-0.5">印刷済みでまだ投函していないもの（投函目安＝会期7日前）。出したら「投函した」を押してください。</p>
+          </CardHeader>
+          <CardContent className="px-4 pb-4">
+            <div className="space-y-1.5">
+              {mailAlerts.slice(0, 12).map((a) => {
+                const overdue = a.daysUntilDeadline < 0;
+                const soon = a.daysUntilDeadline >= 0 && a.daysUntilDeadline <= 3;
+                return (
+                  <div key={a.event.id} className={`flex items-center gap-2 p-2 rounded-md border ${overdue ? "bg-red-50 border-red-200" : soon ? "bg-amber-50 border-amber-200" : "bg-sky-50 border-sky-200"}`}>
+                    <Link href={`/events/${a.event.id}`} className="flex-1 min-w-0 hover:underline">
+                      <div className="text-sm font-bold truncate">{venueLabel(a.event)}{a.event.dm_count ? <span className="ml-1 text-[10px] font-medium text-sky-700">DM {a.event.dm_count.toLocaleString()}枚</span> : null}</div>
+                      <div className="text-[10px] text-muted-foreground">催事 {a.event.start_date} 〜 {a.event.end_date}</div>
+                    </Link>
+                    <div className={`text-xs font-bold shrink-0 ${overdue ? "text-red-700" : soon ? "text-amber-700" : "text-sky-700"}`}>
+                      {overdue ? `投函期限 ${Math.abs(a.daysUntilDeadline)}日超過 ⚠` : a.daysUntilDeadline === 0 ? "投函期限 今日 ⚠" : `投函まで残り${a.daysUntilDeadline}日`}
+                    </div>
+                    {canEdit && (
+                      <Button size="sm" className="h-7 text-xs shrink-0 bg-sky-600 hover:bg-sky-700 text-white" onClick={() => handleMarkMailed(a.event.id)}>
+                        <CheckCircle className="h-3 w-3 mr-1" />投函した
                       </Button>
                     )}
                   </div>

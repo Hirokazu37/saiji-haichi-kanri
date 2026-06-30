@@ -47,7 +47,7 @@ export default function DMListPage() {
   const [events, setEvents] = useState<EventDM[]>([]);
   const [loading, setLoading] = useState(true);
   // ステータス絞り込み: すべて / 未完了 / ステータス単体
-  const [filter, setFilter] = useState<"all" | "notDone" | "未着手" | "校正中" | "校正済み" | "印刷済み">("all");
+  const [filter, setFilter] = useState<"all" | "notDone" | "投函待ち" | "未着手" | "校正中" | "校正済み" | "印刷済み" | "投函済み">("all");
   const [includePast, setIncludePast] = useState(false);
   // 過去表示時に年で絞り込む（"all" or "2025" など）
   const [yearFilter, setYearFilter] = useState<string>("all");
@@ -190,7 +190,10 @@ export default function DMListPage() {
 
   const matchesStatus = (e: EventDM) => {
     if (filter === "all") return true;
-    if (filter === "notDone") return e.dm_status !== "印刷済み" && e.status !== "終了";
+    // 未完了＝投函済みでない（投函まで終わって完了）
+    if (filter === "notDone") return e.dm_status !== "投函済み" && e.status !== "終了";
+    // 投函待ち＝印刷済みだが、まだ投函していない
+    if (filter === "投函待ち") return e.dm_status === "印刷済み";
     return e.dm_status === filter;
   };
 
@@ -210,7 +213,8 @@ export default function DMListPage() {
   const countOf = (f: typeof filter) =>
     baseEvents.filter((e) => {
       if (f === "all") return true;
-      if (f === "notDone") return e.dm_status !== "印刷済み" && e.status !== "終了";
+      if (f === "notDone") return e.dm_status !== "投函済み" && e.status !== "終了";
+      if (f === "投函待ち") return e.dm_status === "印刷済み";
       return e.dm_status === f;
     }).length;
 
@@ -251,10 +255,12 @@ export default function DMListPage() {
           {([
             ["all", "すべて"],
             ["notDone", "未完了のみ"],
+            ["投函待ち", "📮 投函待ち"],
             ["未着手", "未着手"],
             ["校正中", "校正中"],
             ["校正済み", "校正済み"],
             ["印刷済み", "印刷済み"],
+            ["投函済み", "投函済み"],
           ] as const).map(([key, label]) => (
             <Button
               key={key}
@@ -312,8 +318,10 @@ export default function DMListPage() {
             </TableHeader>
             <TableBody>
               {filtered.map((e) => {
-                const isDone = e.dm_status === "印刷済み";
+                const isDone = e.dm_status === "投函済み"; // 投函まで終わって完了
                 const isPast = e.end_date < today;
+                // 投函待ち＝印刷済みだが未投函（事務所に保管中。出し忘れ注意）
+                const awaitingMail = e.dm_status === "印刷済み" && !isPast;
                 // 投函期限が迫っている（未完了・未開催）行を強調
                 const dd = daysToDeadline(e);
                 const urgent = !isPast && !isDone && daysToStart(e) >= 0 && dd <= 7;
@@ -321,6 +329,8 @@ export default function DMListPage() {
                   ? "opacity-60"
                   : urgent
                   ? (dd <= 3 ? "bg-red-50 hover:bg-red-100" : "bg-amber-50 hover:bg-amber-100")
+                  : awaitingMail
+                  ? "bg-sky-50 hover:bg-sky-100"
                   : "";
                 return (
                   <TableRow key={e.id} className={rowCls}>
@@ -423,8 +433,8 @@ export default function DMListPage() {
                     <TableCell>
                       <div className="flex items-center gap-1.5 flex-wrap">
                         {canEdit ? (
-                          <div className="flex gap-1">
-                            {["未着手", "校正中", "校正済み", "印刷済み"].map((s) => (
+                          <div className="flex gap-1 flex-wrap items-center">
+                            {["未着手", "校正中", "校正済み", "印刷済み", "投函済み"].map((s) => (
                               <button
                                 key={s}
                                 type="button"
@@ -434,13 +444,29 @@ export default function DMListPage() {
                                 {s}
                               </button>
                             ))}
+                            {/* 投函待ちの行に、ワンタップで「投函した」＝投函済みにするボタン */}
+                            {awaitingMail && (
+                              <button
+                                type="button"
+                                onClick={() => updateField(e.id, "dm_status", "投函済み")}
+                                className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded border bg-sky-600 text-white border-sky-600 font-bold hover:bg-sky-700 whitespace-nowrap"
+                                title="このDMハガキを投函（発送）したら押してください"
+                              >
+                                📮 投函した
+                              </button>
+                            )}
                           </div>
                         ) : (
                           <span className="text-sm">{e.dm_status || "—"}</span>
                         )}
                         {urgent && (
                           <span className="inline-flex items-center gap-0.5 text-[11px] font-bold px-1.5 py-0.5 rounded-full border bg-red-600 text-white border-red-600 whitespace-nowrap">
-                            <AlertTriangle className="h-3 w-3" />要対応
+                            <AlertTriangle className="h-3 w-3" />{awaitingMail ? "要投函" : "要対応"}
+                          </span>
+                        )}
+                        {awaitingMail && !urgent && (
+                          <span className="inline-flex items-center gap-0.5 text-[11px] font-bold px-1.5 py-0.5 rounded-full border bg-sky-100 text-sky-700 border-sky-300 whitespace-nowrap">
+                            投函待ち
                           </span>
                         )}
                       </div>
