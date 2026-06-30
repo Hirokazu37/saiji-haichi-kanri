@@ -30,19 +30,19 @@ type Block = {
   fs?: number;     // 文字サイズ(pt)
   bold?: boolean;  // 太字
   boxed?: boolean; // 囲み枠
-  gap?: number;    // 行間（上下の余白, pt）
+  lh?: number;     // 行間（行送り leading, pt）。未指定=自動
   color?: string;
   // 旧データ互換
+  gap?: number;    // 旧: 上下余白(pt)
   style?: string;
   space?: Space;
 };
 
-// 文字サイズ(pt)・行間(pt)の選択肢
-const SIZE_OPTIONS = [6, 7, 8, 9, 10, 11, 12, 14, 18];
-const GAP_OPTIONS = [0, 1, 2, 3, 4, 6, 8, 10, 12];
+// 文字サイズ(pt)・行間(行送り pt)の選択肢（Illustrator準拠）
+const SIZE_OPTIONS = [6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 21, 24, 28, 36, 48, 60, 72];
+// 行間は「自動」または pt（0は無し）。Illustrator のリーディングと同じ考え方。
+const LEADING_OPTIONS = [6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 21, 24, 28, 36, 48, 60, 72];
 const normSpace = (v: unknown): Space => (v === "wide" || v === "tight" ? v : "normal");
-// 旧 space（ひろめ/標準/つめる）→ 行間ptの換算
-const SPACE_GAP: Record<Space, number> = { wide: 8, normal: 3, tight: 0 };
 
 // 裏面（ビジュアル面）の種別。画像は public/dm に同梱
 type Kind = "jisshin" | "sokubai";
@@ -82,7 +82,8 @@ const effFs = (b: Block) => b.fs ?? styleOf(b).fs;
 const effBold = (b: Block) => b.bold ?? styleOf(b).fw >= 600;
 const effBoxed = (b: Block) => b.boxed ?? !!styleOf(b).boxed;
 const effColor = (b: Block) => b.color ?? styleOf(b).color;
-const effGap = (b: Block) => b.gap ?? SPACE_GAP[normSpace(b.space)];
+// 行間(leading, pt)。未指定は自動（=文字サイズの1.5倍相当）。
+const effLh = (b: Block) => b.lh;
 
 const newId = () =>
   typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `b${Math.random().toString(36).slice(2)}`;
@@ -97,12 +98,13 @@ function periodFromDates(start: string, end: string): string {
   return `${f(start)}〜${f(end)}`;
 }
 
-function spanStyle(fs: number, bold: boolean, boxed: boolean, color?: string): React.CSSProperties {
+function spanStyle(fs: number, bold: boolean, boxed: boolean, color?: string, lh?: number): React.CSSProperties {
   return {
     fontSize: `${fs}pt`,
     fontWeight: bold ? 700 : 400,
     color,
-    lineHeight: 1.5,
+    lineHeight: lh ? `${lh}pt` : 1.5, // 行間(leading)。未指定は自動(1.5)
+
     letterSpacing: boxed ? "3px" : undefined,
     // 字間(letterSpacing)は最後の文字の右にも余白が付くため、囲み内で文字が左に寄って見える。
     // 同じ幅だけ字下げして左右の余白を均等にし、画面・PDF（html2canvas）で中央に揃える。
@@ -248,7 +250,7 @@ export default function PostcardMessagePage() {
         fs: typeof b.fs === "number" ? b.fs : undefined,
         bold: typeof b.bold === "boolean" ? b.bold : undefined,
         boxed: typeof b.boxed === "boolean" ? b.boxed : undefined,
-        gap: typeof b.gap === "number" ? b.gap : undefined,
+        lh: typeof b.lh === "number" ? b.lh : undefined,
         color: b.color,
         // 旧データ互換（未指定なら従来styleから導出される）
         style: b.style ? normStyle(b.style) : undefined,
@@ -545,8 +547,8 @@ export default function PostcardMessagePage() {
       <div className="pc-anno" style={{ paddingTop: `${annoPad}px` }}>
         <div className="pc-anno-content">
           {blocks.filter((b) => b.text.trim() || b.label.trim()).map((b) => (
-            <div key={b.id} style={{ textAlign: b.align, margin: `${effGap(b)}pt 0` }}>
-              <span style={{ ...spanStyle(effFs(b), effBold(b), effBoxed(b), effColor(b)), whiteSpace: "pre-line" }}>
+            <div key={b.id} style={{ textAlign: b.align }}>
+              <span style={{ ...spanStyle(effFs(b), effBold(b), effBoxed(b), effColor(b), effLh(b)), whiteSpace: "pre-line" }}>
                 {b.label.trim() && <span>{b.label} </span>}
                 {b.text}
               </span>
@@ -707,9 +709,10 @@ export default function PostcardMessagePage() {
                     <div className="flex items-center gap-1.5">
                       <label className="inline-flex items-center gap-1 text-xs text-muted-foreground shrink-0">
                         行間
-                        <select value={effGap(b)} onChange={(e) => update(b.id, { gap: Number(e.target.value) })} title="行間（上下の余白・ポイント）"
+                        <select value={effLh(b) ?? 0} onChange={(e) => { const v = Number(e.target.value); update(b.id, { lh: v === 0 ? undefined : v }); }} title="行間（行送り・ポイント）"
                           className="h-8 rounded-md border bg-white px-1.5 text-xs">
-                          {GAP_OPTIONS.map((pt) => <option key={pt} value={pt}>{pt}pt</option>)}
+                          <option value={0}>自動</option>
+                          {LEADING_OPTIONS.map((pt) => <option key={pt} value={pt}>{pt}pt</option>)}
                         </select>
                       </label>
                       <Input value={b.label} onChange={(e) => update(b.id, { label: e.target.value })} placeholder="ラベル（任意）" className="h-8 text-sm flex-1 bg-muted/50 border-transparent focus-visible:bg-white" />
