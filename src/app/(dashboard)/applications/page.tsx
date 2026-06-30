@@ -56,7 +56,8 @@ export default function ApplicationsListPage() {
 
   const updateField = (evtId: string, field: string, value: string | null) => {
     setEvents((prev) => prev.map((e) => e.id === evtId ? { ...e, [field]: value } : e));
-    supabase.from("events").update({ [field]: value || null }).eq("id", evtId).then(() => {
+    supabase.from("events").update({ [field]: value || null }).eq("id", evtId).then(({ error }) => {
+      if (error) { alert(`保存に失敗しました。\n${error.message}`); fetchData(); return; }
       setSavedId(evtId);
       setTimeout(() => setSavedId((prev) => prev === evtId ? null : prev), 1500);
     });
@@ -68,7 +69,8 @@ export default function ApplicationsListPage() {
     const updates: Record<string, string | null> = { application_method: method, application_status: "提出済" };
     if (evt && !evt.application_submitted_date) updates.application_submitted_date = new Date().toISOString().slice(0, 10);
     setEvents((prev) => prev.map((e) => (e.id === evtId ? { ...e, ...updates } : e)));
-    await supabase.from("events").update(updates).eq("id", evtId);
+    const { error } = await supabase.from("events").update(updates).eq("id", evtId);
+    if (error) { alert(`保存に失敗しました。\n${error.message}`); fetchData(); return; }
     setSavedId(evtId);
     setTimeout(() => setSavedId((prev) => (prev === evtId ? null : prev)), 1500);
   };

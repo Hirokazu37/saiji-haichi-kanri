@@ -153,7 +153,8 @@ export default function DMListPage() {
 
   const updateField = (evtId: string, field: string, value: string | number | null) => {
     setEvents((prev) => prev.map((e) => e.id === evtId ? { ...e, [field]: value } : e));
-    supabase.from("events").update({ [field]: value }).eq("id", evtId).then(() => {
+    supabase.from("events").update({ [field]: value }).eq("id", evtId).then(({ error }) => {
+      if (error) { alert(`保存に失敗しました。\n${error.message}`); fetchData(); return; }
       setSavedId(evtId);
       setTimeout(() => setSavedId((prev) => prev === evtId ? null : prev), 1500);
     });
