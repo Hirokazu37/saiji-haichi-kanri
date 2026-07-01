@@ -553,7 +553,9 @@ export default function PostcardMessagePage() {
       <div className="pc-anno" style={{ paddingTop: `${annoPad}px` }}>
         <div className="pc-anno-content">
           {blocks.filter((b) => b.text.trim() || b.label.trim()).map((b) => (
-            <div key={b.id} style={{ textAlign: b.align, marginTop: effBs(b) ? `${-effBs(b)}pt` : undefined }}>
+            // 行間(line-height)はブロックのdivにも設定する。span だけだと div 側の
+            // 既定の行高が勝って、複数行の行間が詰まらない（広がりはするが詰まらない）ため。
+            <div key={b.id} style={{ textAlign: b.align, marginTop: effBs(b) ? `${-effBs(b)}pt` : undefined, lineHeight: effLh(b) ? `${effLh(b)}pt` : 1.5 }}>
               <span style={{ ...spanStyle(effFs(b), effBold(b), effBoxed(b), effColor(b), effLh(b)), whiteSpace: "pre-line" }}>
                 {b.label.trim() && <span>{b.label} </span>}
                 {b.text}
