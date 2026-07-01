@@ -31,6 +31,7 @@ type Block = {
   bold?: boolean;  // 太字
   boxed?: boolean; // 囲み枠
   lh?: number;     // 行間（行送り leading, pt）。未指定=自動
+  bs?: number;     // ベースラインシフト（行の上下位置, pt）。＋で上へ、−で下へ
   color?: string;
   // 旧データ互換
   gap?: number;    // 旧: 上下余白(pt)
@@ -42,6 +43,8 @@ type Block = {
 const SIZE_OPTIONS = [6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 21, 24, 28, 36, 48, 60, 72];
 // 行間は「自動」または pt（0は無し）。Illustrator のリーディングと同じ考え方。
 const LEADING_OPTIONS = [6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 21, 24, 28, 36, 48, 60, 72];
+// ベースラインシフト（行の上下位置, pt）。＋で上へ、−で下へ。0=なし
+const BASELINE_OPTIONS = [6, 5, 4, 3, 2, 1, 0, -1, -2, -3, -4, -5, -6];
 const normSpace = (v: unknown): Space => (v === "wide" || v === "tight" ? v : "normal");
 
 // 裏面（ビジュアル面）の種別。画像は public/dm に同梱
@@ -84,6 +87,8 @@ const effBoxed = (b: Block) => b.boxed ?? !!styleOf(b).boxed;
 const effColor = (b: Block) => b.color ?? styleOf(b).color;
 // 行間(leading, pt)。未指定は自動（=文字サイズの1.5倍相当）。
 const effLh = (b: Block) => b.lh;
+// ベースラインシフト(pt)。＋で上へ。
+const effBs = (b: Block) => b.bs ?? 0;
 
 const newId = () =>
   typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `b${Math.random().toString(36).slice(2)}`;
@@ -251,6 +256,7 @@ export default function PostcardMessagePage() {
         bold: typeof b.bold === "boolean" ? b.bold : undefined,
         boxed: typeof b.boxed === "boolean" ? b.boxed : undefined,
         lh: typeof b.lh === "number" ? b.lh : undefined,
+        bs: typeof b.bs === "number" ? b.bs : undefined,
         color: b.color,
         // 旧データ互換（未指定なら従来styleから導出される）
         style: b.style ? normStyle(b.style) : undefined,
@@ -547,7 +553,7 @@ export default function PostcardMessagePage() {
       <div className="pc-anno" style={{ paddingTop: `${annoPad}px` }}>
         <div className="pc-anno-content">
           {blocks.filter((b) => b.text.trim() || b.label.trim()).map((b) => (
-            <div key={b.id} style={{ textAlign: b.align }}>
+            <div key={b.id} style={{ textAlign: b.align, marginTop: effBs(b) ? `${-effBs(b)}pt` : undefined }}>
               <span style={{ ...spanStyle(effFs(b), effBold(b), effBoxed(b), effColor(b), effLh(b)), whiteSpace: "pre-line" }}>
                 {b.label.trim() && <span>{b.label} </span>}
                 {b.text}
@@ -713,6 +719,13 @@ export default function PostcardMessagePage() {
                           className="h-8 rounded-md border bg-white px-1.5 text-xs">
                           <option value={0}>自動</option>
                           {LEADING_OPTIONS.map((pt) => <option key={pt} value={pt}>{pt}pt</option>)}
+                        </select>
+                      </label>
+                      <label className="inline-flex items-center gap-1 text-xs text-muted-foreground shrink-0" title="ベースラインシフト（行の上下位置・ポイント）＋で上へ／−で下へ">
+                        上下
+                        <select value={effBs(b)} onChange={(e) => { const v = Number(e.target.value); update(b.id, { bs: v === 0 ? undefined : v }); }}
+                          className="h-8 rounded-md border bg-white px-1.5 text-xs">
+                          {BASELINE_OPTIONS.map((pt) => <option key={pt} value={pt}>{pt > 0 ? `+${pt}` : pt}pt</option>)}
                         </select>
                       </label>
                       <Input value={b.label} onChange={(e) => update(b.id, { label: e.target.value })} placeholder="ラベル（任意）" className="h-8 text-sm flex-1 bg-muted/50 border-transparent focus-visible:bg-white" />
