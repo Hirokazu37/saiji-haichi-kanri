@@ -10,15 +10,15 @@ type Callback = { source?: { channelId?: string; userId?: string }; type?: strin
 
 async function handle(body: Callback) {
   const channelId = body?.source?.channelId;
-  if (channelId) {
-    try {
-      await sendText(
-        { channelId },
-        `✅ このトークルームの channelId です：\n${channelId}\n\n` +
-        `管理者が Vercel の環境変数 LINEWORKS_CHANNEL_ID にこの値を設定すると、\n` +
-        `毎朝8時に「本日が投函期限／期限超過」のDMハガキをここに通知します。`
-      );
-    } catch { /* 返信失敗は無視（IDはログ用途にもなる） */ }
+  const userId = body?.source?.userId;
+  const lines = ["✅ 連携用のIDです"];
+  if (channelId) lines.push(`・グループ用 channelId：\n${channelId}`);
+  if (userId) lines.push(`・個人用 userId：\n${userId}`);
+  lines.push("", "管理者がVercelの環境変数に設定します（グループ=LINEWORKS_CHANNEL_ID / 個人=LINEWORKS_USER_ID）。");
+  // 送信先: channelId があればそのルーム、無ければ送信者(userId)へ
+  const target = channelId ? { channelId } : userId ? { userId } : null;
+  if (target) {
+    try { await sendText(target, lines.join("\n")); } catch { /* 返信失敗は無視 */ }
   }
 }
 
