@@ -1,5 +1,5 @@
 {
   "crons": [
-    { "path": "/api/lineworks/notify", "schedule": "0 0 * * *" }
+    { "path": "/api/lineworks/notify", "schedule": "0 23 * * *" }
   ]
 }
