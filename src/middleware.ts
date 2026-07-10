@@ -38,6 +38,15 @@ export async function middleware(request: NextRequest) {
     return supabaseResponse;
   }
 
+  // 外部システム向けエンドポイントは認証不要（LINE WORKSのコールバック / 日次Cron）。
+  // 未ログインでも到達させる（notify側は CRON_SECRET で保護）。
+  if (
+    request.nextUrl.pathname.startsWith("/api/lineworks/callback") ||
+    request.nextUrl.pathname.startsWith("/api/lineworks/notify")
+  ) {
+    return supabaseResponse;
+  }
+
   if (request.nextUrl.pathname === "/login") {
     if (user) {
       // ログイン済みならダッシュボードへリダイレクト
