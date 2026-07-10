@@ -29,7 +29,7 @@ export async function GET(req: Request) {
         serviceAccountLooksValid: /serviceaccount/i.test(sa),
         privateKey: pk ? `${pk.length}文字 / BEGIN=${pk.includes("BEGIN PRIVATE KEY")} / END=${pk.includes("END PRIVATE KEY")}` : "未設定",
         botId: process.env.LINEWORKS_BOT_ID || "未設定",
-        target: process.env.LINEWORKS_CHANNEL_ID ? "channelId" : process.env.LINEWORKS_USER_ID ? "userId(メール)" : "未設定",
+        target: process.env.LINEWORKS_CHANNEL_ID ? "channelId(グループ)" : process.env.LINEWORKS_USER_ID ? "userId(個人・内部ID)" : "未設定",
         channelIdValue: process.env.LINEWORKS_CHANNEL_ID || "(未設定)",
         userIdValue: process.env.LINEWORKS_USER_ID || "(未設定)",
       });
