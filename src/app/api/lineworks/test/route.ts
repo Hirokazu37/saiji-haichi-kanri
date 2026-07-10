@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { getAccessToken, sendText, createChannel, currentTarget } from "@/lib/lineworks";
 
@@ -32,6 +33,18 @@ export async function GET(req: Request) {
         channelIdValue: process.env.LINEWORKS_CHANNEL_ID || "(未設定)",
         userIdValue: process.env.LINEWORKS_USER_ID || "(未設定)",
       });
+    }
+    if (action === "dbcheck") {
+      // コールバック記録に使う service role キーが有効か確認する
+      const surl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+      const skey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+      if (!surl || !skey) return NextResponse.json({ serviceKey: skey ? "設定あり" : "未設定", error: "URLかservice roleキーが未設定" });
+      const svc = createServiceClient(surl, skey, { auth: { persistSession: false } });
+      const probe = `dbcheck-${Date.now()}`;
+      const ins = await svc.from("ai_reports").insert({ kind: "lineworks_dbcheck", title: probe, content: "probe" });
+      if (ins.error) return NextResponse.json({ ok: false, serviceKey: `設定あり(${skey.length}文字)`, writable: false, error: ins.error.message });
+      await svc.from("ai_reports").delete().eq("kind", "lineworks_dbcheck");
+      return NextResponse.json({ ok: true, serviceKey: `設定あり(${skey.length}文字)`, writable: true, message: "service roleキーOK（コールバック記録が可能）" });
     }
     if (action === "lastcallback") {
       // 直近のコールバック受信を確認（Botにメッセージ→ここで channelId/userId を拾う）
