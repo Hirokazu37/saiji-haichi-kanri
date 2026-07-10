@@ -33,6 +33,19 @@ export async function GET(req: Request) {
         userIdValue: process.env.LINEWORKS_USER_ID || "(未設定)",
       });
     }
+    if (action === "lastcallback") {
+      // 直近のコールバック受信を確認（Botにメッセージ→ここで channelId/userId を拾う）
+      const { data } = await sb
+        .from("ai_reports")
+        .select("title, content, created_at")
+        .eq("kind", "lineworks_callback")
+        .order("created_at", { ascending: false })
+        .limit(5);
+      if (!data || data.length === 0) {
+        return NextResponse.json({ ok: true, message: "まだコールバックを受信していません。Botにメッセージを送ってから再度開いてください。（届いていない＝Bot設定のMessage Eventが未ONの可能性）", records: [] });
+      }
+      return NextResponse.json({ ok: true, message: "直近のコールバック受信。channelId/userId をコピーして環境変数に設定してください。", records: data });
+    }
     if (action === "token") {
       const t = await getAccessToken();
       return NextResponse.json({ ok: true, message: "認証情報OK。トークンを取得できました。", tokenPrefix: t.slice(0, 12) + "…" });
