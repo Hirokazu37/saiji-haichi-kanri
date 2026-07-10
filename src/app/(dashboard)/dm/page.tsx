@@ -172,6 +172,13 @@ export default function DMListPage() {
     const now = new Date(today + "T00:00:00");
     return Math.round((deadline.getTime() - now.getTime()) / 86400000);
   };
+  const WD = ["日", "月", "火", "水", "木", "金", "土"];
+  /** 投函期限の日付（M/D(曜)） */
+  const deadlineDateStr = (e: EventDM): string => {
+    const d = new Date(e.start_date + "T00:00:00");
+    d.setDate(d.getDate() - MAIL_LEAD_DAYS);
+    return `${d.getMonth() + 1}/${d.getDate()}(${WD[d.getDay()]})`;
+  };
 
   /** 開始日まであと何日か（開催中判定用） */
   const daysToStart = (e: EventDM): number => {
@@ -219,6 +226,11 @@ export default function DMListPage() {
       return e.dm_status === f;
     }).length;
 
+  // 本日が投函期限／期限超過で、まだ投函していない催事（当日アラート用）
+  const mailable = (e: EventDM) => e.dm_status !== "投函済み" && e.status !== "終了" && e.end_date >= today;
+  const dueToday = events.filter((e) => mailable(e) && daysToDeadline(e) === 0);
+  const overdue = events.filter((e) => mailable(e) && daysToDeadline(e) < 0);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -235,6 +247,32 @@ export default function DMListPage() {
           </Link>
         </div>
       </div>
+
+      {/* 投函期限アラート（本日が期限 / 期限超過で未投函） */}
+      {(dueToday.length > 0 || overdue.length > 0) && (
+        <div className="rounded-md border-2 border-red-300 bg-red-50 px-3 py-2.5 space-y-1">
+          <div className="flex items-center gap-2 text-sm font-bold text-red-800">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            投函期限のお知らせ
+          </div>
+          {dueToday.length > 0 && (
+            <p className="text-sm text-red-800">
+              <span className="font-bold">本日が投函期限</span>のDMハガキが <span className="font-bold">{dueToday.length}件</span>：
+              {dueToday.slice(0, 6).map((e) => `${e.venue}${e.store_name ? ` ${e.store_name}` : ""}`).join("、")}
+              {dueToday.length > 6 ? " ほか" : ""}
+            </p>
+          )}
+          {overdue.length > 0 && (
+            <p className="text-sm text-red-700">
+              <span className="font-bold">投函期限を過ぎて未投函</span>が <span className="font-bold">{overdue.length}件</span>：
+              {overdue.slice(0, 6).map((e) => `${e.venue}${e.store_name ? ` ${e.store_name}` : ""}`).join("、")}
+              {overdue.length > 6 ? " ほか" : ""}
+            </p>
+          )}
+          <p className="text-[11px] text-red-700">投函したら各行の「📮 投函した」を押してください。</p>
+        </div>
+      )}
+
       <p className="text-xs text-muted-foreground">
         ※ 会期終了済の催事はデフォルトで非表示。確認したいときは「過去も見る」を ON にしてください。<br />
         ※ 「区分」列のバッジをクリックすると、この催事のDMをどの名簿（区分）に出したかを記録できます（緑＝選択中）。顧客・来場管理の抽出で使われます。
@@ -403,6 +441,10 @@ export default function DMListPage() {
                     </TableCell>
                     <TableCell className="text-sm hidden md:table-cell">
                       {e.start_date} 〜 {e.end_date}
+                      {/* 投函期限（会期7日前）の日付を常に表示 */}
+                      {!isPast && !isDone && (
+                        <span className="ml-1 text-[10px] text-sky-700">投函期限 {deadlineDateStr(e)}</span>
+                      )}
                       {isPast ? (
                         <span className="ml-1 text-[10px] text-muted-foreground">（終了）</span>
                       ) : daysToStart(e) < 0 ? (
@@ -420,10 +462,10 @@ export default function DMListPage() {
                           ? "bg-amber-100 text-amber-700 font-medium" // 間近
                           : "text-muted-foreground";
                         const text = d < 0
-                          ? `投函期限 ${-d}日超過 ⚠`
+                          ? `${-d}日超過 ⚠`
                           : d === 0
-                          ? "投函期限 今日 ⚠"
-                          : `投函期限まで${d}日`;
+                          ? "本日が投函期限 ⚠"
+                          : `あと${d}日`;
                         return (
                           <span className={`ml-1 inline-block text-[10px] rounded px-1 ${cls}`}>
                             {text}
