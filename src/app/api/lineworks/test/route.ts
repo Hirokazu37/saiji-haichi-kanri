@@ -16,6 +16,21 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const action = url.searchParams.get("action");
   try {
+    if (action === "diag") {
+      // 値そのものは出さず、設定状況だけ確認する（切り分け用）
+      const cid = process.env.LINEWORKS_CLIENT_ID || "";
+      const sa = process.env.LINEWORKS_SERVICE_ACCOUNT || "";
+      const pk = (process.env.LINEWORKS_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+      return NextResponse.json({
+        clientId: cid ? `${cid.slice(0, 6)}…(${cid.length}文字)` : "未設定",
+        clientSecret: process.env.LINEWORKS_CLIENT_SECRET ? `設定あり(${(process.env.LINEWORKS_CLIENT_SECRET || "").length}文字)` : "未設定",
+        serviceAccount: sa || "未設定", // ID自体は確認のため表示（@...serviceaccount 形式か）
+        serviceAccountLooksValid: /serviceaccount/i.test(sa),
+        privateKey: pk ? `${pk.length}文字 / BEGIN=${pk.includes("BEGIN PRIVATE KEY")} / END=${pk.includes("END PRIVATE KEY")}` : "未設定",
+        botId: process.env.LINEWORKS_BOT_ID || "未設定",
+        target: process.env.LINEWORKS_CHANNEL_ID ? "channelId" : process.env.LINEWORKS_USER_ID ? "userId(メール)" : "未設定",
+      });
+    }
     if (action === "token") {
       const t = await getAccessToken();
       return NextResponse.json({ ok: true, message: "認証情報OK。トークンを取得できました。", tokenPrefix: t.slice(0, 12) + "…" });
