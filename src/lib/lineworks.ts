@@ -11,11 +11,14 @@ const API_BASE = "https://www.worksapis.com/v1.0";
 
 const b64url = (input: string | Buffer) => Buffer.from(input).toString("base64url");
 
+// 余分な空白・改行・重複貼り付けに強くする（1行目・前後空白除去）
+const firstLine = (v: string | undefined) => (v || "").trim().split(/[\r\n\s]+/)[0] || "";
+
 function buildJwt(): string {
-  const clientId = process.env.LINEWORKS_CLIENT_ID || "";
-  const serviceAccount = process.env.LINEWORKS_SERVICE_ACCOUNT || "";
+  const clientId = firstLine(process.env.LINEWORKS_CLIENT_ID);
+  const serviceAccount = firstLine(process.env.LINEWORKS_SERVICE_ACCOUNT);
   // Vercelの複数行値はそのまま改行が入るが、万一 \n でエスケープされていた場合は戻す
-  const key = (process.env.LINEWORKS_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+  const key = (process.env.LINEWORKS_PRIVATE_KEY || "").replace(/\\n/g, "\n").trim();
   const now = Math.floor(Date.now() / 1000);
   const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
   const payload = b64url(JSON.stringify({ iss: clientId, sub: serviceAccount, iat: now, exp: now + 3600 }));
@@ -28,8 +31,8 @@ export async function getAccessToken(): Promise<string> {
   const body = new URLSearchParams({
     assertion: buildJwt(),
     grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-    client_id: process.env.LINEWORKS_CLIENT_ID || "",
-    client_secret: process.env.LINEWORKS_CLIENT_SECRET || "",
+    client_id: firstLine(process.env.LINEWORKS_CLIENT_ID),
+    client_secret: firstLine(process.env.LINEWORKS_CLIENT_SECRET),
     scope: "bot",
   });
   const res = await fetch(AUTH_URL, {
