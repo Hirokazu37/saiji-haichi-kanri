@@ -4,6 +4,7 @@
 //   LINEWORKS_CLIENT_ID / LINEWORKS_CLIENT_SECRET / LINEWORKS_SERVICE_ACCOUNT
 //   LINEWORKS_PRIVATE_KEY(PEM全文) / LINEWORKS_BOT_ID
 //   送信先: LINEWORKS_CHANNEL_ID（グループ）または LINEWORKS_USER_ID（個人メール）
+//   コールバック署名検証: LINEWORKS_BOT_SECRET（Developer Console の Bot Secret）
 import crypto from "crypto";
 
 const AUTH_URL = "https://auth.worksmobile.com/oauth2/v2.0/token";
@@ -87,4 +88,20 @@ export function currentTarget(): Target | null {
   if (process.env.LINEWORKS_CHANNEL_ID) return { channelId: process.env.LINEWORKS_CHANNEL_ID };
   if (process.env.LINEWORKS_USER_ID) return { userId: process.env.LINEWORKS_USER_ID };
   return null;
+}
+
+/**
+ * LINE WORKS コールバックの署名検証。
+ * X-WORKS-Signature = Base64(HMAC-SHA256(rawBody, LINEWORKS_BOT_SECRET)) を照合する。
+ * 戻り値: true=一致 / false=不一致（拒否すべき） / null=BOT_SECRET未設定で検証不能（暫定・未保護）。
+ */
+export function verifyCallbackSignature(rawBody: string, signature: string | null): boolean | null {
+  const secret = (process.env.LINEWORKS_BOT_SECRET || "").trim();
+  if (!secret) return null; // 未設定＝検証不能（呼び出し側で暫定許可の扱い）
+  if (!signature) return false;
+  const expected = crypto.createHmac("sha256", secret).update(rawBody, "utf8").digest("base64");
+  const a = Buffer.from(expected);
+  const b = Buffer.from(signature.trim());
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
 }

@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { sendText } from "@/lib/lineworks";
+import { sendText, verifyCallbackSignature } from "@/lib/lineworks";
 
 export const dynamic = "force-dynamic";
 
 // LINE WORKS Bot のコールバック。トークルームでメッセージやBot追加(join)が起きると
 // ここに通知が届く。source.channelId / source.userId を記録し、可能なら同じ場所へ返信する。
+// 認証は middleware を通さず、X-WORKS-Signature（LINEWORKS_BOT_SECRET）で検証する。
 type Callback = { source?: { channelId?: string; userId?: string }; type?: string };
 
 // 受信内容を ai_reports(kind=lineworks_callback) に控える（返信が届かなくても画面で確認できるように）
@@ -39,8 +40,16 @@ async function handle(body: Callback) {
 }
 
 export async function POST(req: Request) {
+  // 署名検証: LINEWORKS_BOT_SECRET を設定していれば不正な呼び出しを拒否する。
+  // 未設定の間は null が返り、暫定的に素通し（channelId 発見フローを壊さないため）。
+  const raw = await req.text();
+  const verdict = verifyCallbackSignature(raw, req.headers.get("x-works-signature"));
+  if (verdict === false) {
+    return NextResponse.json({ error: "invalid signature" }, { status: 401 });
+  }
+
   let body: Callback = {};
-  try { body = (await req.json()) as Callback; } catch { /* 空でもOK */ }
+  try { body = raw ? (JSON.parse(raw) as Callback) : {}; } catch { /* 空でもOK */ }
   await handle(body);
   return NextResponse.json({ ok: true });
 }

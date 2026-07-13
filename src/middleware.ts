@@ -39,7 +39,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // 外部システム向けエンドポイントは認証不要（LINE WORKSのコールバック / 日次Cron）。
-  // 未ログインでも到達させる（notify側は CRON_SECRET で保護）。
+  // 未ログインでも到達させる（callback側は X-WORKS-Signature、notify側は CRON_SECRET で保護）。
   if (
     request.nextUrl.pathname.startsWith("/api/lineworks/callback") ||
     request.nextUrl.pathname.startsWith("/api/lineworks/notify")

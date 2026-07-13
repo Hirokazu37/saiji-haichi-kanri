@@ -25,6 +25,7 @@ export async function GET(req: Request) {
       return NextResponse.json({
         clientId: cid ? `${cid.slice(0, 6)}…(${cid.length}文字)` : "未設定",
         clientSecret: process.env.LINEWORKS_CLIENT_SECRET ? `設定あり(${(process.env.LINEWORKS_CLIENT_SECRET || "").length}文字)` : "未設定",
+        botSecret: process.env.LINEWORKS_BOT_SECRET ? `設定あり(${(process.env.LINEWORKS_BOT_SECRET || "").length}文字)・コールバック署名検証ON` : "未設定・コールバック署名検証OFF(暫定素通し)",
         serviceAccount: sa || "未設定", // ID自体は確認のため表示（@...serviceaccount 形式か）
         serviceAccountLooksValid: /serviceaccount/i.test(sa),
         privateKey: pk ? `${pk.length}文字 / BEGIN=${pk.includes("BEGIN PRIVATE KEY")} / END=${pk.includes("END PRIVATE KEY")}` : "未設定",
