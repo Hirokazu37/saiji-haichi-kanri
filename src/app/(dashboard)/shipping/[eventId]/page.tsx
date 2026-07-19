@@ -40,12 +40,6 @@ const eventDays = (start: string, end: string): number => {
 // 配送に2日かかる地域（初回便は会期初日の2日前までに出荷）
 const FAR_PREFS = ["北海道", "青森県", "岩手県", "宮城県", "秋田県", "山形県", "福島県", "沖縄県"];
 
-const addDaysStr = (ymd: string, n: number) => {
-  const d = new Date(ymd + "T00:00:00");
-  d.setDate(d.getDate() + n);
-  return `${d.getMonth() + 1}/${d.getDate()}`;
-};
-
 // 出荷日の表示は「7/22(水)」形式（年なし・曜日つき）
 const WD = ["日", "月", "火", "水", "木", "金", "土"];
 const fmtMD = (ymd: string) => {
@@ -60,9 +54,22 @@ const addYmd = (ymd: string, n: number) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
-// 初回便の出荷日目安：会期初日の前日（配送2日の遠隔地は2日前）
-const defaultFirstShipDate = (e: { start_date: string; prefecture: string | null }) =>
-  addYmd(e.start_date, e.prefecture && FAR_PREFS.includes(e.prefecture) ? -2 : -1);
+// 配送日数（通常1日・遠隔地2日）
+const transitDays = (prefecture: string | null) =>
+  prefecture && FAR_PREFS.includes(prefecture) ? 2 : 1;
+
+// 既定の便：初回は「搬入日（会期初日の前日）に到着」させる。
+// 出荷日 = 搬入日 - 配送日数 + 1日ずつの追加便を計3便つくる。
+// 例）すみのどう京阪（大阪・初日8/6）: 初回8/4出荷(搬入日8/5着)・追加8/5・追加8/6
+const defaultShipments = (e: { start_date: string; prefecture: string | null }): Shipment[] => {
+  const t = transitDays(e.prefecture);
+  const firstShip = addYmd(e.start_date, -(t + 1)); // 搬入日(初日-1) - 配送日数
+  return [
+    { label: "初回", date: firstShip, memo: "", items: {} },
+    { label: "追加1", date: addYmd(firstShip, 1), memo: "", items: {} },
+    { label: "追加2", date: addYmd(firstShip, 2), memo: "", items: {} },
+  ];
+};
 
 export default function ShippingSheetPage() {
   const { eventId } = useParams<{ eventId: string }>();
@@ -94,11 +101,11 @@ export default function ShippingSheetPage() {
     const sheet = sheetRes.data as { rank_key: string | null; shipments: Shipment[]; notes: string | null } | null;
     if (sheet) {
       setRankKey(sheet.rank_key || "");
-      setShipments(Array.isArray(sheet.shipments) && sheet.shipments.length > 0 ? sheet.shipments : [{ label: "初回", date: e ? defaultFirstShipDate(e) : "", memo: "", items: {} }]);
+      setShipments(Array.isArray(sheet.shipments) && sheet.shipments.length > 0 ? sheet.shipments : (e ? defaultShipments(e) : [{ label: "初回", date: "", memo: "", items: {} }]));
       setNotes(sheet.notes || "");
     } else if (e) {
-      // 新規帳面: 初回便の出荷日を会期から自動セット（前日。遠隔地は2日前）
-      setShipments([{ label: "初回", date: defaultFirstShipDate(e), memo: "", items: {} }]);
+      // 新規帳面: 初回(搬入日着)＋追加2便を毎日出荷で自動セット
+      setShipments(defaultShipments(e));
     }
     // 同じ会場の過去催事（売上あり）＝ランク提案の材料
     if (e) {
@@ -162,10 +169,10 @@ export default function ShippingSheetPage() {
     setShipments((prev) => prev.map((s, i) => (i === si ? { ...s, items: { ...s.items, [productId]: v } } : s)));
   const setShipMeta = (si: number, patch: Partial<Shipment>) =>
     setShipments((prev) => prev.map((s, i) => (i === si ? { ...s, ...patch } : s)));
-  // 追加便の出荷日は「前の便の3日後」を仮置き（会期末を超えない範囲）。手で直せます
+  // 追加便の出荷日は「前の便の翌日」を仮置き（毎日出荷の運用。会期末は超えない）。手で直せます
   const addShipment = () => setShipments((prev) => {
     const last = prev[prev.length - 1];
-    let date = last?.date ? addYmd(last.date, 3) : "";
+    let date = last?.date ? addYmd(last.date, 1) : "";
     if (date && evt && date > evt.end_date) date = evt.end_date;
     return [...prev, { label: `追加${prev.length}`, date, memo: "", items: {} }];
   });
@@ -232,13 +239,22 @@ export default function ShippingSheetPage() {
           </div>
         </div>
 
-        {/* 配送リードタイム警告 */}
-        {isFar && (
-          <div className="rounded-md border-2 border-orange-300 bg-orange-50 px-3 py-2 text-sm text-orange-900">
-            🚚 <span className="font-bold">{evt.prefecture}は配送に2日かかります。</span>
-            初回便は会期初日の<span className="font-bold">2日前（{addDaysStr(evt.start_date, -2)}）までに出荷</span>してください。追加出荷も2日前出荷で計画を。
-          </div>
-        )}
+        {/* 配送リードタイム表示（初回は搬入日＝会期前日に届ける） */}
+        {(() => {
+          const t = transitDays(evt.prefecture);
+          const carryIn = addYmd(evt.start_date, -1);
+          const firstShip = addYmd(evt.start_date, -(t + 1));
+          return isFar ? (
+            <div className="rounded-md border-2 border-orange-300 bg-orange-50 px-3 py-2 text-sm text-orange-900">
+              🚚 <span className="font-bold">{evt.prefecture}は配送に2日かかります。</span>
+              初回便は<span className="font-bold">搬入日 {fmtMD(carryIn)} 着</span> ＝ <span className="font-bold">{fmtMD(firstShip)} 出荷</span>。追加便も配送2日で逆算してください。
+            </div>
+          ) : (
+            <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+              🚚 初回便は<span className="font-bold">搬入日 {fmtMD(carryIn)}（会期前日）着</span> ＝ <span className="font-bold">{fmtMD(firstShip)} 出荷</span>（翌日配送）。
+            </div>
+          );
+        })()}
 
         {/* ランク選択（過去実績の提案つき） */}
         <Card>
@@ -357,11 +373,10 @@ export default function ShippingSheetPage() {
               会期 {evt.start_date} 〜 {evt.end_date}　／　ランク {rankKey || "—"}{rankLabel ? `（${rankLabel}）` : ""}
             </div>
           </div>
-          {isFar && (
-            <div style={{ fontSize: "9pt", color: "#b45309", marginBottom: "1.5mm" }}>
-              🚚 {evt.prefecture}：配送2日。初回便は {addDaysStr(evt.start_date, -2)} までに出荷。
-            </div>
-          )}
+          <div style={{ fontSize: "9pt", color: isFar ? "#b45309" : "#555", marginBottom: "1.5mm" }}>
+            🚚 初回便は搬入日 {fmtMD(addYmd(evt.start_date, -1))}（会期前日）着 ＝ {fmtMD(addYmd(evt.start_date, -(transitDays(evt.prefecture) + 1)))} 出荷
+            {isFar ? `（${evt.prefecture}：配送2日）` : "（翌日配送）"}。
+          </div>
           {/* 紙の帳面と同じ: 商品名ごとに1列、規格（10枚入/5枚入・大/小など）は列の中で段にする */}
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "8pt" }}>
             <thead>
