@@ -102,16 +102,20 @@ export default function ShippingMasterPage() {
   const moveProduct = async (idx: number, dir: -1 | 1) => {
     const j = idx + dir;
     if (j < 0 || j >= products.length) return;
-    const a = products[idx], b = products[j];
-    setProducts((prev) => {
-      const next = [...prev];
-      [next[idx], next[j]] = [next[j], next[idx]];
-      return next;
-    });
-    await Promise.all([
-      supabase.from("shipment_products").update({ sort_order: b.sort_order }).eq("id", a.id),
-      supabase.from("shipment_products").update({ sort_order: a.sort_order }).eq("id", b.id),
-    ]);
+    // 並べ替え後の順で 1..n を振り直して全件保存する（sort_orderの重複や過去データの
+    // ズレがあっても確実に順番が確定する。失敗したら知らせて元に戻す）
+    const next = [...products];
+    [next[idx], next[j]] = [next[j], next[idx]];
+    const renumbered = next.map((p, i) => ({ ...p, sort_order: i + 1 }));
+    setProducts(renumbered);
+    for (const p of renumbered) {
+      const { error } = await supabase.from("shipment_products").update({ sort_order: p.sort_order }).eq("id", p.id);
+      if (error) {
+        alert(`並び順の保存に失敗しました。\n${error.message}`);
+        fetchData();
+        return;
+      }
+    }
   };
 
   const activeFirst = useMemo(() => products, [products]);

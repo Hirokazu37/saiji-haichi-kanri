@@ -46,6 +46,13 @@ const addDaysStr = (ymd: string, n: number) => {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 };
 
+// 出荷日の表示は「7/22(水)」形式（年なし・曜日つき）
+const WD = ["日", "月", "火", "水", "木", "金", "土"];
+const fmtMD = (ymd: string) => {
+  const d = new Date(ymd + "T00:00:00");
+  return `${d.getMonth() + 1}/${d.getDate()}(${WD[d.getDay()]})`;
+};
+
 export default function ShippingSheetPage() {
   const { eventId } = useParams<{ eventId: string }>();
   const { role } = usePermission();
@@ -274,8 +281,12 @@ export default function ShippingSheetPage() {
                           </button>
                         )}
                       </div>
-                      <Input type="date" value={s.date} onChange={(e) => setShipMeta(si, { date: e.target.value })} disabled={!canWrite}
-                        className="h-7 text-[10px] bg-white" title="出荷日" />
+                      {/* 表示は「7/22(水)」（年なし・曜日つき）。クリックでカレンダー選択 */}
+                      <div className="relative h-7 w-24 rounded-md border border-input bg-white text-xs flex items-center justify-center">
+                        {s.date ? <span className="font-medium">{fmtMD(s.date)}</span> : <span className="text-muted-foreground">出荷日</span>}
+                        <input type="date" value={s.date} onChange={(e) => setShipMeta(si, { date: e.target.value })} disabled={!canWrite}
+                          className="absolute inset-0 opacity-0 cursor-pointer" title="出荷日を選ぶ" />
+                      </div>
                     </td>
                     {productGroups.map((g) => (
                       <td key={g.name} className="px-1 py-1.5 border-l">
@@ -343,7 +354,7 @@ export default function ShippingSheetPage() {
                 <tr key={si}>
                   <td style={{ border: "1px solid #333", padding: "1mm", fontWeight: 700, whiteSpace: "nowrap", verticalAlign: "top" }}>
                     {s.label}
-                    {s.date && <span style={{ display: "block", fontSize: "7pt", fontWeight: 400 }}>{s.date.slice(5).replace("-", "/")}出荷</span>}
+                    {s.date && <span style={{ display: "block", fontSize: "7pt", fontWeight: 400 }}>{fmtMD(s.date)}出荷</span>}
                   </td>
                   {productGroups.map((g) => (
                     <td key={g.name} style={{ border: "1px solid #333", padding: "1mm 0.5mm", textAlign: "center", verticalAlign: "top", minHeight: "10mm" }}>
