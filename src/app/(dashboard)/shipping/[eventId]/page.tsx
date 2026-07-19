@@ -109,6 +109,16 @@ export default function ShippingSheetPage() {
     return { avgManPerDay, rank: suggestRank(avgManPerDay) };
   }, [pastEvents]);
 
+  // 印刷用: 紙の帳面と同じ「商品名ごとに1列」。規格（10枚入/5枚入など）は列の中で段にする
+  const productGroups = useMemo(() => {
+    const groups: { name: string; skus: Product[] }[] = [];
+    for (const p of products) {
+      const g = groups.find((x) => x.name === p.name);
+      if (g) g.skus.push(p); else groups.push({ name: p.name, skus: [p] });
+    }
+    return groups;
+  }, [products]);
+
   /** ランクの標準数量を初回便へ反映 */
   const applyStandards = (rk: string) => {
     setShipments((prev) => {
@@ -312,13 +322,14 @@ export default function ShippingSheetPage() {
               🚚 {evt.prefecture}：配送2日。初回便は {addDaysStr(evt.start_date, -2)} までに出荷。
             </div>
           )}
+          {/* 紙の帳面と同じ: 商品名ごとに1列、規格（10枚入/5枚入・大/小など）は列の中で段にする */}
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "8pt" }}>
             <thead>
               <tr>
-                <th style={{ border: "1px solid #333", padding: "1mm", background: "#f1f5f9", width: "22mm" }}>便</th>
-                {products.map((p) => (
-                  <th key={p.id} style={{ border: "1px solid #333", padding: "0.5mm", background: "#f1f5f9", fontWeight: 600, lineHeight: 1.2 }}>
-                    {p.name}{p.spec ? <span style={{ display: "block", fontSize: "6.5pt", fontWeight: 400 }}>{p.spec}</span> : null}
+                <th style={{ border: "1px solid #333", padding: "1mm", background: "#f1f5f9", width: "16mm" }}>便</th>
+                {productGroups.map((g) => (
+                  <th key={g.name} style={{ border: "1px solid #333", padding: "1mm 0.5mm", background: "#f1f5f9", fontWeight: 700, lineHeight: 1.2 }}>
+                    {g.name}
                   </th>
                 ))}
               </tr>
@@ -326,14 +337,32 @@ export default function ShippingSheetPage() {
             <tbody>
               {shipments.map((s, si) => (
                 <tr key={si}>
-                  <td style={{ border: "1px solid #333", padding: "1mm", fontWeight: 700, whiteSpace: "nowrap" }}>
+                  <td style={{ border: "1px solid #333", padding: "1mm", fontWeight: 700, whiteSpace: "nowrap", verticalAlign: "top" }}>
                     {s.label}
                     {s.date && <span style={{ display: "block", fontSize: "7pt", fontWeight: 400 }}>{s.date.slice(5).replace("-", "/")}出荷</span>}
                   </td>
-                  {products.map((p) => (
-                    <td key={p.id} style={{ border: "1px solid #333", padding: "1mm", textAlign: "center", fontSize: "10pt" }}>
-                      {s.items[p.id] || ""}
+                  {productGroups.map((g) => (
+                    <td key={g.name} style={{ border: "1px solid #333", padding: "1mm 0.5mm", textAlign: "center", verticalAlign: "top", minHeight: "10mm" }}>
+                      {g.skus.map((p) => {
+                        const v = s.items[p.id];
+                        if (!v || !v.trim()) return null;
+                        return (
+                          <div key={p.id} style={{ lineHeight: 1.4, whiteSpace: "nowrap" }}>
+                            {p.spec && <span style={{ fontSize: "6.5pt", color: "#555", marginRight: "0.8mm" }}>{p.spec}</span>}
+                            <span style={{ fontSize: "10.5pt" }}>{v}</span>
+                          </div>
+                        );
+                      })}
                     </td>
+                  ))}
+                </tr>
+              ))}
+              {/* 手書き追記用の予備行（紙運用のため空行を残す） */}
+              {[0, 1, 2].map((i) => (
+                <tr key={`blank-${i}`}>
+                  <td style={{ border: "1px solid #333", height: "13mm" }} />
+                  {productGroups.map((g) => (
+                    <td key={g.name} style={{ border: "1px solid #333" }} />
                   ))}
                 </tr>
               ))}
