@@ -285,6 +285,11 @@ export default function ShippingSheetPage() {
                       <div className="relative h-7 w-24 rounded-md border border-input bg-white text-xs flex items-center justify-center">
                         {s.date ? <span className="font-medium">{fmtMD(s.date)}</span> : <span className="text-muted-foreground">出荷日</span>}
                         <input type="date" value={s.date} onChange={(e) => setShipMeta(si, { date: e.target.value })} disabled={!canWrite}
+                          onClick={(e) => {
+                            // 透明入力はクリックだけではカレンダーが開かないため、明示的に開く
+                            const el = e.currentTarget as HTMLInputElement & { showPicker?: () => void };
+                            try { el.showPicker?.(); } catch { /* フォーカスで代替 */ }
+                          }}
                           className="absolute inset-0 opacity-0 cursor-pointer" title="出荷日を選ぶ" />
                       </div>
                     </td>

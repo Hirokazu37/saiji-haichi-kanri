@@ -32,6 +32,7 @@ export default function ShippingMasterPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [orderSaved, setOrderSaved] = useState(false);
 
   const fetchData = useCallback(async () => {
     const [prodRes, stdRes] = await Promise.all([
@@ -116,6 +117,8 @@ export default function ShippingMasterPage() {
         return;
       }
     }
+    setOrderSaved(true);
+    setTimeout(() => setOrderSaved(false), 1500);
   };
 
   const activeFirst = useMemo(() => products, [products]);
@@ -144,6 +147,7 @@ export default function ShippingMasterPage() {
               <Save className="h-4 w-4 mr-1" />{saving ? "保存中..." : `数量を保存${dirtyStd.size ? `（${dirtyStd.size}）` : ""}`}
             </Button>
             {saved && <span className="text-xs text-green-600 font-medium">✓ 保存しました</span>}
+            {orderSaved && <span className="text-xs text-green-600 font-medium">✓ 並び順を保存しました</span>}
           </div>
         )}
       </div>
