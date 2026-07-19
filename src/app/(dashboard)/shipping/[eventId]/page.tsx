@@ -249,16 +249,23 @@ export default function ShippingSheetPage() {
           </CardContent>
         </Card>
 
-        {/* 数量グリッド（行=商品、列=便） */}
+        {/* 数量グリッド（紙の帳面と同じ: 縦=便（日付）、横=商品名。規格は列内で段組み） */}
         <Card>
           <CardContent className="p-0 overflow-x-auto">
-            <table className="w-full text-sm min-w-[560px]">
+            <table className="text-sm" style={{ minWidth: `${140 + productGroups.length * 96}px` }}>
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="text-left px-3 py-2 sticky left-0 bg-muted/50 min-w-[150px]">商品</th>
-                  {shipments.map((s, si) => (
-                    <th key={si} className="px-2 py-1.5 min-w-[110px]">
-                      <div className="flex items-center justify-center gap-1">
+                  <th className="text-left px-2 py-2 sticky left-0 bg-muted/50 min-w-[130px] z-10">便／出荷日</th>
+                  {productGroups.map((g) => (
+                    <th key={g.name} className="px-1 py-2 text-center min-w-[92px] text-xs whitespace-nowrap border-l">{g.name}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {shipments.map((s, si) => (
+                  <tr key={si} className="border-b align-top hover:bg-muted/10">
+                    <td className="px-2 py-2 sticky left-0 bg-white z-10 space-y-1">
+                      <div className="flex items-center gap-1">
                         <Input value={s.label} onChange={(e) => setShipMeta(si, { label: e.target.value })} disabled={!canWrite}
                           className="h-7 w-20 text-xs text-center font-bold bg-white" />
                         {si > 0 && canWrite && (
@@ -268,36 +275,33 @@ export default function ShippingSheetPage() {
                         )}
                       </div>
                       <Input type="date" value={s.date} onChange={(e) => setShipMeta(si, { date: e.target.value })} disabled={!canWrite}
-                        className="h-7 mt-1 text-[10px] bg-white" title="出荷日" />
-                    </th>
-                  ))}
-                  {canWrite && (
-                    <th className="px-2">
-                      <Button variant="outline" size="sm" onClick={addShipment} title="追加出荷の便を足す">
-                        <Plus className="h-4 w-4" />便
-                      </Button>
-                    </th>
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {products.map((p) => (
-                  <tr key={p.id} className="border-b last:border-b-0 hover:bg-muted/20">
-                    <td className="px-3 py-1 sticky left-0 bg-white font-medium whitespace-nowrap">
-                      {p.name}{p.spec && <span className="ml-1 text-[10px] text-muted-foreground">{p.spec}</span>}
+                        className="h-7 text-[10px] bg-white" title="出荷日" />
                     </td>
-                    {shipments.map((s, si) => (
-                      <td key={si} className="px-2 py-1">
-                        <Input value={s.items[p.id] || ""} onChange={(e) => setQty(si, p.id, e.target.value)} disabled={!canWrite}
-                          className="h-8 text-center bg-white" />
+                    {productGroups.map((g) => (
+                      <td key={g.name} className="px-1 py-1.5 border-l">
+                        {g.skus.map((p) => (
+                          <div key={p.id} className="flex items-center gap-1 mb-1 last:mb-0">
+                            {g.skus.length > 1 && (
+                              <span className="text-[9px] text-muted-foreground w-9 shrink-0 text-right leading-tight">{p.spec}</span>
+                            )}
+                            <Input value={s.items[p.id] || ""} onChange={(e) => setQty(si, p.id, e.target.value)} disabled={!canWrite}
+                              className="h-7 text-center text-xs bg-white" title={`${p.name}${p.spec ? ` ${p.spec}` : ""}`} />
+                          </div>
+                        ))}
                       </td>
                     ))}
-                    {canWrite && <td />}
                   </tr>
                 ))}
               </tbody>
             </table>
           </CardContent>
+          {canWrite && (
+            <div className="px-3 pb-3">
+              <Button variant="outline" size="sm" onClick={addShipment} title="追加出荷の便（行）を足す">
+                <Plus className="h-4 w-4 mr-1" />追加出荷の便を足す
+              </Button>
+            </div>
+          )}
         </Card>
 
         <div className="max-w-2xl">
