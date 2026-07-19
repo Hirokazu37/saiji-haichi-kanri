@@ -60,6 +60,17 @@ export default function ShippingMasterPage() {
     if (error) { alert(`商品の更新に失敗しました。\n${error.message}`); fetchData(); }
   };
 
+  // 名前・規格の編集: 入力中はローカルだけ更新し、欄を離れたときに保存する
+  const setProdLocal = (id: string, patch: Partial<Product>) =>
+    setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+  const persistProduct = async (id: string, patch: Partial<Product>) => {
+    const { error } = await supabase.from("shipment_products").update(patch).eq("id", id);
+    if (error) {
+      alert(`保存に失敗しました。\n${error.message}\n※同じ「商品名＋規格」の組み合わせが既にあると保存できません。`);
+      fetchData();
+    }
+  };
+
   const addProduct = async () => {
     const name = window.prompt("商品名を入力してください（例: 季節の天ぷら）");
     if (!name || !name.trim()) return;
@@ -150,9 +161,22 @@ export default function ShippingMasterPage() {
             <tbody>
               {activeFirst.map((p, idx) => (
                 <tr key={p.id} className={`border-b last:border-b-0 ${p.is_active ? "" : "opacity-45"}`}>
-                  <td className="px-3 py-1 sticky left-0 bg-white whitespace-nowrap">
-                    <span className="font-medium">{p.name}</span>
-                    {p.spec && <span className="ml-1 text-[10px] text-muted-foreground">{p.spec}</span>}
+                  <td className="px-2 py-1 sticky left-0 bg-white whitespace-nowrap">
+                    {canEdit ? (
+                      <div className="flex items-center gap-1">
+                        <Input value={p.name} onChange={(e) => setProdLocal(p.id, { name: e.target.value })}
+                          onBlur={(e) => persistProduct(p.id, { name: e.target.value.trim() })}
+                          className="h-7 w-32 text-sm font-medium" title="商品名（書き換えて欄の外をクリックで保存）" />
+                        <Input value={p.spec} onChange={(e) => setProdLocal(p.id, { spec: e.target.value })}
+                          onBlur={(e) => persistProduct(p.id, { spec: e.target.value.trim() })}
+                          placeholder="規格" className="h-7 w-16 text-xs" title="規格（10枚入/大/2入など。空でもOK）" />
+                      </div>
+                    ) : (
+                      <>
+                        <span className="font-medium">{p.name}</span>
+                        {p.spec && <span className="ml-1 text-[10px] text-muted-foreground">{p.spec}</span>}
+                      </>
+                    )}
                   </td>
                   {RANKS.map((r) => {
                     const key = `${r.key}|${p.id}`;
@@ -182,6 +206,8 @@ export default function ShippingMasterPage() {
       </Card>
 
       <p className="text-xs text-muted-foreground">
+        ※ <span className="font-medium">商品名・規格はそのまま書き換えて、欄の外をクリックすると保存</span>されます。
+        並び順は「↑↓」ボタンで変更（例：5枚入を上にしたいなら、その行の↑を押す。帳面の列・段の順に反映されます）。<br />
         ※ 商品が増えたら「商品を追加」。売らなくなった商品は「休止」にすると帳面から消えます（過去の帳面は残ります）。
       </p>
     </div>
