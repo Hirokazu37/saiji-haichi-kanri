@@ -502,6 +502,7 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
     "手配済": "bg-green-50 text-green-700 border-green-200",
     "提出済": "bg-green-50 text-green-700 border-green-200",
     "印刷済み": "bg-green-50 text-green-700 border-green-200",
+    "投函済み": "bg-green-50 text-green-700 border-green-200",
     "校正済み": "bg-blue-50 text-blue-700 border-blue-200",
     "校正中": "bg-amber-50 text-amber-700 border-amber-200",
     "不要": "bg-gray-100 text-gray-600 border-gray-200",
@@ -710,7 +711,7 @@ function ArrangementEditor({ eventId, venue, storeName, startDate, endDate }, re
               {statusBadge(dmAgg)}
             </div>
             <div className="flex gap-1">
-              {["なし", "未着手", "校正中", "校正済み", "印刷済み"].map((s) => {
+              {["なし", "未着手", "校正中", "校正済み", "印刷済み", "投函済み"].map((s) => {
                 const current = dmStatus || "なし";
                 return (
                   <Badge key={s} variant={current === s ? "default" : "outline"} className={`cursor-pointer text-xs ${current !== s ? "bg-white" : ""}`}

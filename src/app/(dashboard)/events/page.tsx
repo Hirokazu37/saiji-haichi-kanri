@@ -416,7 +416,11 @@ export default function EventsPage() {
     const manns = mannequinSummaries.filter((m) => m.event_id === evt.id);
     const mannNg = manns.length > 0 && !manns.every((m) => m.arrangement_status === "手配済");
     const applicationNg = (evt.application_status || "未提出") !== "提出済";
-    const dmNg = evt.dm_status != null && evt.dm_status !== "印刷済み";
+    // DMは「印刷済み」以降 (投函済み含む) が完了扱い
+    const dmNg =
+      evt.dm_status != null &&
+      evt.dm_status !== "印刷済み" &&
+      evt.dm_status !== "投函済み";
     const shipmentNg = !(evt.equipment_from && evt.equipment_to);
     return hotelNg || transportNg || mannNg || applicationNg || dmNg || shipmentNg;
   };
@@ -988,7 +992,7 @@ export default function EventsPage() {
                                   const arr = getArrangementStatus(evt);
                                   const icons = [
                                     { label: "申込", ok: arr.application === "提出済", na: false },
-                                    { label: evt.dm_count ? `DM${evt.dm_count}枚` : "DM", ok: arr.dm === "印刷済み", na: arr.dm === null },
+                                    { label: evt.dm_count ? `DM${evt.dm_count}枚` : "DM", ok: arr.dm === "印刷済み" || arr.dm === "投函済み", na: arr.dm === null },
                                     { label: "ホテル", ok: arr.hotel === "設定済", na: arr.hotel === "未登録" },
                                     { label: "交通", ok: arr.transport === "設定済", na: arr.transport === "未登録" },
                                     { label: "マネキン", ok: arr.mannequin === "ok", na: arr.mannequin === "na" },
@@ -1241,7 +1245,7 @@ export default function EventsPage() {
               type StatusKind = "ok" | "partial" | "ng" | "na";
               const classify = (label: string, v: string | null): { kind: StatusKind; text: string } => {
                 if (label === "申込") return { kind: v === "提出済" ? "ok" : "ng", text: v === "提出済" ? "提出済" : "未提出" };
-                if (label === "DM") return v === null ? { kind: "na", text: "なし" } : v === "印刷済み" ? { kind: "ok", text: "印刷済" } : { kind: "partial", text: v };
+                if (label === "DM") return v === null ? { kind: "na", text: "なし" } : v === "投函済み" ? { kind: "ok", text: "投函済" } : v === "印刷済み" ? { kind: "ok", text: "印刷済" } : { kind: "partial", text: v };
                 if (label === "マネキン") return v === "na" ? { kind: "na", text: "不要" } : v === "ok" ? { kind: "ok", text: "手配済" } : { kind: "ng", text: "未手配" };
                 // hotel / transport / shipment
                 if (v === "設定済") return { kind: "ok", text: "設定済" };
@@ -1481,7 +1485,7 @@ export default function EventsPage() {
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <span className="text-sm font-bold text-purple-800">DMハガキ</span>
                     <div className="flex gap-1 flex-wrap">
-                      {["なし", "未着手", "校正中", "校正済み", "印刷済み"].map((s) => {
+                      {["なし", "未着手", "校正中", "校正済み", "印刷済み", "投函済み"].map((s) => {
                         const current = dialogEvent.dm_status || "なし";
                         return (
                           <Badge key={s} variant={current === s ? "default" : "outline"} className="cursor-pointer text-xs"

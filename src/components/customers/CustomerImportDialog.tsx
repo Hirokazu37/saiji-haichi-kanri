@@ -402,6 +402,18 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
       }
 
       setProgress("");
+      // 催事×区分が確定している取込なら、DMハガキ一覧の区分チェックも自動で付ける
+      // (「取込はしたが区分の記録が付いていない」の防止)
+      if (event?.id && fixedSegMaster) {
+        await supabase.from("event_dm_segments").upsert(
+          {
+            event_id: event.id,
+            kbn_no: fixedSegMaster.kbn_no,
+            code: fixedSegMaster.code,
+          },
+          { onConflict: "event_id,kbn_no,code", ignoreDuplicates: true }
+        );
+      }
       // 取込履歴を記録（取り違えに後から気付けるように）
       await supabase.from("customer_import_logs").insert({
         file_name: fileName,

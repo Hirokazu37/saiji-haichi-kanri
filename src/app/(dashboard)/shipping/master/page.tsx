@@ -12,13 +12,14 @@ import { ArrowLeft, Plus, Save, Truck } from "lucide-react";
 type Product = { id: string; name: string; spec: string; sort_order: number; is_active: boolean };
 type Standard = { rank_key: string; product_id: string; qty: string };
 
+// ランクは「1日あたりの売上（日販・万円）」の規模
 const RANKS = [
-  { key: "A", label: "80〜100万" },
-  { key: "B", label: "50〜80万" },
-  { key: "C", label: "30〜50万" },
-  { key: "D", label: "20〜30万" },
-  { key: "E", label: "10〜20万" },
-  { key: "F", label: "15万以下" },
+  { key: "A", label: "日販80〜100万" },
+  { key: "B", label: "日販50〜80万" },
+  { key: "C", label: "日販30〜50万" },
+  { key: "D", label: "日販20〜30万" },
+  { key: "E", label: "日販10〜20万" },
+  { key: "F", label: "日販15万以下" },
 ];
 
 export default function ShippingMasterPage() {

@@ -233,7 +233,10 @@ export default function DashboardPage() {
 
       const equipOk = !!evt.equipment_from && !!evt.equipment_to;
       const appOk = evt.application_status === "提出済";
-      const dmOk = evt.dm_status === null || evt.dm_status === "印刷済み";
+      const dmOk =
+        evt.dm_status === null ||
+        evt.dm_status === "印刷済み" ||
+        evt.dm_status === "投函済み";
       const staffOk = evtStaff.length > 0;
 
       const missing: { key: string; label: string; short: string }[] = [];

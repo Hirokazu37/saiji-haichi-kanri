@@ -17,18 +17,25 @@ type Product = { id: string; name: string; spec: string; sort_order: number; is_
 type Standard = { rank_key: string; product_id: string; qty: string };
 type Shipment = { label: string; date: string; memo: string; items: Record<string, string> };
 
+// ランクは「1日あたりの売上（日販・万円）」の規模
 const RANKS = [
-  { key: "A", label: "80〜100万" },
-  { key: "B", label: "50〜80万" },
-  { key: "C", label: "30〜50万" },
-  { key: "D", label: "20〜30万" },
-  { key: "E", label: "10〜20万" },
-  { key: "F", label: "15万以下" },
+  { key: "A", label: "日販80〜100万" },
+  { key: "B", label: "日販50〜80万" },
+  { key: "C", label: "日販30〜50万" },
+  { key: "D", label: "日販20〜30万" },
+  { key: "E", label: "日販10〜20万" },
+  { key: "F", label: "日販15万以下" },
 ];
 
-// 予想売上（万円）からランクを提案
-const suggestRank = (man: number): string =>
-  man >= 80 ? "A" : man >= 50 ? "B" : man >= 30 ? "C" : man >= 20 ? "D" : man >= 15 ? "E" : "F";
+// 日販（万円）からランクを提案
+const suggestRank = (manPerDay: number): string =>
+  manPerDay >= 80 ? "A" : manPerDay >= 50 ? "B" : manPerDay >= 30 ? "C" : manPerDay >= 20 ? "D" : manPerDay >= 15 ? "E" : "F";
+
+// 会期日数（両端含む）
+const eventDays = (start: string, end: string): number => {
+  const ms = new Date(end + "T00:00:00").getTime() - new Date(start + "T00:00:00").getTime();
+  return Math.max(1, Math.round(ms / 86400000) + 1);
+};
 
 // 配送に2日かかる地域（初回便は会期初日の2日前までに出荷）
 const FAR_PREFS = ["北海道", "青森県", "岩手県", "宮城県", "秋田県", "山形県", "福島県", "沖縄県"];
@@ -93,11 +100,13 @@ export default function ShippingSheetPage() {
     return m;
   }, [standards]);
 
-  // 過去実績からの提案（平均・万円）
+  // 過去実績からの提案（平均日販・万円）。ランクは1日あたりの売上規模なので、
+  // 各催事の売上を会期日数で割って日販に換算してから平均する。
   const suggestion = useMemo(() => {
     if (pastEvents.length === 0) return null;
-    const avgMan = pastEvents.reduce((s, p) => s + (p.revenue || 0), 0) / pastEvents.length / 10000;
-    return { avgMan, rank: suggestRank(avgMan) };
+    const dailies = pastEvents.map((p) => (p.revenue || 0) / eventDays(p.start_date, p.end_date) / 10000);
+    const avgManPerDay = dailies.reduce((s, v) => s + v, 0) / dailies.length;
+    return { avgManPerDay, rank: suggestRank(avgManPerDay) };
   }, [pastEvents]);
 
   /** ランクの標準数量を初回便へ反映 */
@@ -213,10 +222,13 @@ export default function ShippingSheetPage() {
               <div className="flex items-start gap-2 rounded-md bg-violet-50 border border-violet-200 px-3 py-2 text-sm text-violet-900">
                 <Sparkles className="h-4 w-4 mt-0.5 shrink-0 text-violet-600" />
                 <div>
-                  この会場の過去実績（{pastEvents.length}回）の平均は <span className="font-bold">約{Math.round(suggestion.avgMan)}万円</span> →
+                  この会場の過去実績（{pastEvents.length}回）の平均日販は <span className="font-bold">約{Math.round(suggestion.avgManPerDay)}万円/日</span> →
                   <span className="font-bold"> ランク{suggestion.rank} が目安</span>です（最終判断は担当者）。
                   <div className="text-xs mt-0.5 text-violet-700">
-                    {pastEvents.map((p) => `${p.start_date.slice(0, 7)}: ${Math.round((p.revenue || 0) / 10000)}万円`).join(" ／ ")}
+                    {pastEvents.map((p) => {
+                      const days = eventDays(p.start_date, p.end_date);
+                      return `${p.start_date.slice(0, 7)}: 計${Math.round((p.revenue || 0) / 10000)}万円（${days}日間・日販約${Math.round((p.revenue || 0) / days / 10000)}万円）`;
+                    }).join(" ／ ")}
                   </div>
                 </div>
               </div>
