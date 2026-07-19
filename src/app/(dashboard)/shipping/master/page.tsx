@@ -10,7 +10,14 @@ import { usePermission } from "@/hooks/usePermission";
 import { ArrowLeft, ArrowUp, ArrowDown, Plus, Save, Truck } from "lucide-react";
 
 type Product = { id: string; name: string; spec: string; sort_order: number; is_active: boolean };
-type Standard = { rank_key: string; product_id: string; qty: string };
+type Standard = { rank_key: string; product_id: string; qty: string; ship_no: number };
+
+// 便（手書き帳面の各ブロックに対応）
+const SHIPS = [
+  { no: 1, label: "初回" },
+  { no: 2, label: "追加1" },
+  { no: 3, label: "追加2" },
+];
 
 // ランクは「1日あたりの売上（日販・万円）」の規模
 const RANKS = [
@@ -26,9 +33,11 @@ export default function ShippingMasterPage() {
   const { canEdit } = usePermission();
   const supabase = createClient();
   const [products, setProducts] = useState<Product[]>([]);
-  // "rank|productId" -> qty
+  // "shipNo|rank|productId" -> qty
   const [std, setStd] = useState<Map<string, string>>(new Map());
   const [dirtyStd, setDirtyStd] = useState<Set<string>>(new Set());
+  // 表示中の便（初回/追加1/追加2）
+  const [shipNo, setShipNo] = useState(1);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -37,11 +46,11 @@ export default function ShippingMasterPage() {
   const fetchData = useCallback(async () => {
     const [prodRes, stdRes] = await Promise.all([
       supabase.from("shipment_products").select("*").order("sort_order"),
-      supabase.from("shipment_standards").select("rank_key, product_id, qty"),
+      supabase.from("shipment_standards").select("rank_key, product_id, qty, ship_no"),
     ]);
     setProducts((prodRes.data as Product[]) || []);
     const m = new Map<string, string>();
-    for (const s of ((stdRes.data as Standard[]) || [])) m.set(`${s.rank_key}|${s.product_id}`, s.qty);
+    for (const s of ((stdRes.data as Standard[]) || [])) m.set(`${s.ship_no ?? 1}|${s.rank_key}|${s.product_id}`, s.qty);
     setStd(m);
     setDirtyStd(new Set());
     setLoading(false);
@@ -50,7 +59,7 @@ export default function ShippingMasterPage() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const setQty = (rank: string, productId: string, v: string) => {
-    const key = `${rank}|${productId}`;
+    const key = `${shipNo}|${rank}|${productId}`;
     setStd((prev) => new Map(prev).set(key, v));
     setDirtyStd((prev) => new Set(prev).add(key));
   };
@@ -87,10 +96,10 @@ export default function ShippingMasterPage() {
     setSaving(true);
     try {
       const rows = Array.from(dirtyStd).map((key) => {
-        const [rank_key, product_id] = key.split("|");
-        return { rank_key, product_id, qty: std.get(key) || "" };
+        const [ship, rank_key, product_id] = key.split("|");
+        return { ship_no: Number(ship), rank_key, product_id, qty: std.get(key) || "" };
       });
-      const { error } = await supabase.from("shipment_standards").upsert(rows, { onConflict: "rank_key,product_id" });
+      const { error } = await supabase.from("shipment_standards").upsert(rows, { onConflict: "rank_key,product_id,ship_no" });
       if (error) { alert(`保存に失敗しました。\n${error.message}`); return; }
       setDirtyStd(new Set());
       setSaved(true);
@@ -152,6 +161,22 @@ export default function ShippingMasterPage() {
         )}
       </div>
 
+      {/* 便の切替（手書き帳面の1〜3ブロック目に対応） */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-sm font-bold">便：</span>
+        <div className="inline-flex rounded-lg border-2 overflow-hidden">
+          {SHIPS.map((s) => (
+            <button key={s.no} type="button" onClick={() => setShipNo(s.no)}
+              className={`h-9 px-4 text-sm font-bold transition-colors ${shipNo === s.no ? "bg-primary text-primary-foreground" : "bg-white text-gray-500 hover:bg-muted"}`}>
+              {s.label}
+            </button>
+          ))}
+        </div>
+        <span className="text-xs text-muted-foreground">
+          出荷帳面でランクを選ぶと、初回・追加1・追加2の3便分がまとめて自動入力されます。
+        </span>
+      </div>
+
       <Card>
         <CardContent className="p-0 overflow-x-auto">
           <table className="w-full text-sm min-w-[760px]">
@@ -196,7 +221,7 @@ export default function ShippingMasterPage() {
                     )}
                   </td>
                   {RANKS.map((r) => {
-                    const key = `${r.key}|${p.id}`;
+                    const key = `${shipNo}|${r.key}|${p.id}`;
                     return (
                       <td key={r.key} className="px-1.5 py-1">
                         <Input value={std.get(key) || ""} onChange={(e) => setQty(r.key, p.id, e.target.value)} disabled={!canEdit}

@@ -14,7 +14,7 @@ import { ArrowLeft, Printer, Save, Plus, Trash2, Truck, Settings, Sparkles } fro
 
 type Evt = { id: string; name: string | null; venue: string; store_name: string | null; prefecture: string | null; start_date: string; end_date: string; revenue: number | null };
 type Product = { id: string; name: string; spec: string; sort_order: number; is_active: boolean };
-type Standard = { rank_key: string; product_id: string; qty: string };
+type Standard = { rank_key: string; product_id: string; qty: string; ship_no: number };
 type Shipment = { label: string; date: string; memo: string; items: Record<string, string> };
 
 // ランクは「1日あたりの売上（日販・万円）」の規模
@@ -91,7 +91,7 @@ export default function ShippingSheetPage() {
     const [evRes, prodRes, stdRes, sheetRes] = await Promise.all([
       supabase.from("events").select("id, name, venue, store_name, prefecture, start_date, end_date, revenue").eq("id", eventId).single(),
       supabase.from("shipment_products").select("*").order("sort_order"),
-      supabase.from("shipment_standards").select("rank_key, product_id, qty"),
+      supabase.from("shipment_standards").select("rank_key, product_id, qty, ship_no"),
       supabase.from("event_shipment_sheets").select("rank_key, shipments, notes").eq("event_id", eventId).maybeSingle(),
     ]);
     const e = evRes.data as Evt | null;
@@ -124,7 +124,7 @@ export default function ShippingSheetPage() {
 
   const stdMap = useMemo(() => {
     const m = new Map<string, string>();
-    for (const s of standards) m.set(`${s.rank_key}|${s.product_id}`, s.qty);
+    for (const s of standards) m.set(`${s.rank_key}|${s.ship_no ?? 1}|${s.product_id}`, s.qty);
     return m;
   }, [standards]);
 
@@ -147,20 +147,20 @@ export default function ShippingSheetPage() {
     return groups;
   }, [products]);
 
-  /** ランクの標準数量を初回便へ反映 */
+  /** ランクの標準数量を初回・追加1・追加2の3便へ反映（4便目以降はそのまま） */
   const applyStandards = (rk: string) => {
-    setShipments((prev) => {
-      const first = prev[0] || { label: "初回", date: "", memo: "", items: {} };
+    setShipments((prev) => prev.map((s, i) => {
+      if (i >= 3) return s;
       const items: Record<string, string> = {};
-      for (const p of products) items[p.id] = stdMap.get(`${rk}|${p.id}`) || "";
-      return [{ ...first, items }, ...prev.slice(1)];
-    });
+      for (const p of products) items[p.id] = stdMap.get(`${rk}|${i + 1}|${p.id}`) || "";
+      return { ...s, items };
+    }));
   };
 
   const pickRank = (rk: string) => {
     setRankKey(rk);
-    const hasQty = Object.values(shipments[0]?.items || {}).some((v) => v && v.trim() !== "");
-    if (!hasQty || window.confirm(`初回便の数量をランク${rk}の標準数量で入れ直しますか？（手で直した数字は上書きされます）`)) {
+    const hasQty = shipments.slice(0, 3).some((s) => Object.values(s.items || {}).some((v) => v && v.trim() !== ""));
+    if (!hasQty || window.confirm(`初回・追加1・追加2の数量をランク${rk}の標準数量で入れ直しますか？（手で直した数字は上書きされます）`)) {
       applyStandards(rk);
     }
   };
@@ -288,7 +288,7 @@ export default function ShippingSheetPage() {
             ) : (
               <p className="text-xs text-muted-foreground">この会場の過去売上データがまだ無いため自動提案はできません。似た規模の会場を参考にランクを選んでください。</p>
             )}
-            <p className="text-xs text-muted-foreground">ランクを選ぶと標準数量が「初回」に入ります。会場の事情に合わせて数字を直してください。</p>
+            <p className="text-xs text-muted-foreground">ランクを選ぶと標準数量が「初回・追加1・追加2」の3便に入ります（標準数量マスターの便タブで設定）。会場の事情に合わせて数字を直してください。</p>
           </CardContent>
         </Card>
 
