@@ -53,6 +53,17 @@ const fmtMD = (ymd: string) => {
   return `${d.getMonth() + 1}/${d.getDate()}(${WD[d.getDay()]})`;
 };
 
+// YYYY-MM-DD に n 日加算
+const addYmd = (ymd: string, n: number) => {
+  const d = new Date(ymd + "T00:00:00");
+  d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
+// 初回便の出荷日目安：会期初日の前日（配送2日の遠隔地は2日前）
+const defaultFirstShipDate = (e: { start_date: string; prefecture: string | null }) =>
+  addYmd(e.start_date, e.prefecture && FAR_PREFS.includes(e.prefecture) ? -2 : -1);
+
 export default function ShippingSheetPage() {
   const { eventId } = useParams<{ eventId: string }>();
   const { role } = usePermission();
@@ -83,8 +94,11 @@ export default function ShippingSheetPage() {
     const sheet = sheetRes.data as { rank_key: string | null; shipments: Shipment[]; notes: string | null } | null;
     if (sheet) {
       setRankKey(sheet.rank_key || "");
-      setShipments(Array.isArray(sheet.shipments) && sheet.shipments.length > 0 ? sheet.shipments : [{ label: "初回", date: "", memo: "", items: {} }]);
+      setShipments(Array.isArray(sheet.shipments) && sheet.shipments.length > 0 ? sheet.shipments : [{ label: "初回", date: e ? defaultFirstShipDate(e) : "", memo: "", items: {} }]);
       setNotes(sheet.notes || "");
+    } else if (e) {
+      // 新規帳面: 初回便の出荷日を会期から自動セット（前日。遠隔地は2日前）
+      setShipments([{ label: "初回", date: defaultFirstShipDate(e), memo: "", items: {} }]);
     }
     // 同じ会場の過去催事（売上あり）＝ランク提案の材料
     if (e) {
@@ -148,7 +162,13 @@ export default function ShippingSheetPage() {
     setShipments((prev) => prev.map((s, i) => (i === si ? { ...s, items: { ...s.items, [productId]: v } } : s)));
   const setShipMeta = (si: number, patch: Partial<Shipment>) =>
     setShipments((prev) => prev.map((s, i) => (i === si ? { ...s, ...patch } : s)));
-  const addShipment = () => setShipments((prev) => [...prev, { label: `追加${prev.length}`, date: "", memo: "", items: {} }]);
+  // 追加便の出荷日は「前の便の3日後」を仮置き（会期末を超えない範囲）。手で直せます
+  const addShipment = () => setShipments((prev) => {
+    const last = prev[prev.length - 1];
+    let date = last?.date ? addYmd(last.date, 3) : "";
+    if (date && evt && date > evt.end_date) date = evt.end_date;
+    return [...prev, { label: `追加${prev.length}`, date, memo: "", items: {} }];
+  });
   const removeShipment = (si: number) => {
     if (!window.confirm(`「${shipments[si].label}」の便を削除しますか？`)) return;
     setShipments((prev) => prev.filter((_, i) => i !== si));

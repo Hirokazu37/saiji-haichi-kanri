@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { usePermission } from "@/hooks/usePermission";
-import { ArrowLeft, Plus, Save, Truck } from "lucide-react";
+import { ArrowLeft, ArrowUp, ArrowDown, Plus, Save, Truck } from "lucide-react";
 
 type Product = { id: string; name: string; spec: string; sort_order: number; is_active: boolean };
 type Standard = { rank_key: string; product_id: string; qty: string };
@@ -163,15 +163,24 @@ export default function ShippingMasterPage() {
                     {r.key}<span className="block text-[9px] font-normal text-muted-foreground">{r.label}</span>
                   </th>
                 ))}
-                {canEdit && <th className="px-2 py-2 text-center min-w-[130px]">並び / 使用</th>}
+                {canEdit && <th className="px-2 py-2 text-center min-w-[70px]">使用</th>}
               </tr>
             </thead>
             <tbody>
               {activeFirst.map((p, idx) => (
                 <tr key={p.id} className={`border-b last:border-b-0 ${p.is_active ? "" : "opacity-45"}`}>
-                  <td className="px-2 py-1 sticky left-0 bg-white whitespace-nowrap">
+                  <td className="px-2 py-1 sticky left-0 bg-white whitespace-nowrap z-10">
                     {canEdit ? (
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1.5">
+                        {/* 並び替え（▲＝上へ／▼＝下へ）。押すと即保存されます */}
+                        <div className="flex flex-col gap-0.5 shrink-0">
+                          <Button variant="outline" size="icon" className="h-6 w-7" onClick={() => moveProduct(idx, -1)} disabled={idx === 0} title="上へ移動">
+                            <ArrowUp className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button variant="outline" size="icon" className="h-6 w-7" onClick={() => moveProduct(idx, 1)} disabled={idx === products.length - 1} title="下へ移動">
+                            <ArrowDown className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                         <Input value={p.name} onChange={(e) => setProdLocal(p.id, { name: e.target.value })}
                           onBlur={(e) => persistProduct(p.id, { name: e.target.value.trim() })}
                           className="h-7 w-32 text-sm font-medium" title="商品名（書き換えて欄の外をクリックで保存）" />
@@ -197,10 +206,8 @@ export default function ShippingMasterPage() {
                   })}
                   {canEdit && (
                     <td className="px-2 py-1 text-center whitespace-nowrap">
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => moveProduct(idx, -1)} disabled={idx === 0}>↑</Button>
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => moveProduct(idx, 1)} disabled={idx === products.length - 1}>↓</Button>
                       <button type="button" onClick={() => updateProduct(p.id, { is_active: !p.is_active })}
-                        className={`ml-1 px-2 py-0.5 text-[10px] rounded border ${p.is_active ? "bg-green-50 text-green-700 border-green-200" : "bg-gray-100 text-gray-500 border-gray-300"}`}
+                        className={`px-2 py-0.5 text-[10px] rounded border ${p.is_active ? "bg-green-50 text-green-700 border-green-200" : "bg-gray-100 text-gray-500 border-gray-300"}`}
                         title="使用中/休止を切り替え（休止すると出荷帳面に出なくなります。削除はしません）">
                         {p.is_active ? "使用中" : "休止"}
                       </button>
@@ -215,7 +222,7 @@ export default function ShippingMasterPage() {
 
       <p className="text-xs text-muted-foreground">
         ※ <span className="font-medium">商品名・規格はそのまま書き換えて、欄の外をクリックすると保存</span>されます。
-        並び順は「↑↓」ボタンで変更（例：5枚入を上にしたいなら、その行の↑を押す。帳面の列・段の順に反映されます）。<br />
+        並び順は<span className="font-medium">商品名の左にある ▲▼ ボタン</span>で変更（例：5枚入を上にしたいなら、その行の▲を押す。成功すると「✓ 並び順を保存しました」と出ます）。<br />
         ※ 商品が増えたら「商品を追加」。売らなくなった商品は「休止」にすると帳面から消えます（過去の帳面は残ります）。
       </p>
     </div>
