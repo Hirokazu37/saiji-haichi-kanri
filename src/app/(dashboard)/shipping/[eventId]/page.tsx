@@ -81,6 +81,8 @@ export default function ShippingSheetPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [standards, setStandards] = useState<Standard[]>([]);
   const [pastEvents, setPastEvents] = useState<Evt[]>([]);
+  // migration 053（標準数量の便対応）が未適用かどうか
+  const [needs053, setNeeds053] = useState(false);
   const [rankKey, setRankKey] = useState<string>("");
   const [shipments, setShipments] = useState<Shipment[]>([{ label: "初回", date: "", memo: "", items: {} }]);
   const [notes, setNotes] = useState("");
@@ -97,7 +99,15 @@ export default function ShippingSheetPage() {
     const e = evRes.data as Evt | null;
     setEvt(e);
     setProducts(((prodRes.data as Product[]) || []).filter((p) => p.is_active));
-    setStandards((stdRes.data as Standard[]) || []);
+    if (stdRes.error) {
+      // ship_no カラムが無い（migration 053 未適用）→ 便なしで読み、全部「初回」として扱う
+      setNeeds053(true);
+      const { data: legacy } = await supabase.from("shipment_standards").select("rank_key, product_id, qty");
+      setStandards((((legacy as Omit<Standard, "ship_no">[]) || [])).map((s) => ({ ...s, ship_no: 1 })));
+    } else {
+      setNeeds053(false);
+      setStandards((stdRes.data as Standard[]) || []);
+    }
     const sheet = sheetRes.data as { rank_key: string | null; shipments: Shipment[]; notes: string | null } | null;
     if (sheet) {
       setRankKey(sheet.rank_key || "");
@@ -147,10 +157,18 @@ export default function ShippingSheetPage() {
     return groups;
   }, [products]);
 
-  /** ランクの標準数量を初回・追加1・追加2の3便へ反映（4便目以降はそのまま） */
+  /** ランクの標準数量を初回・追加1・追加2の3便へ反映（4便目以降はそのまま）。
+   *  マスターに数量が無い便は上書きせず残す（手入力を消さないため）。 */
   const applyStandards = (rk: string) => {
+    const hasAny = standards.some((st) => st.rank_key === rk && st.qty && st.qty.trim() !== "");
+    if (!hasAny) {
+      alert(`ランク${rk}の標準数量がまだ登録されていません。\n「標準数量マスター」で設定してください。`);
+      return;
+    }
     setShipments((prev) => prev.map((s, i) => {
       if (i >= 3) return s;
+      const shipHasStd = standards.some((st) => st.rank_key === rk && (st.ship_no ?? 1) === i + 1 && st.qty && st.qty.trim() !== "");
+      if (!shipHasStd) return s; // この便のマスターが未設定 → そのまま
       const items: Record<string, string> = {};
       for (const p of products) items[p.id] = stdMap.get(`${rk}|${i + 1}|${p.id}`) || "";
       return { ...s, items };
@@ -238,6 +256,15 @@ export default function ShippingSheetPage() {
             {saved && <span className="text-xs text-green-600 font-medium">✓ 保存しました</span>}
           </div>
         </div>
+
+        {/* migration 053 未適用の警告（追加便の自動記入が効かない） */}
+        {needs053 && (
+          <div className="rounded-md border-2 border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900">
+            ⚠ <span className="font-bold">データベースの更新（migration 053）が未適用です。</span>
+            このままだと「追加1・追加2」の標準数量が使えません（初回のみ自動記入）。
+            Supabase の SQL Editor で <span className="font-mono bg-white px-1 rounded">053_shipment_standards_ship_no.sql</span> を実行してください。
+          </div>
+        )}
 
         {/* 配送リードタイム表示（初回は搬入日＝会期前日に届ける） */}
         {(() => {

@@ -38,6 +38,8 @@ export default function ShippingMasterPage() {
   const [dirtyStd, setDirtyStd] = useState<Set<string>>(new Set());
   // 表示中の便（初回/追加1/追加2）
   const [shipNo, setShipNo] = useState(1);
+  // migration 053（標準数量の便対応）が未適用かどうか
+  const [needs053, setNeeds053] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -49,8 +51,18 @@ export default function ShippingMasterPage() {
       supabase.from("shipment_standards").select("rank_key, product_id, qty, ship_no"),
     ]);
     setProducts((prodRes.data as Product[]) || []);
+    let stdRows: Standard[] = [];
+    if (stdRes.error) {
+      // ship_no カラムが無い（migration 053 未適用）→ 便なしで読み、初回として扱う
+      setNeeds053(true);
+      const { data: legacy } = await supabase.from("shipment_standards").select("rank_key, product_id, qty");
+      stdRows = (((legacy as Omit<Standard, "ship_no">[]) || [])).map((s) => ({ ...s, ship_no: 1 }));
+    } else {
+      setNeeds053(false);
+      stdRows = (stdRes.data as Standard[]) || [];
+    }
     const m = new Map<string, string>();
-    for (const s of ((stdRes.data as Standard[]) || [])) m.set(`${s.ship_no ?? 1}|${s.rank_key}|${s.product_id}`, s.qty);
+    for (const s of stdRows) m.set(`${s.ship_no ?? 1}|${s.rank_key}|${s.product_id}`, s.qty);
     setStd(m);
     setDirtyStd(new Set());
     setLoading(false);
@@ -160,6 +172,16 @@ export default function ShippingMasterPage() {
           </div>
         )}
       </div>
+
+      {/* migration 053 未適用の警告 */}
+      {needs053 && (
+        <div className="rounded-md border-2 border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900">
+          ⚠ <span className="font-bold">データベースの更新（migration 053）が未適用です。</span>
+          追加1・追加2タブの保存ができません。Supabase の SQL Editor で
+          <span className="font-mono bg-white px-1 rounded mx-1">053_shipment_standards_ship_no.sql</span>
+          を実行してから設定してください。
+        </div>
+      )}
 
       {/* 便の切替（手書き帳面の1〜3ブロック目に対応） */}
       <div className="flex items-center gap-2 flex-wrap">
