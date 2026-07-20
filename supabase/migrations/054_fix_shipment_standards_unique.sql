@@ -21,11 +21,12 @@ BEGIN
     FROM pg_constraint c
     WHERE c.conrelid = 'shipment_standards'::regclass
       AND c.contype = 'u'
+      -- attname は name 型のため text にキャストして比較する
       AND (
-        SELECT array_agg(a.attname ORDER BY a.attname)
+        SELECT array_agg(a.attname::text ORDER BY a.attname::text)
         FROM unnest(c.conkey) k
         JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k
-      ) = ARRAY['product_id','rank_key']
+      ) = ARRAY['product_id','rank_key']::text[]
   LOOP
     EXECUTE format('ALTER TABLE shipment_standards DROP CONSTRAINT %I', r.conname);
   END LOOP;
