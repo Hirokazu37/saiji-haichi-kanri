@@ -112,7 +112,15 @@ export default function ShippingMasterPage() {
         return { ship_no: Number(ship), rank_key, product_id, qty: std.get(key) || "" };
       });
       const { error } = await supabase.from("shipment_standards").upsert(rows, { onConflict: "rank_key,product_id,ship_no" });
-      if (error) { alert(`保存に失敗しました。\n${error.message}`); return; }
+      if (error) {
+        const isConflictSetup = /ON CONFLICT|unique or exclusion constraint/i.test(error.message);
+        alert(
+          isConflictSetup
+            ? "保存に失敗しました。\nデータベースの一意制約が未整備です。\nSupabase の SQL Editor で 054_fix_shipment_standards_unique.sql を実行してください。"
+            : `保存に失敗しました。\n${error.message}`
+        );
+        return;
+      }
       setDirtyStd(new Set());
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
