@@ -27,6 +27,7 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { Trash2, ArrowLeft, X, Building2, Save, Check, Copy, TrendingUp, MapPin, CalendarPlus, Mail, Truck } from "lucide-react";
+import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { prefectures, eventStatuses } from "@/lib/prefectures";
 import { ArrangementEditor, type ArrangementEditorHandle } from "@/components/arrangements/ArrangementEditor";
@@ -695,83 +696,90 @@ export default function EventDetailPage({
             <span>{event.start_date} 〜 {event.end_date}</span>
           </div>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="space-y-2">
           <Badge
             variant="outline"
-            className={statusColor[event.status] || ""}
+            className={cn("hidden sm:inline-flex", statusColor[event.status] || "")}
           >
             {event.status}
           </Badge>
-          <Button
-            variant="outline"
-            size="sm"
-            asChild
-            title="会場を Google マップで開く"
-          >
-            <a
-              href={mapsUrl(`${event.venue}${event.store_name ? ` ${event.store_name}` : ""} ${event.prefecture}`)}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <MapPin className="h-4 w-4 mr-1" />
-              地図
-            </a>
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() =>
-              downloadIcs({
-                id: event.id,
-                title: `${event.venue}${event.store_name ? ` ${event.store_name}` : ""}${event.name ? ` - ${event.name}` : ""}`,
-                startDate: event.start_date,
-                endDate: event.end_date,
-                location: `${event.venue}${event.store_name ? ` ${event.store_name}` : ""} (${event.prefecture})`,
-                description: [
-                  event.person_in_charge ? `担当: ${event.person_in_charge}` : "",
-                  event.last_day_closing_time ? `最終日閉場: ${event.last_day_closing_time}` : "",
-                  event.notes || "",
-                ].filter(Boolean).join("\n"),
-              })
-            }
-            title="iPhone/Googleカレンダーに追加"
-          >
-            <CalendarPlus className="h-4 w-4 mr-1" />
-            カレンダー
-          </Button>
-          <Button variant="outline" size="sm" asChild title="この催事のDMハガキ文面を作成・印刷">
-            <Link href={`/dm/message?event=${id}`}>
-              <Mail className="h-4 w-4 mr-1" />
-              DMハガキ文面
-            </Link>
-          </Button>
-          <Button variant="outline" size="sm" asChild title="この催事の商品出荷帳面を作成・印刷">
-            <Link href={`/shipping/${id}`}>
-              <Truck className="h-4 w-4 mr-1" />
-              出荷帳面
-            </Link>
-          </Button>
-          {canEdit && <SaveButton />}
-          {canEdit && (
+
+          {/* 主要アクション: スマホは2×2グリッド(高さ48px超)、sm以上は従来の横並び。
+              現場ではタップしやすさ優先。色はアイコンで機能を識別しやすくする。 */}
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:flex-wrap">
             <Button
               variant="outline"
-              size="sm"
-              onClick={() => router.push(`/events/new?from=${id}`)}
-              title="この催事を複製して新規作成"
+              asChild
+              title="会場を Google マップで開く"
+              className="h-12 justify-start sm:h-9 sm:justify-center"
             >
-              <Copy className="h-4 w-4 mr-1" />
-              複製
+              <a
+                href={mapsUrl(`${event.venue}${event.store_name ? ` ${event.store_name}` : ""} ${event.prefecture}`)}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <MapPin className="h-5 w-5 mr-1.5 text-blue-600 sm:h-4 sm:w-4" />
+                地図
+              </a>
             </Button>
-          )}
-          {canEdit && (
             <Button
               variant="outline"
-              size="sm"
-              onClick={() => setDeleteOpen(true)}
+              onClick={() =>
+                downloadIcs({
+                  id: event.id,
+                  title: `${event.venue}${event.store_name ? ` ${event.store_name}` : ""}${event.name ? ` - ${event.name}` : ""}`,
+                  startDate: event.start_date,
+                  endDate: event.end_date,
+                  location: `${event.venue}${event.store_name ? ` ${event.store_name}` : ""} (${event.prefecture})`,
+                  description: [
+                    event.person_in_charge ? `担当: ${event.person_in_charge}` : "",
+                    event.last_day_closing_time ? `最終日閉場: ${event.last_day_closing_time}` : "",
+                    event.notes || "",
+                  ].filter(Boolean).join("\n"),
+                })
+              }
+              title="iPhone/Googleカレンダーに追加"
+              className="h-12 justify-start sm:h-9 sm:justify-center"
             >
-              <Trash2 className="h-4 w-4 mr-1 text-destructive" />
-              削除
+              <CalendarPlus className="h-5 w-5 mr-1.5 text-slate-600 sm:h-4 sm:w-4" />
+              カレンダー
             </Button>
+            <Button variant="outline" asChild title="この催事のDMハガキ文面を作成・印刷" className="h-12 justify-start sm:h-9 sm:justify-center">
+              <Link href={`/dm/message?event=${id}`}>
+                <Mail className="h-5 w-5 mr-1.5 text-violet-600 sm:h-4 sm:w-4" />
+                DMハガキ文面
+              </Link>
+            </Button>
+            <Button variant="outline" asChild title="この催事の商品出荷帳面を作成・印刷" className="h-12 justify-start sm:h-9 sm:justify-center">
+              <Link href={`/shipping/${id}`}>
+                <Truck className="h-5 w-5 mr-1.5 text-orange-600 sm:h-4 sm:w-4" />
+                出荷帳面
+              </Link>
+            </Button>
+            {canEdit && <SaveButton />}
+          </div>
+
+          {/* 編集系（複製・削除）は誤タップを避けて分離 */}
+          {canEdit && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push(`/events/new?from=${id}`)}
+                title="この催事を複製して新規作成"
+              >
+                <Copy className="h-4 w-4 mr-1" />
+                複製
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setDeleteOpen(true)}
+              >
+                <Trash2 className="h-4 w-4 mr-1 text-destructive" />
+                削除
+              </Button>
+            </div>
           )}
         </div>
       </div>
