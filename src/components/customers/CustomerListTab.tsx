@@ -14,7 +14,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Combobox, type ComboboxItem } from "@/components/ui/combobox";
-import { Upload, Search, Info } from "lucide-react";
+import { Upload, Search, Info, Printer, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import Link from "next/link";
 import { usePermission } from "@/hooks/usePermission";
 import { CustomerImportDialog } from "./CustomerImportDialog";
@@ -364,11 +364,113 @@ export function CustomerListTab({ segments, segFilter, onSegFilterChange }: Prop
         </Card>
       )}
 
+      {/* 並べ替えピル (PC/スマホ両方で機能) + 印刷ボタン */}
+      {(totalCount ?? 0) > 0 && (
+        <div className="flex items-center gap-2 flex-wrap print:hidden">
+          <span className="text-xs font-bold text-muted-foreground inline-flex items-center gap-1">
+            <ArrowUpDown className="h-3.5 w-3.5" />並べ替え:
+          </span>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {([
+              { key: "no", label: "顧客番号" },
+              { key: "kana", label: "カナ" },
+              { key: "visits", label: "来場回数" },
+              { key: "last", label: "最終来場" },
+              { key: "store", label: "所属店" },
+              { key: "name", label: "氏名" },
+            ] as { key: SortKey; label: string }[]).map((opt) => {
+              const isSel = sort.key === opt.key;
+              const Icon = !isSel ? ArrowUpDown : sort.dir === "asc" ? ArrowUp : ArrowDown;
+              return (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => toggleSort(opt.key)}
+                  className={`inline-flex items-center gap-1 h-8 px-3 rounded-full border text-xs font-bold transition-all ${
+                    isSel
+                      ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                      : "bg-white text-foreground border-input hover:bg-muted hover:border-primary/40"
+                  }`}
+                  title={isSel ? `${opt.label}（クリックで${sort.dir === "asc" ? "降順" : "昇順"}に切替）` : `${opt.label}で並べ替え`}
+                  aria-pressed={isSel}
+                >
+                  {opt.label}
+                  <Icon className="h-3 w-3" />
+                </button>
+              );
+            })}
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <span className="text-[10px] text-muted-foreground hidden sm:inline">
+              表示中 {sortedCustomers.length.toLocaleString()}件
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => window.print()}
+              title="現在の並べ替え順で印刷（A4 縦）"
+            >
+              <Printer className="h-4 w-4 mr-1" />印刷
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* 印刷用スタイル: ヘッダ/検索/タブなどを隠して、テーブルだけをA4に収める */}
+      <style>{`
+        @media print {
+          @page { size: A4 portrait; margin: 10mm; }
+          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          nav, aside, header, footer { display: none !important; }
+          main, [data-slot="main"] { margin: 0 !important; padding: 0 !important; max-width: 100% !important; }
+          .md\\:pl-60 { padding-left: 0 !important; }
+          /* タブヘッダも隠す */
+          [role="tablist"] { display: none !important; }
+          /* 印刷用テーブルを表示 (画面幅に関わらず全列表示) */
+          .customer-print-table { display: table !important; width: 100% !important; font-size: 10px !important; }
+          .customer-print-table thead { display: table-header-group !important; }
+          .customer-print-table tbody { display: table-row-group !important; }
+          .customer-print-table tr { display: table-row !important; page-break-inside: avoid !important; break-inside: avoid !important; }
+          .customer-print-table th, .customer-print-table td {
+            display: table-cell !important;
+            padding: 3px 4px !important;
+            border: 1px solid #999 !important;
+            vertical-align: middle !important;
+          }
+          .customer-print-title { display: block !important; }
+          /* リンク・ボタン風装飾を単純化 */
+          .customer-print-table a, .customer-print-table button { color: inherit !important; text-decoration: none !important; }
+        }
+      `}</style>
+
+      {/* 印刷用タイトル (画面では非表示) */}
+      <div className="customer-print-title hidden mb-2 print:!block">
+        <div className="flex items-baseline justify-between border-b pb-1 mb-2">
+          <h2 className="text-base font-bold">
+            顧客一覧
+            {selectedSegName && <span className="ml-2 text-sm">（{selectedSegName}）</span>}
+            <span className="ml-2 text-xs font-normal text-muted-foreground">
+              並べ替え: {
+                sort.key === "no" ? "顧客番号" :
+                sort.key === "kana" ? "カナ" :
+                sort.key === "visits" ? "来場回数" :
+                sort.key === "last" ? "最終来場" :
+                sort.key === "store" ? "所属店" :
+                "氏名"
+              }（{sort.dir === "asc" ? "昇順" : "降順"}）
+            </span>
+          </h2>
+          <span className="text-[10px] text-muted-foreground">
+            {sortedCustomers.length}件 / 印刷日時 {new Date().toLocaleString("ja-JP")}
+          </span>
+        </div>
+      </div>
+
       {(totalCount ?? 0) > 0 && (
         <Card>
           <CardContent className="p-0">
             {/* PC・タブレット: テーブル表示 */}
-            <Table className="hidden md:table">
+            <Table className="hidden md:table customer-print-table">
               <TableHeader>
                 <TableRow>
                   {renderSortHead("no", "番号")}
@@ -408,13 +510,13 @@ export function CustomerListTab({ segments, segFilter, onSegFilterChange }: Prop
               </TableBody>
             </Table>
 
-            {/* スマホ: カード表示 */}
-            <div className="md:hidden divide-y">
+            {/* スマホ: カード表示 (印刷時はテーブルが表示されるので非表示) */}
+            <div className="md:hidden divide-y print:hidden">
               {loading && <div className="text-center text-muted-foreground py-6 text-sm">読み込み中…</div>}
               {!loading && customers.length === 0 && (
                 <div className="text-center text-muted-foreground py-6 text-sm">該当する顧客がいません</div>
               )}
-              {!loading && customers.map((c) => {
+              {!loading && sortedCustomers.map((c) => {
                 const last = lastVisitOf(c);
                 const count = visits.get(c.id)?.length ?? 0;
                 return (
