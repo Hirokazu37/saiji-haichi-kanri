@@ -806,7 +806,7 @@ export function VisitEntryTab({ segments }: Props) {
               main, [data-slot="main"] { margin: 0 !important; padding: 0 !important; max-width: 100% !important; }
               .md\\:pl-60 { padding-left: 0 !important; }
               [role="tablist"] { display: none !important; }
-              /* 来場一覧カードを全画面に */
+              /* 来場一覧カードを全画面に (Card の overflow-hidden も解除) */
               .visit-print-zone {
                 position: absolute !important;
                 left: 0 !important; top: 0 !important; right: 0 !important;
@@ -815,15 +815,28 @@ export function VisitEntryTab({ segments }: Props) {
                 box-shadow: none !important;
                 background: white !important;
                 z-index: 9999 !important;
+                overflow: visible !important;
+                display: block !important;
+                padding: 0 !important;
               }
-              /* 段組で1ページに多く載せる */
+              .visit-print-zone [data-slot="card-content"],
+              .visit-print-zone > div {
+                overflow: visible !important;
+                padding: 0 !important;
+                display: block !important;
+              }
+              /* 段組で1ページに多く載せる (balance モードで自動配分) */
               .visit-print-zone .visit-print-scroll {
+                display: block !important;
                 max-height: none !important;
                 overflow: visible !important;
                 column-count: ${printCols} !important;
                 column-gap: 3mm !important;
-                column-fill: auto !important;
                 column-rule: 1px dotted #ddd;
+              }
+              /* space-y-1.5 の margin-top を無効化 (段組内で妙な余白になるため) */
+              .visit-print-zone .visit-print-scroll > * {
+                margin-top: 0 !important;
               }
               .visit-print-zone .print-hide { display: none !important; }
               .visit-print-zone .print-title { display: block !important; }
