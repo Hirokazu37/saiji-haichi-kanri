@@ -79,6 +79,17 @@ export function VisitEntryTab({ segments }: Props) {
   // 各顧客の全催事累計来場回数（この催事の来場一覧に載っている顧客のみ）
   // 「来場回数」ソートと、常連バッジ表示に使う
   const [customerTotalVisits, setCustomerTotalVisits] = useState<Map<string, number>>(new Map());
+  // 印刷時の列数（多い方が1枚に多く載る。3列がバランス良く既定）
+  const [printCols, setPrintCols] = useState<number>(() => {
+    try {
+      const v = parseInt(localStorage.getItem("visit_print_cols") || "3", 10);
+      return v >= 1 && v <= 6 ? v : 3;
+    } catch { return 3; }
+  });
+  const changePrintCols = (n: number) => {
+    setPrintCols(n);
+    try { localStorage.setItem("visit_print_cols", String(n)); } catch { /* ignore */ }
+  };
   // 来場一覧の並べ替え
   type VisitSortKey = "created" | "no" | "name" | "kana" | "count";
   const [visitSort, setVisitSort] = useState<{ key: VisitSortKey; dir: "asc" | "desc" }>({ key: "created", dir: "desc" });
@@ -785,19 +796,17 @@ export function VisitEntryTab({ segments }: Props) {
       {/* この催事の来場一覧 */}
       {eventId && visits.length > 0 && (
         <Card className="visit-print-zone">
-          {/* 印刷用スタイル: この Card だけを A4 縦に印刷。他のUIは隠す */}
+          {/* 印刷用スタイル: この Card だけを A4 縦に印刷。他のUIは隠す。
+              段組数は printCols を反映（動的に style タグを再生成） */}
           <style>{`
             @media print {
-              @page { size: A4 portrait; margin: 10mm; }
+              @page { size: A4 portrait; margin: 8mm; }
               body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
               nav, aside, header, footer { display: none !important; }
               main, [data-slot="main"] { margin: 0 !important; padding: 0 !important; max-width: 100% !important; }
               .md\\:pl-60 { padding-left: 0 !important; }
               [role="tablist"] { display: none !important; }
-              /* 来場一覧カード以外を印刷しない */
-              body :not(.visit-print-zone):not(.visit-print-zone *):not(html):not(body):not(main):not([data-slot="main"]):not(nav):not(aside):not(header):not(footer) {
-                /* 兄弟要素を隠すのは難しいので、逆に .visit-print-zone を fixed で全画面に */
-              }
+              /* 来場一覧カードを全画面に */
               .visit-print-zone {
                 position: absolute !important;
                 left: 0 !important; top: 0 !important; right: 0 !important;
@@ -807,15 +816,44 @@ export function VisitEntryTab({ segments }: Props) {
                 background: white !important;
                 z-index: 9999 !important;
               }
+              /* 段組で1ページに多く載せる */
               .visit-print-zone .visit-print-scroll {
                 max-height: none !important;
                 overflow: visible !important;
+                column-count: ${printCols} !important;
+                column-gap: 3mm !important;
+                column-fill: auto !important;
+                column-rule: 1px dotted #ddd;
               }
               .visit-print-zone .print-hide { display: none !important; }
               .visit-print-zone .print-title { display: block !important; }
               .visit-print-zone [data-visit-row] {
                 page-break-inside: avoid !important;
                 break-inside: avoid !important;
+                display: block !important;
+                width: 100% !important;
+                margin: 0 0 1px 0 !important;
+                padding: 1px 4px !important;
+                border: 1px solid #ccc !important;
+                border-radius: 2px !important;
+                font-size: ${printCols >= 4 ? 9 : printCols >= 3 ? 10 : 11}px !important;
+                line-height: 1.35 !important;
+                background: white !important;
+              }
+              /* 各行内のフレックス配置を維持しつつコンパクトに */
+              .visit-print-zone [data-visit-row] > div {
+                gap: 4px !important;
+              }
+              /* 累計バッジは小さく */
+              .visit-print-zone [data-visit-row] .rounded-full {
+                padding: 0 4px !important;
+                font-size: ${printCols >= 4 ? 8 : 9}px !important;
+              }
+              /* この回のメモは 折返し許容で 段組みでも読める大きさに */
+              .visit-print-zone [data-visit-row] .bg-amber-50 {
+                margin-top: 1px !important;
+                padding: 1px 4px !important;
+                font-size: ${printCols >= 4 ? 8 : 9}px !important;
               }
             }
           `}</style>
@@ -855,7 +893,27 @@ export function VisitEntryTab({ segments }: Props) {
                   {visits.length}件
                 </span>
               </div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {/* 印刷段組数セレクタ (A4縦・現在の設定で何列に段組するか) */}
+                <div className="inline-flex items-center gap-1 rounded-md border bg-white px-1.5 py-0.5">
+                  <span className="text-[10px] text-muted-foreground">印刷</span>
+                  {[1, 2, 3, 4, 5, 6].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => changePrintCols(n)}
+                      className={`w-6 h-6 rounded text-[11px] font-bold transition-colors ${
+                        printCols === n
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:bg-muted"
+                      }`}
+                      title={`${n}列で印刷（1ページに ${n === 1 ? "少なく" : n <= 3 ? "しっかり" : "たくさん"}）`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                  <span className="text-[10px] text-muted-foreground">列</span>
+                </div>
                 <Button
                   variant="outline"
                   size="sm"
@@ -868,7 +926,7 @@ export function VisitEntryTab({ segments }: Props) {
                   variant="outline"
                   size="sm"
                   onClick={() => window.print()}
-                  title="現在の並べ替え順で印刷（A4 縦）"
+                  title={`現在の並べ替え順で印刷（A4 縦・${printCols}列）`}
                 >
                   <Printer className="h-4 w-4 mr-1" />印刷
                 </Button>
