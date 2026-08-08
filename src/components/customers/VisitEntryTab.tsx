@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -74,6 +75,18 @@ export function VisitEntryTab({ segments }: Props) {
     });
     setTimeout(() => numberRef.current?.focus(), 0);
   };
+  // 各顧客の全催事累計来場回数（この催事の来場一覧に載っている顧客のみ）
+  // 「来場回数」ソートと、常連バッジ表示に使う
+  const [customerTotalVisits, setCustomerTotalVisits] = useState<Map<string, number>>(new Map());
+  // 来場一覧の並べ替え
+  type VisitSortKey = "created" | "no" | "name" | "kana" | "count";
+  const [visitSort, setVisitSort] = useState<{ key: VisitSortKey; dir: "asc" | "desc" }>({ key: "created", dir: "desc" });
+  const toggleVisitSort = (key: VisitSortKey) =>
+    setVisitSort((s) =>
+      s.key === key
+        ? { key, dir: s.dir === "asc" ? "desc" : "asc" }
+        : { key, dir: key === "count" || key === "created" ? "desc" : "asc" }
+    );
   // 選択中の催事にひも付いたDM区分名（DMハガキ画面で設定したもの）
   const [eventSegNames, setEventSegNames] = useState<string[]>([]);
   // この催事のDM名簿の人数（名簿CSVをDMハガキ画面で取込済みの場合）
@@ -157,6 +170,59 @@ export function VisitEntryTab({ segments }: Props) {
     fetchVisits(eventId);
     fetchUndoLog(eventId);
   }, [eventId, fetchVisits, fetchUndoLog]);
+
+  // 来場一覧に載っている顧客の「全催事累計来場回数」を取得
+  // → ソート「来場回数順」と各行の 累計N回 表示に使う
+  useEffect(() => {
+    if (visits.length === 0) { setCustomerTotalVisits(new Map()); return; }
+    const uniqueIds = Array.from(new Set(visits.map((v) => v.customer_id)));
+    // Supabaseの in() は数百件までは問題なく通る。念のためチャンク分割
+    const CHUNK = 300;
+    (async () => {
+      const counts = new Map<string, number>();
+      for (let i = 0; i < uniqueIds.length; i += CHUNK) {
+        const chunk = uniqueIds.slice(i, i + CHUNK);
+        const { data } = await supabase
+          .from("event_visits")
+          .select("customer_id")
+          .in("customer_id", chunk);
+        for (const row of (data as { customer_id: string }[]) || []) {
+          counts.set(row.customer_id, (counts.get(row.customer_id) || 0) + 1);
+        }
+      }
+      setCustomerTotalVisits(counts);
+    })();
+  }, [visits, supabase]);
+
+  // 並べ替え適用後の来場一覧
+  const sortedVisits = useMemo(() => {
+    const dir = visitSort.dir === "asc" ? 1 : -1;
+    return [...visits].sort((a, b) => {
+      let r = 0;
+      switch (visitSort.key) {
+        case "created":
+          r = a.created_at.localeCompare(b.created_at);
+          break;
+        case "no":
+          r = (a.customers?.customer_no || "").localeCompare(
+            b.customers?.customer_no || "",
+            "ja",
+            { numeric: true }
+          );
+          break;
+        case "name":
+          r = (a.customers?.name || "").localeCompare(b.customers?.name || "", "ja");
+          break;
+        case "kana":
+          r = (a.customers?.kana || "").localeCompare(b.customers?.kana || "", "ja");
+          break;
+        case "count":
+          r = (customerTotalVisits.get(a.customer_id) || 0) - (customerTotalVisits.get(b.customer_id) || 0);
+          break;
+      }
+      return r * dir;
+    });
+  }, [visits, visitSort, customerTotalVisits]);
 
   // カレンダー用の集計（来場数・名簿数）。選択画面に戻るたびに最新化
   useEffect(() => {
@@ -690,15 +756,69 @@ export function VisitEntryTab({ segments }: Props) {
       {eventId && visits.length > 0 && (
         <Card>
           <CardContent className="pt-4 space-y-2">
-            <div className="font-medium">この催事の来場記録（新しい順）</div>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="font-medium">
+                この催事の来場記録
+                <span className="ml-2 text-xs text-muted-foreground">
+                  {visits.length}件
+                </span>
+              </div>
+            </div>
+            {/* 並べ替えピル */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-xs font-bold text-muted-foreground inline-flex items-center gap-1">
+                <ArrowUpDown className="h-3 w-3" />並べ替え:
+              </span>
+              {([
+                { key: "created", label: "入力順" },
+                { key: "no", label: "顧客番号" },
+                { key: "name", label: "氏名" },
+                { key: "kana", label: "カナ" },
+                { key: "count", label: "来場回数" },
+              ] as { key: VisitSortKey; label: string }[]).map((opt) => {
+                const isSel = visitSort.key === opt.key;
+                const Icon = !isSel ? ArrowUpDown : visitSort.dir === "asc" ? ArrowUp : ArrowDown;
+                return (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => toggleVisitSort(opt.key)}
+                    className={`inline-flex items-center gap-1 h-7 px-2.5 rounded-full border text-xs font-bold transition-all ${
+                      isSel
+                        ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                        : "bg-white text-foreground border-input hover:bg-muted hover:border-primary/40"
+                    }`}
+                    title={isSel ? `${opt.label}（クリックで${visitSort.dir === "asc" ? "降順" : "昇順"}に切替）` : `${opt.label}で並べ替え`}
+                    aria-pressed={isSel}
+                  >
+                    {opt.label}
+                    <Icon className="h-3 w-3" />
+                  </button>
+                );
+              })}
+            </div>
             <div className="space-y-1.5 max-h-96 overflow-y-auto">
-              {visits.map((v) => (
+              {sortedVisits.map((v) => {
+                const totalVisits = customerTotalVisits.get(v.customer_id) || 0;
+                return (
                 <div key={v.id} className="px-3 py-1.5 border rounded-md">
                   <div className="flex items-center gap-3">
                     <span className="font-mono text-xs text-muted-foreground shrink-0">
                       #{v.customers?.customer_no ?? "?"}
                     </span>
                     <span className="flex-1 truncate font-medium">{v.customers?.name ?? "（削除された顧客）"}</span>
+                    {totalVisits > 1 && (
+                      <span
+                        className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border shrink-0 ${
+                          totalVisits >= 3
+                            ? "bg-amber-100 text-amber-800 border-amber-300"
+                            : "bg-blue-100 text-blue-800 border-blue-200"
+                        }`}
+                        title={totalVisits >= 3 ? "常連（3回以上ご来場）" : `累計${totalVisits}回`}
+                      >
+                        {totalVisits >= 3 && "★"}累計{totalVisits}回
+                      </span>
+                    )}
                     {canRegister && (
                       <>
                         <Button
@@ -747,7 +867,8 @@ export function VisitEntryTab({ segments }: Props) {
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           </CardContent>
         </Card>
