@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, Printer, FileSpreadsheet } from "lucide-react";
+import { downloadCsv } from "@/lib/csv";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -193,6 +194,35 @@ export function VisitEntryTab({ segments }: Props) {
       setCustomerTotalVisits(counts);
     })();
   }, [visits, supabase]);
+
+  /** 現在の並べ替え順で来場記録を CSV(BOM付きUTF-8) としてダウンロード。
+   * BOM付きなので Excel でダブルクリックすれば文字化けなく開ける。 */
+  const exportExcel = () => {
+    if (!selectedEvent) return;
+    const rows: (string | number | null)[][] = [];
+    // ヘッダ行
+    rows.push([
+      "顧客番号", "氏名", "カナ", "住所",
+      "累計来場回数", "来場登録日時", "この回のメモ",
+    ]);
+    for (const v of sortedVisits) {
+      const c = v.customers;
+      rows.push([
+        c?.customer_no || "",
+        c?.name || "",
+        c?.kana || "",
+        c?.address || "",
+        customerTotalVisits.get(v.customer_id) || 0,
+        v.created_at?.slice(0, 19).replace("T", " ") || "",
+        v.notes || "",
+      ]);
+    }
+    const venue = selectedEvent.venue + (selectedEvent.store_name ? `_${selectedEvent.store_name}` : "");
+    const date = selectedEvent.start_date;
+    // ファイル名にコロン等使えないので置換
+    const safe = venue.replace(/[\\/:*?"<>|]/g, "_");
+    downloadCsv(`来場記録_${safe}_${date}.csv`, rows);
+  };
 
   // 並べ替え適用後の来場一覧
   const sortedVisits = useMemo(() => {
@@ -754,18 +784,98 @@ export function VisitEntryTab({ segments }: Props) {
 
       {/* この催事の来場一覧 */}
       {eventId && visits.length > 0 && (
-        <Card>
+        <Card className="visit-print-zone">
+          {/* 印刷用スタイル: この Card だけを A4 縦に印刷。他のUIは隠す */}
+          <style>{`
+            @media print {
+              @page { size: A4 portrait; margin: 10mm; }
+              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              nav, aside, header, footer { display: none !important; }
+              main, [data-slot="main"] { margin: 0 !important; padding: 0 !important; max-width: 100% !important; }
+              .md\\:pl-60 { padding-left: 0 !important; }
+              [role="tablist"] { display: none !important; }
+              /* 来場一覧カード以外を印刷しない */
+              body :not(.visit-print-zone):not(.visit-print-zone *):not(html):not(body):not(main):not([data-slot="main"]):not(nav):not(aside):not(header):not(footer) {
+                /* 兄弟要素を隠すのは難しいので、逆に .visit-print-zone を fixed で全画面に */
+              }
+              .visit-print-zone {
+                position: absolute !important;
+                left: 0 !important; top: 0 !important; right: 0 !important;
+                width: 100% !important;
+                border: none !important;
+                box-shadow: none !important;
+                background: white !important;
+                z-index: 9999 !important;
+              }
+              .visit-print-zone .visit-print-scroll {
+                max-height: none !important;
+                overflow: visible !important;
+              }
+              .visit-print-zone .print-hide { display: none !important; }
+              .visit-print-zone .print-title { display: block !important; }
+              .visit-print-zone [data-visit-row] {
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+              }
+            }
+          `}</style>
           <CardContent className="pt-4 space-y-2">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
+            {/* 印刷用タイトル (通常時は非表示) */}
+            <div className="print-title hidden mb-2">
+              <div className="border-b pb-1 mb-2">
+                <div className="flex items-baseline justify-between gap-2 flex-wrap">
+                  <h2 className="text-base font-bold">
+                    来場記録
+                    {selectedEvent && (
+                      <span className="ml-2 text-sm">
+                        （{selectedEvent.venue}{selectedEvent.store_name ? ` ${selectedEvent.store_name}` : ""}
+                        <span className="ml-1 text-xs font-normal text-muted-foreground">
+                          {selectedEvent.start_date}〜{selectedEvent.end_date}
+                        </span>
+                        ）
+                      </span>
+                    )}
+                  </h2>
+                  <span className="text-[10px] text-muted-foreground">
+                    {sortedVisits.length}件 / 並べ替え: {
+                      visitSort.key === "created" ? "入力順" :
+                      visitSort.key === "no" ? "顧客番号" :
+                      visitSort.key === "name" ? "氏名" :
+                      visitSort.key === "kana" ? "カナ" :
+                      "来場回数"
+                    }（{visitSort.dir === "asc" ? "昇順" : "降順"}） / 印刷 {new Date().toLocaleString("ja-JP")}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-2 flex-wrap print-hide">
               <div className="font-medium">
                 この催事の来場記録
                 <span className="ml-2 text-xs text-muted-foreground">
                   {visits.length}件
                 </span>
               </div>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={exportExcel}
+                  title="現在の並べ替え順でExcel(CSV)ファイルをダウンロード"
+                >
+                  <FileSpreadsheet className="h-4 w-4 mr-1" />Excel出力
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => window.print()}
+                  title="現在の並べ替え順で印刷（A4 縦）"
+                >
+                  <Printer className="h-4 w-4 mr-1" />印刷
+                </Button>
+              </div>
             </div>
             {/* 並べ替えピル */}
-            <div className="flex items-center gap-1.5 flex-wrap">
+            <div className="flex items-center gap-1.5 flex-wrap print-hide">
               <span className="text-xs font-bold text-muted-foreground inline-flex items-center gap-1">
                 <ArrowUpDown className="h-3 w-3" />並べ替え:
               </span>
@@ -797,11 +907,11 @@ export function VisitEntryTab({ segments }: Props) {
                 );
               })}
             </div>
-            <div className="space-y-1.5 max-h-96 overflow-y-auto">
+            <div className="space-y-1.5 max-h-96 overflow-y-auto visit-print-scroll">
               {sortedVisits.map((v) => {
                 const totalVisits = customerTotalVisits.get(v.customer_id) || 0;
                 return (
-                <div key={v.id} className="px-3 py-1.5 border rounded-md">
+                <div key={v.id} data-visit-row className="px-3 py-1.5 border rounded-md">
                   <div className="flex items-center gap-3">
                     <span className="font-mono text-xs text-muted-foreground shrink-0">
                       #{v.customers?.customer_no ?? "?"}
@@ -820,7 +930,7 @@ export function VisitEntryTab({ segments }: Props) {
                       </span>
                     )}
                     {canRegister && (
-                      <>
+                      <span className="print-hide inline-flex items-center gap-1">
                         <Button
                           variant="ghost"
                           size="sm"
@@ -840,7 +950,7 @@ export function VisitEntryTab({ segments }: Props) {
                         <Button variant="ghost" size="sm" onClick={() => undoVisit(v)} title="取消">
                           <Undo2 className="h-4 w-4 text-muted-foreground" />
                         </Button>
-                      </>
+                      </span>
                     )}
                   </div>
                   {v.notes && memoVisitId !== v.id && (
