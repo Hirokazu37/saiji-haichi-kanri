@@ -130,6 +130,8 @@ export default function EventDetailPage({
 
   // 日別売上: date(YYYY-MM-DD) -> { 金額文字列, 税抜/税込, 税率 }
   const [dailyRevenue, setDailyRevenue] = useState<Map<string, DailyInput>>(new Map());
+  // PayPay 欄の表示制御。既定は隠す。データ読込で既にPayPay入力があれば自動展開
+  const [showPaypayColumn, setShowPaypayColumn] = useState(false);
 
   const fetchEvent = useCallback(async () => {
     const [eventRes, empRes, staffRes, dailyRes, mpRes, mannRes] = await Promise.all([
@@ -167,14 +169,19 @@ export default function EventDetailPage({
     }
     // 日別売上をMapに詰める
     const dailyMap = new Map<string, DailyInput>();
+    let anyPaypay = false;
     ((dailyRes.data || []) as (DailyRevenueRow & { paypay_amount?: number | null })[]).forEach((r) => {
+      const paypayN = r.paypay_amount != null && r.paypay_amount > 0 ? r.paypay_amount : 0;
+      if (paypayN > 0) anyPaypay = true;
       dailyMap.set(r.date, {
         amount: r.amount != null ? String(r.amount) : "",
-        paypay: r.paypay_amount != null && r.paypay_amount > 0 ? String(r.paypay_amount) : "",
+        paypay: paypayN > 0 ? String(paypayN) : "",
         tax_type: (r.tax_type ?? "excluded") as TaxType,
         tax_rate: r.tax_rate ?? 0.08,
       });
     });
+    // 既にPayPay入力がある催事は自動でPayPay欄を展開
+    if (anyPaypay) setShowPaypayColumn(true);
     setDailyRevenue(dailyMap);
     const emps = empRes.data || [];
     setEmployees(emps);
@@ -1036,9 +1043,11 @@ export default function EventDetailPage({
               <div className="space-y-2">
                 <div className="flex items-baseline justify-between gap-2 flex-wrap">
                   <Label className="text-xs">売上金額（円） — 日別（税抜/税込を選んでください）</Label>
-                  <span className="text-[10px] text-muted-foreground">
-                    💡 PayPay 欄は「売上のうちPayPay分」。空欄=全額現金
-                  </span>
+                  {showPaypayColumn && (
+                    <span className="text-[10px] text-muted-foreground">
+                      💡 PayPay 欄は「売上のうちPayPay分」。空欄=全額現金
+                    </span>
+                  )}
                 </div>
                 {days.length === 0 ? (
                   <p className="text-xs text-muted-foreground">開催期間を入力すると日別の入力欄が表示されます</p>
@@ -1066,21 +1075,25 @@ export default function EventDetailPage({
                             step={1000}
                             value={input.amount}
                             onChange={(e) => updateInput(ymd, { amount: e.target.value })}
-                            placeholder="総売上"
-                            className="h-9 max-w-[140px]"
-                            title="その日の総売上（現金+PayPay 合計）"
+                            placeholder={showPaypayColumn ? "総売上" : "例: 250000"}
+                            className={showPaypayColumn ? "h-9 max-w-[140px]" : "h-9 max-w-[160px]"}
+                            title={showPaypayColumn ? "その日の総売上（現金+PayPay 合計）" : undefined}
                           />
-                          <span className="text-[10px] text-muted-foreground">うち📱PayPay</span>
-                          <Input
-                            type="number"
-                            min={0}
-                            step={1000}
-                            value={input.paypay}
-                            onChange={(e) => updateInput(ymd, { paypay: e.target.value })}
-                            placeholder="0"
-                            className={`h-9 max-w-[110px] ${paypayOver ? "border-rose-500" : ""}`}
-                            title="その日のPayPay売上（自社持ち込み端末分）。総売上以下"
-                          />
+                          {showPaypayColumn && (
+                            <>
+                              <span className="text-[10px] text-muted-foreground">うち📱PayPay</span>
+                              <Input
+                                type="number"
+                                min={0}
+                                step={1000}
+                                value={input.paypay}
+                                onChange={(e) => updateInput(ymd, { paypay: e.target.value })}
+                                placeholder="0"
+                                className={`h-9 max-w-[110px] ${paypayOver ? "border-rose-500" : ""}`}
+                                title="その日のPayPay売上（自社持ち込み端末分）。総売上以下"
+                              />
+                            </>
+                          )}
                           {/* 税抜/税込 トグル */}
                           <div className="inline-flex rounded-md border overflow-hidden text-xs">
                             <button
@@ -1129,7 +1142,7 @@ export default function EventDetailPage({
                         <span className="font-bold text-emerald-800">¥{totalIncluded.toLocaleString()}</span>
                       </span>
                     </div>
-                    {hasAnyPayPay && (
+                    {showPaypayColumn && hasAnyPayPay && (
                       <div className="flex items-center gap-3 pl-24 flex-wrap text-xs">
                         <span className="text-muted-foreground">内訳（税込）：</span>
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200">
@@ -1143,6 +1156,31 @@ export default function EventDetailPage({
                         </span>
                       </div>
                     )}
+                    {/* PayPay欄トグル: みどり会など自社PayPay端末を使う催事のみ展開する */}
+                    <div className="pt-1 pl-24">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          // 展開中に閉じるときは念のため確認 (PayPay入力があれば警告)
+                          if (showPaypayColumn && hasAnyPayPay) {
+                            const ok = confirm(
+                              "PayPay 欄を閉じますか？\n" +
+                              "入力済のPayPay分は保持されますが、隠れて見えなくなります。"
+                            );
+                            if (!ok) return;
+                          }
+                          setShowPaypayColumn((v) => !v);
+                        }}
+                        className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+                      >
+                        <span>{showPaypayColumn ? "▼" : "▶"}</span>
+                        <span>
+                          {showPaypayColumn
+                            ? "PayPay 欄を隠す"
+                            : "この催事は PayPay も使う（分けて入力する）"}
+                        </span>
+                      </button>
+                    </div>
                   </div>
                 )}
                 {/* 旧・一括入力値は後方互換で隠し保持（日別が空の時のみ採用される） */}
