@@ -28,6 +28,7 @@ import { Wallet, Download, Plus, Pencil, Trash2, ArrowUpRight, Calculator, Calen
 import { usePermission } from "@/hooks/usePermission";
 import { computePlannedPaymentDate } from "@/lib/payment-cycle";
 import { PaymentAlertsCard } from "@/components/layout/PaymentAlertsCard";
+import { PAYMENT_CHANNELS, PAYMENT_CHANNEL_MAP } from "@/lib/payment-channels";
 
 type EventLite = {
   id: string;
@@ -77,6 +78,10 @@ type PaymentRow = {
   period_end_date: string | null;
   installment_no: number;
   installment_total: number;
+  // 決済チャネル (現金/PayPay等)。null=従来の一括入金
+  channel: import("@/lib/payment-channels").PaymentChannelKey | null;
+  is_self_receive: boolean;
+  fee_rate: number | null;
   events: EventLite | null;
 };
 
@@ -102,7 +107,7 @@ const METHOD_LABEL: Record<string, string> = {
 
 const emptyForm = {
   event_id: "",
-  payer_kind: "venue" as "venue" | "payer", // venue=直取引 / payer=帳合経由
+  payer_kind: "venue" as "venue" | "payer" | "self", // venue=直取引 / payer=帳合経由 / self=自社直接入金
   venue_master_id: "",
   payer_master_id: "",
   planned_date: "",
@@ -114,6 +119,9 @@ const emptyForm = {
   status: "予定" as typeof STATUS_OPTIONS[number],
   notes: "",
   applied_rate: "" as string, // "80" など
+  // 決済チャネル (現金/PayPay/クレジット/その他)。空文字=従来の一括入金として扱う
+  channel: "" as "" | import("@/lib/payment-channels").PaymentChannelKey,
+  fee_rate: "" as string, // "3.24" など
 };
 
 export default function PaymentsPage() {
@@ -578,9 +586,12 @@ function PaymentsPageInner() {
 
   const openEdit = (p: PaymentRow) => {
     setEditingId(p.id);
+    // payer_kind: 自社受取フラグを優先、次に payer_master_id、なければ venue
+    const payerKind: "venue" | "payer" | "self" =
+      p.is_self_receive ? "self" : p.payer_master_id ? "payer" : "venue";
     setForm({
       event_id: p.event_id,
-      payer_kind: p.payer_master_id ? "payer" : "venue",
+      payer_kind: payerKind,
       venue_master_id: p.venue_master_id || "",
       payer_master_id: p.payer_master_id || "",
       planned_date: p.planned_date || "",
@@ -592,6 +603,8 @@ function PaymentsPageInner() {
       status: p.status,
       notes: p.notes || "",
       applied_rate: p.applied_rate != null ? String(p.applied_rate) : "",
+      channel: p.channel ?? "",
+      fee_rate: p.fee_rate != null ? String(p.fee_rate) : "",
     });
     setDialogOpen(true);
   };
@@ -663,8 +676,10 @@ function PaymentsPageInner() {
     if (!form.event_id) return;
     setSaving(true);
     try {
+      const isSelf = form.payer_kind === "self";
       const payload = {
         event_id: form.event_id,
+        // 自社受取のときは venue も payer も NULL (自社への直接入金)
         venue_master_id: form.payer_kind === "venue" ? (form.venue_master_id || null) : null,
         payer_master_id: form.payer_kind === "payer" ? (form.payer_master_id || null) : null,
         planned_date: form.planned_date || null,
@@ -676,6 +691,10 @@ function PaymentsPageInner() {
         status: form.status,
         notes: form.notes.trim() || null,
         applied_rate: form.applied_rate.trim() ? parseFloat(form.applied_rate) : null,
+        // 決済チャネル関連
+        channel: form.channel || null,
+        is_self_receive: isSelf,
+        fee_rate: form.fee_rate.trim() ? parseFloat(form.fee_rate) : null,
       };
       if (editingId) {
         await supabase.from("event_payments").update(payload).eq("id", editingId);
@@ -1083,6 +1102,15 @@ function PaymentsPageInner() {
                                   {eventLabel(p.events)}
                                   {p.installment_total > 1 && (
                                     <span className="ml-1 text-[10px] px-1 py-0.5 rounded bg-blue-100 text-blue-800 font-bold">{p.installment_no}/{p.installment_total}回目</span>
+                                  )}
+                                  {p.channel && (
+                                    <span
+                                      className={`ml-1 text-[10px] px-1 py-0.5 rounded font-bold border ${PAYMENT_CHANNEL_MAP[p.channel]?.badgeClass || ""}`}
+                                      title={p.is_self_receive ? "自社直接入金" : "venue経由"}
+                                    >
+                                      {PAYMENT_CHANNEL_MAP[p.channel]?.icon} {p.channel}
+                                      {p.is_self_receive && "・自社"}
+                                    </span>
                                   )}
                                 </Link>
                                 <p className="text-[11px] text-muted-foreground">
@@ -1560,10 +1588,61 @@ function PaymentsPageInner() {
               </Select>
             </div>
 
+            {/* 決済チャネル (現金/PayPay/クレジット/その他)
+                同じ催事でも 現金 は venue経由、PayPay は自社口座 と入金経路が違うため、
+                支払方法ごとに event_payments 行を作れる */}
+            <div className="space-y-2">
+              <Label className="text-xs">
+                支払方法（複数の決済方法がある催事は、方法ごとに1行ずつ登録）
+              </Label>
+              <div className="flex gap-1.5 flex-wrap">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={form.channel === "" ? "default" : "outline"}
+                  onClick={() => setForm({ ...form, channel: "", fee_rate: "" })}
+                  className="text-xs"
+                >一括（従来）</Button>
+                {PAYMENT_CHANNELS.map((ch) => (
+                  <Button
+                    key={ch.key}
+                    type="button"
+                    size="sm"
+                    variant={form.channel === ch.key ? "default" : "outline"}
+                    onClick={() => {
+                      // チャネル選択時に、既定値で payer_kind と fee_rate を自動セット
+                      setForm((prev) => ({
+                        ...prev,
+                        channel: ch.key,
+                        fee_rate: String(ch.defaultFeeRate),
+                        payer_kind: ch.defaultSelfReceive ? "self" : prev.payer_kind === "self" ? "venue" : prev.payer_kind,
+                        // 自社受取の場合は他の入金元IDをクリア
+                        venue_master_id: ch.defaultSelfReceive ? "" : prev.venue_master_id,
+                        payer_master_id: ch.defaultSelfReceive ? "" : prev.payer_master_id,
+                        // 支払方法(method) も揃える
+                        method: ch.key === "現金" ? "cash" : ch.key === "PayPay" || ch.key === "クレジット" ? "other" : prev.method,
+                      }));
+                    }}
+                    className="text-xs"
+                  >
+                    <span className="mr-1">{ch.icon}</span>{ch.label}
+                  </Button>
+                ))}
+              </div>
+              {form.channel && (
+                <div className="text-[10px] text-muted-foreground bg-muted/30 rounded px-2 py-1">
+                  {PAYMENT_CHANNEL_MAP[form.channel]?.defaultSelfReceive
+                    ? "🏦 自社口座に直接入金 (venue を経由しません)"
+                    : "🏬 venue または 帳合先 経由で入金"}
+                  {form.fee_rate && ` ／ 決済手数料 ${form.fee_rate}%`}
+                </div>
+              )}
+            </div>
+
             {/* 入金元 */}
             <div className="space-y-2">
               <Label className="text-xs">入金元<span className="text-rose-500 ml-0.5">*</span></Label>
-              <div className="flex gap-2 text-sm">
+              <div className="flex gap-2 text-sm flex-wrap">
                 <Button
                   type="button"
                   size="sm"
@@ -1576,8 +1655,19 @@ function PaymentsPageInner() {
                   variant={form.payer_kind === "payer" ? "default" : "outline"}
                   onClick={() => setForm({ ...form, payer_kind: "payer" })}
                 >帳合先経由</Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={form.payer_kind === "self" ? "default" : "outline"}
+                  onClick={() => setForm({ ...form, payer_kind: "self", venue_master_id: "", payer_master_id: "" })}
+                  title="PayPay・自社カード端末など、venueを経由せず自社口座に直接入金される場合"
+                >自社（PayPay等）</Button>
               </div>
-              {form.payer_kind === "venue" ? (
+              {form.payer_kind === "self" ? (
+                <div className="text-xs text-muted-foreground bg-muted/30 border rounded p-2">
+                  🏦 自社口座に直接入金。予定日は決済サービスの入金サイクル(PayPayは翌日等)で入力してください。
+                </div>
+              ) : form.payer_kind === "venue" ? (
                 <Select value={form.venue_master_id || "none"} onValueChange={(v) => setForm({ ...form, venue_master_id: !v || v === "none" ? "" : v })}>
                   <SelectTrigger>
                     <SelectValue placeholder="百貨店を選択">
@@ -1656,8 +1746,8 @@ function PaymentsPageInner() {
                   現在の税区分: {form.planned_tax_type === "excluded" ? "税抜" : "税込"}
                 </span>
               </div>
-              <div className="flex items-end gap-2">
-                <div className="flex-1">
+              <div className="flex items-end gap-2 flex-wrap">
+                <div className="flex-1 min-w-[180px]">
                   <Label className="text-[10px] text-muted-foreground">入金率（%）— 売上から予定額をコピーする際にこの率を乗算</Label>
                   <Input
                     type="number"
@@ -1670,6 +1760,23 @@ function PaymentsPageInner() {
                     className="h-8 text-sm"
                   />
                 </div>
+                {form.channel && (
+                  <div className="flex-1 min-w-[180px]">
+                    <Label className="text-[10px] text-muted-foreground">
+                      {form.channel} 手数料率（%）— PayPay 3.24 等
+                    </Label>
+                    <Input
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      max="100"
+                      value={form.fee_rate}
+                      onChange={(e) => setForm({ ...form, fee_rate: e.target.value })}
+                      placeholder="0（手数料なし）"
+                      className="h-8 text-sm"
+                    />
+                  </div>
+                )}
               </div>
             </div>
 
