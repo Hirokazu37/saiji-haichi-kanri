@@ -85,14 +85,39 @@ export function QrAddressPrint({ frontOverlay }: { frontOverlay?: React.ReactNod
     setQuadOffsets((prev) => prev.map((q, idx) => (idx === i ? { ...q, [axis]: v } : q)));
     setDirty(true);
   };
+  // 文面(frontOverlay)用の面別mmオフセット。宛名と同じUIで別途調整する。
+  // frontOverlay がある時（=おもて面）だけ表示・適用する。
+  const [msgOffsets, setMsgOffsets] = useState<{ dx: number; dy: number }[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const s = localStorage.getItem("dm_msg_quad_offsets");
+        if (s) { const a = JSON.parse(s); if (Array.isArray(a) && a.length === 4) return a; }
+      } catch { /* ignore */ }
+    }
+    return [{ dx: 0, dy: 0 }, { dx: 0, dy: 0 }, { dx: 0, dy: 0 }, { dx: 0, dy: 0 }];
+  });
+  const [msgDirty, setMsgDirty] = useState(false);
+  const [msgPosSaved, setMsgPosSaved] = useState(false);
+  const setMsgQuad = (i: number, axis: "dx" | "dy", v: number) => {
+    setMsgOffsets((prev) => prev.map((q, idx) => (idx === i ? { ...q, [axis]: v } : q)));
+    setMsgDirty(true);
+  };
   const savePositions = () => {
     try { localStorage.setItem("dm_qr_quad_offsets", JSON.stringify(quadOffsets)); } catch { /* ignore */ }
     setDirty(false);
     setPosSaved(true);
     setTimeout(() => setPosSaved(false), 2000);
   };
+  const saveMsgPositions = () => {
+    try { localStorage.setItem("dm_msg_quad_offsets", JSON.stringify(msgOffsets)); } catch { /* ignore */ }
+    setMsgDirty(false);
+    setMsgPosSaved(true);
+    setTimeout(() => setMsgPosSaved(false), 2000);
+  };
   // 全体を右に3mm寄せた上で、面ごとの微調整を加える
   const shiftFor = (i: number): React.CSSProperties => ({ transform: `translate(${3 + quadOffsets[i].dx}mm, ${quadOffsets[i].dy}mm)` });
+  // 文面用のシフト (基準はオフセットなし、微調整のみ)
+  const msgShiftFor = (i: number): React.CSSProperties => ({ transform: `translate(${msgOffsets[i].dx}mm, ${msgOffsets[i].dy}mm)` });
   const QUAD_LABELS = ["左上", "右上", "左下", "右下"];
 
   // 1枚分の宛名（画面プレビュー用）。q=面インデックスで微調整を反映
@@ -301,7 +326,9 @@ export function QrAddressPrint({ frontOverlay }: { frontOverlay?: React.ReactNod
       {cards && (
         <div className="space-y-1">
           <div className="flex items-center justify-center gap-2 flex-wrap">
-            <span className="text-xs text-muted-foreground">位置を面ごとに微調整（mm／＋横=右・＋縦=下）</span>
+            <span className="text-xs text-muted-foreground">
+              📮 <span className="font-medium">宛名エリア</span>の位置を面ごとに微調整（mm／＋横=右・＋縦=下）
+            </span>
             <button
               type="button"
               onClick={savePositions}
@@ -329,6 +356,40 @@ export function QrAddressPrint({ frontOverlay }: { frontOverlay?: React.ReactNod
         </div>
       )}
 
+      {/* 文面(出店のご案内)エリアの面ごと微調整 — frontOverlay がある時のみ */}
+      {cards && frontOverlay && (
+        <div className="space-y-1 border-t pt-3">
+          <div className="flex items-center justify-center gap-2 flex-wrap">
+            <span className="text-xs text-muted-foreground">
+              📝 <span className="font-medium">出店のご案内（文面）エリア</span>の位置を面ごとに微調整（mm／＋横=右・＋縦=下）
+            </span>
+            <button
+              type="button"
+              onClick={saveMsgPositions}
+              title="この位置を保存（この端末）"
+              className={cn(
+                "inline-flex items-center justify-center h-10 w-10 rounded-full border cursor-pointer transition-transform hover:scale-110 active:scale-95",
+                msgDirty ? "bg-orange-50 border-orange-300 text-orange-600 animate-pulse" : "bg-muted/50 border-border text-primary hover:bg-muted"
+              )}
+            >
+              <Save className="h-6 w-6" />
+            </button>
+            {msgPosSaved && <span className="text-xs text-emerald-700 font-medium">✓ 保存しました</span>}
+          </div>
+          <div className="grid grid-cols-2 gap-2 max-w-md mx-auto">
+            {QUAD_LABELS.map((lbl, i) => (
+              <div key={i} className="flex items-center gap-1 border rounded-md px-2 py-1 text-xs">
+                <span className="w-8 font-medium shrink-0">{lbl}</span>
+                <span>横</span>
+                <input type="number" step={0.5} value={msgOffsets[i].dx} onChange={(e) => setMsgQuad(i, "dx", parseFloat(e.target.value) || 0)} className="h-7 w-14 rounded border border-input bg-white px-1" />
+                <span>縦</span>
+                <input type="number" step={0.5} value={msgOffsets[i].dy} onChange={(e) => setMsgQuad(i, "dy", parseFloat(e.target.value) || 0)} className="h-7 w-14 rounded border border-input bg-white px-1" />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* 仕上がりプレビュー（4面） — タブで うら面(文面)/おもて面(宛名) 切替 */}
       {cards && cards.length > 0 && (
         <div className="space-y-1">
@@ -343,7 +404,9 @@ export function QrAddressPrint({ frontOverlay }: { frontOverlay?: React.ReactNod
                   return (
                     <div key={q} className="relative bg-white border-r border-b overflow-hidden" style={{ width: "105mm", height: "148.5mm" }}>
                       <span className="absolute top-0 left-0 z-10 bg-white/80 px-1 text-muted-foreground" style={{ fontSize: "9pt" }}>{QUAD_LABELS[q]}</span>
-                      {frontOverlay}
+                      {frontOverlay && (
+                        <div style={{ position: "absolute", inset: 0, ...msgShiftFor(q) }}>{frontOverlay}</div>
+                      )}
                       {c ? cardInner(c, q) : <span className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">（データなし）</span>}
                     </div>
                   );
@@ -409,17 +472,20 @@ export function QrAddressPrint({ frontOverlay }: { frontOverlay?: React.ReactNod
               </div>
             ))}
           </div>
-          {/* まとめ印刷: 宛名＋文面（文面は全面共通、宛名は面ごと） */}
+          {/* まとめ印刷: 宛名＋文面（文面は全面共通の内容だが、面ごとに位置微調整） */}
           {frontOverlay && (
             <div className="qr-print-both">
               {pages.map((page, pi) => (
                 <div key={pi} className="qr-sheet">
-                  {page.map((c, ci) => (
-                    <div key={c.no} className="qr-card">
-                      {frontOverlay}
-                      {printAddr(c, ci % 4)}
-                    </div>
-                  ))}
+                  {page.map((c, ci) => {
+                    const q = ci % 4;
+                    return (
+                      <div key={c.no} className="qr-card">
+                        <div className="qr-shift" style={msgShiftFor(q)}>{frontOverlay}</div>
+                        {printAddr(c, q)}
+                      </div>
+                    );
+                  })}
                 </div>
               ))}
             </div>
