@@ -29,7 +29,8 @@ type AiReport = { id: string; title: string; content: string; created_at: string
 type DailyRow = {
   event_id: string;
   date: string;
-  amount: number;
+  amount: number;              // 現金分 (PayPayなし催事では総売上と同義)
+  paypay_amount: number | null; // うちPayPay分。総売上 = amount + paypay_amount
   tax_type: "excluded" | "included";
   tax_rate: number | null;
 };
@@ -58,7 +59,7 @@ export default function SalesPage() {
     setLoading(true);
     const [evtRes, dailyRes] = await Promise.all([
       supabase.from("events").select("id, name, venue, store_name, prefecture, start_date, end_date, revenue").order("start_date", { ascending: true }),
-      supabase.from("event_daily_revenue").select("event_id, date, amount, tax_type, tax_rate"),
+      supabase.from("event_daily_revenue").select("event_id, date, amount, paypay_amount, tax_type, tax_rate"),
     ]);
     setEvents((evtRes.data || []) as EventLite[]);
     setDailyRows((dailyRes.data || []) as DailyRow[]);
@@ -72,11 +73,12 @@ export default function SalesPage() {
   // 2. 無ければ events.revenue (税込合計) をフォールバック (税抜は 8% 概算で割戻し)
   const salesByEvent = useMemo(() => {
     const map = new Map<string, { excluded: number; included: number; hasData: boolean; source: "daily" | "revenue" }>();
-    // STEP 1: 日別売上から集計
+    // STEP 1: 日別売上から集計 (総売上 = amount + paypay_amount)
     for (const d of dailyRows) {
       const cur = map.get(d.event_id) ?? { excluded: 0, included: 0, hasData: false, source: "daily" as const };
-      cur.excluded += toExcluded(d.amount, d.tax_type, d.tax_rate);
-      cur.included += toIncluded(d.amount, d.tax_type, d.tax_rate);
+      const gross = d.amount + (d.paypay_amount ?? 0);
+      cur.excluded += toExcluded(gross, d.tax_type, d.tax_rate);
+      cur.included += toIncluded(gross, d.tax_type, d.tax_rate);
       cur.hasData = true;
       cur.source = "daily";
       map.set(d.event_id, cur);

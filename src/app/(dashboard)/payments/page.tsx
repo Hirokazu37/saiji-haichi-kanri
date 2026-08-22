@@ -243,18 +243,20 @@ function PaymentsPageInner() {
       for (const p of missing as { id: string; event_id: string; planned_tax_type: "excluded" | "included" | null; applied_rate: number }[]) {
         const { data: daily } = await supabase
           .from("event_daily_revenue")
-          .select("amount, tax_type, tax_rate")
+          .select("amount, paypay_amount, tax_type, tax_rate")
           .eq("event_id", p.event_id);
         if (!daily || daily.length === 0) continue;
         let excludedTotal = 0;
         let includedTotal = 0;
-        for (const d of daily as { amount: number; tax_type: "excluded" | "included"; tax_rate: number | null }[]) {
+        // amount=現金分, paypay_amount=PayPay分 → 総売上 = amount + paypay_amount
+        for (const d of daily as { amount: number; paypay_amount: number | null; tax_type: "excluded" | "included"; tax_rate: number | null }[]) {
+          const gross = d.amount + (d.paypay_amount ?? 0);
           if (d.tax_type === "excluded") {
-            excludedTotal += d.amount;
-            includedTotal += Math.round(d.amount * (1 + (d.tax_rate ?? 0.08)));
+            excludedTotal += gross;
+            includedTotal += Math.round(gross * (1 + (d.tax_rate ?? 0.08)));
           } else {
-            includedTotal += d.amount;
-            excludedTotal += Math.round(d.amount / (1 + (d.tax_rate ?? 0.08)));
+            includedTotal += gross;
+            excludedTotal += Math.round(gross / (1 + (d.tax_rate ?? 0.08)));
           }
         }
         const base = p.planned_tax_type === "included" ? includedTotal : excludedTotal;
@@ -601,18 +603,20 @@ function PaymentsPageInner() {
     if (!form.event_id) return;
     const { data: dailyData } = await supabase
       .from("event_daily_revenue")
-      .select("amount, tax_type, tax_rate")
+      .select("amount, paypay_amount, tax_type, tax_rate")
       .eq("event_id", form.event_id);
-    const daily = (dailyData || []) as { amount: number; tax_type: "excluded" | "included"; tax_rate: number }[];
+    const daily = (dailyData || []) as { amount: number; paypay_amount: number | null; tax_type: "excluded" | "included"; tax_rate: number }[];
     let salesTotal = 0;
     if (daily.length > 0) {
+      // amount=現金分, paypay_amount=PayPay分 → 総売上 = amount + paypay_amount
       for (const d of daily) {
+        const gross = d.amount + (d.paypay_amount ?? 0);
         if (d.tax_type === taxType) {
-          salesTotal += d.amount;
+          salesTotal += gross;
         } else if (taxType === "included" && d.tax_type === "excluded") {
-          salesTotal += Math.round(d.amount * (1 + d.tax_rate));
+          salesTotal += Math.round(gross * (1 + d.tax_rate));
         } else if (taxType === "excluded" && d.tax_type === "included") {
-          salesTotal += Math.round(d.amount / (1 + d.tax_rate));
+          salesTotal += Math.round(gross / (1 + d.tax_rate));
         }
       }
     } else {

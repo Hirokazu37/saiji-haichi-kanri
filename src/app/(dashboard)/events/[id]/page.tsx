@@ -69,7 +69,9 @@ type DailyRevenueRow = {
   tax_type: TaxType;
   tax_rate: number;
 };
-// paypay: その日のPayPay売上 (amount と同じ税区分)。空文字 = 0
+// amount = 現金売上 (PayPay を分けて入力する催事では「現金分のみ」)。
+// paypay = PayPay売上。合計 = amount + paypay。両方 amount と同じ税区分。
+// PayPay を使わない催事(paypay=0)では amount がその日の総売上そのもの。
 type DailyInput = { amount: string; paypay: string; tax_type: TaxType; tax_rate: number };
 
 // 税抜 ↔ 税込 変換（整数四捨五入）
@@ -266,6 +268,7 @@ export default function EventDetailPage({
     const allNames = [...selectedNames, ...(freeText ? [freeText] : [])];
 
     // 日別売上の税込・税抜合計を計算（events.revenue には税込合計を格納）
+    // amount = 現金分、paypay = PayPay分 → 総売上 = amount + paypay
     let includedTotal = 0;
     let excludedTotal = 0;
     let hasAnyDaily = false;
@@ -273,12 +276,15 @@ export default function EventDetailPage({
       const n = v.amount.trim() ? parseInt(v.amount) : NaN;
       if (isNaN(n)) continue;
       hasAnyDaily = true;
+      const pn = v.paypay.trim() ? parseInt(v.paypay) : 0;
+      const paypayN = !isNaN(pn) && pn > 0 ? pn : 0;
+      const gross = n + paypayN; // 総売上 (現金 + PayPay)
       if (v.tax_type === "excluded") {
-        excludedTotal += n;
-        includedTotal += toIncluded(n, v.tax_rate);
+        excludedTotal += gross;
+        includedTotal += toIncluded(gross, v.tax_rate);
       } else {
-        includedTotal += n;
-        excludedTotal += toExcluded(n, v.tax_rate);
+        includedTotal += gross;
+        excludedTotal += toExcluded(gross, v.tax_rate);
       }
     }
     // 開催前(未来)の催事には売上実績(event_daily_revenue)を一切書き込まない。
@@ -365,8 +371,8 @@ export default function EventDetailPage({
       toUpsert.push({
         event_id: id,
         date,
-        amount: n,
-        paypay_amount: !isNaN(paypayN) && paypayN > 0 ? Math.min(paypayN, n) : 0,
+        amount: n, // = 現金分 (PayPayなし催事では総売上そのもの)
+        paypay_amount: !isNaN(paypayN) && paypayN > 0 ? paypayN : 0, // = PayPay分 (現金とは独立、合計 = amount+paypay)
         tax_type: input.tax_type,
         tax_rate: input.tax_rate,
       });
@@ -1002,7 +1008,8 @@ export default function EventDetailPage({
               const d = new Date(ymd + "T00:00:00");
               return `${d.getMonth() + 1}/${d.getDate()}（${wdayLabel(ymd)}）`;
             };
-            // 税込・税抜の各合計を計算 (総売上・現金分・PayPay分)
+            // 税込・税抜の各合計を計算
+            // amount = 現金分、paypay = PayPay分 → 総売上 = amount + paypay
             let totalExcluded = 0;
             let totalIncluded = 0;
             let paypayIncluded = 0;
@@ -1013,18 +1020,18 @@ export default function EventDetailPage({
               const n = v.amount.trim() ? parseInt(v.amount) : NaN;
               if (isNaN(n)) continue;
               const pn = v.paypay.trim() ? parseInt(v.paypay) : 0;
-              const paypayN = !isNaN(pn) && pn > 0 ? Math.min(pn, n) : 0;
-              const cashN = n - paypayN;
+              const paypayN = !isNaN(pn) && pn > 0 ? pn : 0;
+              const gross = n + paypayN; // 総売上
               if (v.tax_type === "excluded") {
-                totalExcluded += n;
-                totalIncluded += toIncluded(n, v.tax_rate);
+                totalExcluded += gross;
+                totalIncluded += toIncluded(gross, v.tax_rate);
                 paypayIncluded += toIncluded(paypayN, v.tax_rate);
-                cashIncluded += toIncluded(cashN, v.tax_rate);
+                cashIncluded += toIncluded(n, v.tax_rate);
               } else {
-                totalIncluded += n;
-                totalExcluded += toExcluded(n, v.tax_rate);
+                totalIncluded += gross;
+                totalExcluded += toExcluded(gross, v.tax_rate);
                 paypayIncluded += paypayN;
-                cashIncluded += cashN;
+                cashIncluded += n;
               }
             }
             const hasAnyPayPay = paypayIncluded > 0;
@@ -1045,7 +1052,7 @@ export default function EventDetailPage({
                   <Label className="text-xs">売上金額（円） — 日別（税抜/税込を選んでください）</Label>
                   {showPaypayColumn && (
                     <span className="text-[10px] text-muted-foreground">
-                      💡 PayPay 欄は「売上のうちPayPay分」。空欄=全額現金
+                      💡 現金分＋PayPay分で入力。合計 = 現金 ＋ PayPay
                     </span>
                   )}
                 </div>
@@ -1057,10 +1064,11 @@ export default function EventDetailPage({
                       const input = getInput(ymd);
                       const n = input.amount.trim() ? parseInt(input.amount) : NaN;
                       const pn = input.paypay.trim() ? parseInt(input.paypay) : 0;
+                      const grossN = !isNaN(n) ? n + (pn > 0 ? pn : 0) : NaN;
+                      // 展開時は 総売上(現金+PayPay) をもう片方の税区分に換算表示
                       const otherLabel = input.tax_type === "excluded"
-                        ? (isNaN(n) ? "—" : `税込 ¥${toIncluded(n, input.tax_rate).toLocaleString()}`)
-                        : (isNaN(n) ? "—" : `税抜 ¥${toExcluded(n, input.tax_rate).toLocaleString()}`);
-                      const paypayOver = !isNaN(n) && pn > n; // PayPay分が総売上を超えている警告
+                        ? (isNaN(grossN) ? "—" : `税込 ¥${toIncluded(grossN, input.tax_rate).toLocaleString()}`)
+                        : (isNaN(grossN) ? "—" : `税抜 ¥${toExcluded(grossN, input.tax_rate).toLocaleString()}`);
                       return (
                         <div key={ymd} className="flex items-center gap-2 flex-wrap">
                           <div className="w-24 text-xs text-muted-foreground shrink-0">
@@ -1075,13 +1083,13 @@ export default function EventDetailPage({
                             step={1000}
                             value={input.amount}
                             onChange={(e) => updateInput(ymd, { amount: e.target.value })}
-                            placeholder={showPaypayColumn ? "総売上" : "例: 250000"}
+                            placeholder={showPaypayColumn ? "現金分" : "例: 250000"}
                             className={showPaypayColumn ? "h-9 max-w-[140px]" : "h-9 max-w-[160px]"}
-                            title={showPaypayColumn ? "その日の総売上（現金+PayPay 合計）" : undefined}
+                            title={showPaypayColumn ? "その日の現金売上（PayPayを除いた分）" : undefined}
                           />
                           {showPaypayColumn && (
                             <>
-                              <span className="text-[10px] text-muted-foreground">うち📱PayPay</span>
+                              <span className="text-[10px] text-muted-foreground">＋📱PayPay</span>
                               <Input
                                 type="number"
                                 min={0}
@@ -1089,8 +1097,8 @@ export default function EventDetailPage({
                                 value={input.paypay}
                                 onChange={(e) => updateInput(ymd, { paypay: e.target.value })}
                                 placeholder="0"
-                                className={`h-9 max-w-[110px] ${paypayOver ? "border-rose-500" : ""}`}
-                                title="その日のPayPay売上（自社持ち込み端末分）。総売上以下"
+                                className="h-9 max-w-[110px]"
+                                title="その日のPayPay売上（自社持ち込み端末分）"
                               />
                             </>
                           )}

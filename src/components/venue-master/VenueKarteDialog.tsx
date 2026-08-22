@@ -17,7 +17,7 @@ export type KarteVenue = { id: string; venue_name: string; store_name: string | 
 export type KarteSeg = { kbn_no: number; code: number; segment_name: string };
 
 type EventRow = { id: string; name: string | null; start_date: string; end_date: string; revenue: number | null; dm_count: number | null; venue: string; store_name: string | null };
-type DailyRow = { event_id: string; amount: number; tax_type: "excluded" | "included"; tax_rate: number | null };
+type DailyRow = { event_id: string; amount: number; paypay_amount: number | null; tax_type: "excluded" | "included"; tax_rate: number | null };
 type AliasRow = { id: string; alias_venue: string; alias_store: string | null };
 
 const toIncluded = (amount: number, taxType: "excluded" | "included", rate: number | null) =>
@@ -99,11 +99,13 @@ export function VenueKarteDialog({ open, onOpenChange, venue, segments, canEdit,
       const visitByEvent = new Map<string, number>();
       if (ids.length > 0) {
         const [dailyRes, visRes] = await Promise.all([
-          supabase.from("event_daily_revenue").select("event_id, amount, tax_type, tax_rate").in("event_id", ids),
+          supabase.from("event_daily_revenue").select("event_id, amount, paypay_amount, tax_type, tax_rate").in("event_id", ids),
           supabase.from("event_visit_counts").select("event_id, visit_count").in("event_id", ids),
         ]);
         for (const d of (dailyRes.data as DailyRow[]) || []) {
-          dailyByEvent.set(d.event_id, (dailyByEvent.get(d.event_id) || 0) + toIncluded(d.amount, d.tax_type, d.tax_rate));
+          // 総売上 = amount(現金) + paypay_amount(PayPay)
+          const gross = d.amount + (d.paypay_amount ?? 0);
+          dailyByEvent.set(d.event_id, (dailyByEvent.get(d.event_id) || 0) + toIncluded(gross, d.tax_type, d.tax_rate));
         }
         for (const v of (visRes.data as { event_id: string; visit_count: number }[]) || []) {
           visitByEvent.set(v.event_id, v.visit_count);
