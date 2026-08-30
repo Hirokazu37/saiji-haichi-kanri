@@ -16,7 +16,7 @@ import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { Combobox, type ComboboxItem } from "@/components/ui/combobox";
 import { prefectures, eventStatuses } from "@/lib/prefectures";
 import { getAreaForPrefecture } from "@/lib/areas";
-import { X, Plus, Hotel, Train, UserCheck, Package, ArrowLeft, Building2, FileText, Save } from "lucide-react";
+import { X, Plus, Hotel, Train, UserCheck, Package, ArrowLeft, Building2, FileText, Save, AlertTriangle } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
 import { PayerSourceSection } from "@/components/arrangements/PayerSourceSection";
 import Link from "next/link";
@@ -86,8 +86,8 @@ function NewEventPageInner() {
   const [mannequinEntries, setMannequinEntries] = useState<MannequinEntry[]>([]);
   const [shipmentEntries, setShipmentEntries] = useState<ShipmentEntry[]>([]);
   const [pastVenues, setPastVenues] = useState<VenueOption[]>([]);
-  // 備品の流れの候補算出に使う：催事の開催期間を全部保持
-  const [allEvents, setAllEvents] = useState<Array<{ venue: string; store_name: string | null; start_date: string; end_date: string }>>([]);
+  // 備品の流れの候補算出＋重複チェックに使う：催事の情報を保持
+  const [allEvents, setAllEvents] = useState<Array<{ id: string; name: string | null; venue: string; store_name: string | null; start_date: string; end_date: string; person_in_charge: string | null }>>([]);
   const [venueMasters, setVenueMasters] = useState<VenueMaster[]>([]);
   // 直近12ヶ月の使用頻度マップ（label -> 回数）
   const [venueUsageMap, setVenueUsageMap] = useState<Map<string, number>>(new Map());
@@ -127,7 +127,7 @@ function NewEventPageInner() {
     const oneYearAgoStr = oneYearAgo.toISOString().slice(0, 10);
     const [empRes, evtRes, vmRes, hmRes, hvlRes, amRes, aalRes, arRes, mpRes, mhRes, vmlRes] = await Promise.all([
       supabase.from("employees").select("id, name").order("sort_order").order("name"),
-      supabase.from("events").select("venue, store_name, start_date, end_date").gte("start_date", oneYearAgoStr).order("start_date", { ascending: false }),
+      supabase.from("events").select("id, name, venue, store_name, start_date, end_date, person_in_charge").gte("start_date", oneYearAgoStr).order("start_date", { ascending: false }),
       supabase.from("venue_master").select("id, venue_name, store_name, prefecture, area_id, reading, is_active, closing_day, pay_month_offset, pay_day, default_payer_id, direct_receive_rate, chouai_receive_rate").eq("is_active", true),
       supabase.from("hotel_master").select("id, name, area_id").eq("is_active", true).order("name"),
       supabase.from("hotel_venue_links").select("hotel_id, venue_name"),
@@ -143,8 +143,9 @@ function NewEventPageInner() {
     const seen = new Set<string>();
     const venues: VenueOption[] = [];
     const usage = new Map<string, number>();
-    const eventRows: Array<{ venue: string; store_name: string | null; start_date: string; end_date: string }> = [];
-    (evtRes.data || []).forEach((e: { venue: string; store_name: string | null; start_date: string; end_date: string }) => {
+    type EventRowLite = { id: string; name: string | null; venue: string; store_name: string | null; start_date: string; end_date: string; person_in_charge: string | null };
+    const eventRows: EventRowLite[] = [];
+    (evtRes.data || []).forEach((e: EventRowLite) => {
       const label = e.store_name ? `${e.venue} ${e.store_name}` : e.venue;
       if (!seen.has(label)) { seen.add(label); venues.push({ label }); }
       usage.set(label, (usage.get(label) || 0) + 1);
@@ -385,6 +386,36 @@ function NewEventPageInner() {
       prefecture: v.prefecture ?? f.prefecture,
     }));
   };
+  // 重複チェック: 同じ会場(venue + store_name)で期間が重なる既存催事を検出。
+  // 誤って新規登録してしまうケース(例: 既存催事に入金を追加するつもりが
+  // 新規催事を作ってしまう)を防ぐため、入力中にリアルタイム警告する。
+  // 判定条件:
+  //   - venue が一致 (前後空白は無視・大小区別なし)
+  //   - store_name が両方あって一致、または片方が空でもう片方は"店"がつく等ゆるく一致
+  //   - 期間が重なる: existing.start <= new.end && existing.end >= new.start
+  //   - 複製元(duplicateFromId)自身は除外
+  const duplicateCandidates = useMemo(() => {
+    const vTrim = form.venue.trim();
+    const sTrim = form.store_name.trim();
+    if (!vTrim || !form.start_date || !form.end_date) return [];
+    if (form.end_date < form.start_date) return [];
+    const vLower = vTrim.toLowerCase();
+    return allEvents.filter((e) => {
+      if (duplicateFromId && e.id === duplicateFromId) return false;
+      // venue マッチ (大小・空白無視)
+      if ((e.venue || "").trim().toLowerCase() !== vLower) return false;
+      // store_name マッチ (両方あるなら厳密、片方だけ空なら他方をヒントに緩く)
+      const esTrim = (e.store_name || "").trim();
+      if (sTrim && esTrim) {
+        if (sTrim !== esTrim) return false;
+      }
+      // 期間重複判定
+      if (e.start_date > form.end_date) return false;
+      if (e.end_date < form.start_date) return false;
+      return true;
+    });
+  }, [form.venue, form.store_name, form.start_date, form.end_date, allEvents, duplicateFromId]);
+
   // 表示用: 現在のform.venueから対応するマスターidを逆引き
   const currentVenueId = (() => {
     const m = venueMasters.find((v) => v.venue_name === form.venue && (v.store_name ?? "") === form.store_name);
@@ -614,6 +645,20 @@ function NewEventPageInner() {
     // 同期ガード: 既に保存処理が走っていたら何もしない（連打による二重 INSERT 防止）
     if (savingRef.current) return;
     if (!form.venue || !form.prefecture || !form.start_date || !form.end_date) return;
+
+    // 重複がある場合は最終確認 (誤操作で新規作成してしまうのを防ぐ)
+    if (duplicateCandidates.length > 0) {
+      const listText = duplicateCandidates
+        .map((e) => `・${e.venue}${e.store_name ? ` ${e.store_name}` : ""}${e.name ? ` / ${e.name}` : ""}（${e.start_date}〜${e.end_date}）`)
+        .join("\n");
+      const ok = window.confirm(
+        `⚠️ 同じ会場・期間の催事が既に ${duplicateCandidates.length}件 登録されています:\n\n${listText}\n\n` +
+        `既存の催事に入金・売上を追記したい場合は、キャンセルして既存の催事を開いてください。\n` +
+        `別催事として本当に新規登録する場合は「OK」を押してください。`
+      );
+      if (!ok) return;
+    }
+
     savingRef.current = true;
     setSaving(true);
 
@@ -917,6 +962,46 @@ function NewEventPageInner() {
               </Select>
             </div>
           </div>
+
+          {/* 重複警告: 同じ会場・期間の既存催事があれば警告する */}
+          {duplicateCandidates.length > 0 && (
+            <div className="rounded-md border-2 border-amber-400 bg-amber-50 p-3 text-sm text-amber-900">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-5 w-5 mt-0.5 shrink-0 text-amber-700" />
+                <div className="flex-1 min-w-0 space-y-1.5">
+                  <div className="font-bold">
+                    ⚠️ この期間・会場に、すでに登録済の催事が {duplicateCandidates.length}件あります
+                  </div>
+                  <div className="text-xs">
+                    もし <strong>既存の催事に追記したい場合</strong>（入金・売上の入力など）は、
+                    このまま新規作成せず、下のリンクから既存催事を開いてください：
+                  </div>
+                  <ul className="space-y-1 mt-1">
+                    {duplicateCandidates.map((e) => (
+                      <li key={e.id} className="flex items-start gap-2 rounded bg-white/60 border border-amber-200 px-2 py-1">
+                        <Link
+                          href={`/events/${e.id}`}
+                          target="_blank"
+                          rel="noopener"
+                          className="text-blue-700 hover:text-blue-900 hover:underline font-medium truncate"
+                        >
+                          {e.venue}{e.store_name ? ` ${e.store_name}` : ""}
+                          {e.name && <span className="ml-1 text-muted-foreground">/ {e.name}</span>}
+                        </Link>
+                        <span className="text-xs text-muted-foreground shrink-0">
+                          {e.start_date}〜{e.end_date}
+                          {e.person_in_charge && ` ／ ${e.person_in_charge}`}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="text-[10px] text-amber-800/80 mt-1">
+                    ※ 別催事として正しく新規登録する場合はこのまま入力を続けてください
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* 担当者 */}
           <div className="space-y-2">
