@@ -58,6 +58,10 @@ type EventData = {
   payer_master_id: string | null;
   force_direct: boolean;
   is_cash_on_spot: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+  created_by?: string | null;
+  updated_by?: string | null;
 };
 
 type TaxType = "excluded" | "included";
@@ -135,6 +139,9 @@ export default function EventDetailPage({
   // PayPay 欄の表示制御。既定は隠す。データ読込で既にPayPay入力があれば自動展開
   const [showPaypayColumn, setShowPaypayColumn] = useState(false);
 
+  // 監査情報 (created_by / updated_by の UUID → display_name 変換用)
+  const [auditNames, setAuditNames] = useState<{ createdName: string | null; updatedName: string | null }>({ createdName: null, updatedName: null });
+
   const fetchEvent = useCallback(async () => {
     const [eventRes, empRes, staffRes, dailyRes, mpRes, mannRes] = await Promise.all([
       supabase.from("events").select("*").eq("id", id).single(),
@@ -146,6 +153,26 @@ export default function EventDetailPage({
     ]);
     if (eventRes.data) {
       setEvent(eventRes.data);
+      // 監査情報: 作成者/更新者の UUID → 表示名を取得 (両者同じ人なら1度で済むので Set で重複排除)
+      const auditUids = Array.from(new Set([eventRes.data.created_by, eventRes.data.updated_by].filter(Boolean) as string[]));
+      if (auditUids.length > 0) {
+        supabase
+          .from("user_profiles")
+          .select("id, display_name, email")
+          .in("id", auditUids)
+          .then(({ data }) => {
+            const map = new Map<string, string>();
+            for (const u of (data as { id: string; display_name: string | null; email: string | null }[]) || []) {
+              map.set(u.id, u.display_name || u.email || u.id.slice(0, 8));
+            }
+            setAuditNames({
+              createdName: eventRes.data.created_by ? map.get(eventRes.data.created_by) || null : null,
+              updatedName: eventRes.data.updated_by ? map.get(eventRes.data.updated_by) || null : null,
+            });
+          });
+      } else {
+        setAuditNames({ createdName: null, updatedName: null });
+      }
       setForm({
         name: eventRes.data.name || "",
         venue: eventRes.data.venue,
@@ -1208,6 +1235,28 @@ export default function EventDetailPage({
               placeholder="反省点・来年に活かせる点など"
             />
           </div>
+
+          {/* 監査情報: 誰が/いつ 作成・更新したか (自動記録)。誤登録調査時に使う */}
+          {event && (event.created_at || event.updated_at || event.created_by || event.updated_by) && (
+            <div className="pt-3 mt-3 border-t text-[11px] text-muted-foreground space-y-0.5">
+              {event.created_at && (
+                <div>
+                  <span className="inline-block w-14">作成:</span>
+                  <span className="tabular-nums">{event.created_at.slice(0, 19).replace("T", " ")}</span>
+                  {auditNames.createdName && <span className="ml-2">by <span className="font-medium text-foreground">{auditNames.createdName}</span></span>}
+                  {!auditNames.createdName && !event.created_by && <span className="ml-2 opacity-70">(記録なし)</span>}
+                </div>
+              )}
+              {event.updated_at && event.updated_at !== event.created_at && (
+                <div>
+                  <span className="inline-block w-14">最終更新:</span>
+                  <span className="tabular-nums">{event.updated_at.slice(0, 19).replace("T", " ")}</span>
+                  {auditNames.updatedName && <span className="ml-2">by <span className="font-medium text-foreground">{auditNames.updatedName}</span></span>}
+                  {!auditNames.updatedName && !event.updated_by && <span className="ml-2 opacity-70">(記録なし)</span>}
+                </div>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
