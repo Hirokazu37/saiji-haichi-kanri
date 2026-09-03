@@ -259,22 +259,26 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
       setError("「顧客番号」と「氏名」の列を指定してください");
       return;
     }
-    // 置換モード時は破壊的動作なので最終確認 (誤操作防止)
+    const fixedSegMaster = segMode === "fixed"
+      ? segments.find((s) => segKey(s.kbn_no, s.code) === fixedSeg) || null
+      : null;
+    // 置換モードは 単一区分 (segMode='fixed') + 区分マスタ選択 必須。
+    // その区分に属する既存名簿だけを消して置き換える (他区分は保護)。
     if (event && replaceMode) {
-      const existing = currentRecipientCount ?? 0;
+      if (!fixedSegMaster) {
+        setError("置換モードでは 区分を1つ選んでください (例: 「お試し阪神梅田本店」)");
+        return;
+      }
       const incoming = rows.length;
       const ok = window.confirm(
-        `⚠️ 置換モードで取り込みます\n\n` +
-        `既存の名簿 ${existing.toLocaleString()}人 を すべて削除 してから、\n` +
-        `今回のCSV (${incoming.toLocaleString()}行) の顧客だけを 登録し直します。\n\n` +
-        `もし複数区分を集約している場合は、他の区分の名簿も消えます。\n` +
+        `⚠️ 置換モード (区分限定) で取り込みます\n\n` +
+        `既存の 「${fixedSegMaster.segment_name} (${fixedSegMaster.kbn_no}-${fixedSegMaster.code})」 の名簿を削除してから、\n` +
+        `今回のCSV (${incoming.toLocaleString()}行) の顧客を 「${fixedSegMaster.segment_name}」区分として 登録し直します。\n\n` +
+        `他の区分の名簿 (例: 併存する 阪神百貨店 の名簿など) は削除しません。\n` +
         `本当に実行しますか？`
       );
       if (!ok) return;
     }
-    const fixedSegMaster = segMode === "fixed"
-      ? segments.find((s) => segKey(s.kbn_no, s.code) === fixedSeg) || null
-      : null;
     setImporting(true); setError(""); setResult("");
     try {
       const now = new Date().toISOString();
@@ -381,15 +385,39 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
 
       // 3. 催事モード: 名簿を催事にひも付け、必要ならDM枚数も更新
       if (event) {
-        // 置換モード: 既存の名簿を全削除してから今回CSVで登録し直す
-        // (DM辞退した人などを確実に外すため)
-        if (replaceMode) {
-          setProgress("既存の名簿を削除中…");
-          const { error: delErr } = await supabase
-            .from("event_dm_recipients")
-            .delete()
-            .eq("event_id", event.id);
-          if (delErr) throw new Error(`名簿の置換前削除に失敗: ${delErr.message}`);
+        // 置換モード (区分限定): 今回対象の区分に属する既存名簿だけを削除して
+        // 今回CSVで登録し直す。他区分 (例: 4-112 と 9-69 を両方登録している時の
+        // 「もう片方」) は完全に保護される。
+        // 単一区分 (segMode='fixed') かつ fixedSegMaster がある時のみ有効。
+        if (replaceMode && fixedSegMaster) {
+          setProgress(`${fixedSegMaster.segment_name} の既存名簿を削除中…`);
+          // ① この区分に属する 全 customer_id を取得
+          const targetCustomerIds: string[] = [];
+          for (let from = 0; ; from += 1000) {
+            const { data, error } = await supabase
+              .from("customer_segments")
+              .select("customer_id")
+              .eq("kbn_no", fixedSegMaster.kbn_no)
+              .eq("code", fixedSegMaster.code)
+              .range(from, from + 999);
+            if (error) throw new Error(`区分限定置換の下調べ失敗: ${error.message}`);
+            const part = (data as { customer_id: string }[]) || [];
+            targetCustomerIds.push(...part.map((r) => r.customer_id));
+            if (part.length < 1000) break;
+          }
+          // ② 該当顧客の event_dm_recipients を削除 (chunk で送る)
+          if (targetCustomerIds.length > 0) {
+            const CHUNK = 500;
+            for (let i = 0; i < targetCustomerIds.length; i += CHUNK) {
+              const chunkIds = targetCustomerIds.slice(i, i + CHUNK);
+              const { error: delErr } = await supabase
+                .from("event_dm_recipients")
+                .delete()
+                .eq("event_id", event.id)
+                .in("customer_id", chunkIds);
+              if (delErr) throw new Error(`名簿の置換前削除に失敗: ${delErr.message}`);
+            }
+          }
         }
         const recipientRows = Array.from(byNo.keys())
           .map((no) => idByNo.get(no))
@@ -564,33 +592,40 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
                 </div>
               ) : (
                 <div>
-                  <div className="font-bold mb-0.5">⚠️ 置換モード</div>
+                  <div className="font-bold mb-0.5">⚠️ 置換モード（区分限定）</div>
                   <div className="text-xs space-y-0.5">
                     <div>
-                      既存の名簿 <span className="font-bold">{currentRecipientCount === null ? "…" : currentRecipientCount.toLocaleString()}人</span> を <span className="font-bold text-rose-800">全削除</span> し、今回CSVで登録し直します。
+                      下で選ぶ 区分 の既存名簿だけを <span className="font-bold text-rose-800">削除</span> し、今回CSVで登録し直します。
                     </div>
                     <div>
-                      DM辞退のご連絡があった方などが確実に名簿から外れます。
+                      同じ催事に紐付いた <span className="font-medium">他の区分の名簿は影響を受けません</span>。
+                      <br />例: 阪神百貨店(4-112) と お試し(9-69) が併存している時に お試しだけ置換したい場合に安全。
                     </div>
                     <div className="text-rose-700 mt-1 font-medium">
-                      ⚠️ 複数区分をまとめている場合は 置換モードにしないでください（他区分の名簿も消えます）
+                      💡 産直くんで DM辞退のフラグを外した人を反映させる時に使ってください。
                     </div>
                   </div>
                 </div>
               )}
-              {/* 置換モード切替 */}
-              <label className="flex items-start gap-2 pt-1 border-t cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={replaceMode}
-                  onChange={(e) => setReplaceMode(e.target.checked)}
-                  className="h-4 w-4 mt-0.5"
-                />
-                <span className="text-xs">
-                  <span className="font-medium">置換モードにする</span>
-                  （このCSVに載っていない人は名簿から外す · DM辞退対応など · 破壊的動作）
-                </span>
-              </label>
+              {/* 置換モード切替 (置換モードは 単一区分 選択が必須なので segMode='fixed' 時のみ) */}
+              {segMode === "fixed" ? (
+                <label className="flex items-start gap-2 pt-1 border-t cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={replaceMode}
+                    onChange={(e) => setReplaceMode(e.target.checked)}
+                    className="h-4 w-4 mt-0.5"
+                  />
+                  <span className="text-xs">
+                    <span className="font-medium">置換モードにする（区分限定）</span>
+                    （この区分の既存名簿を削除して 今回CSVで再登録 · DM辞退対応など）
+                  </span>
+                </label>
+              ) : (
+                <div className="pt-1 border-t text-[11px] text-muted-foreground">
+                  置換モードは 単一区分の取込時のみ有効です（下の「区分」欄で1つ選んでください）
+                </div>
+              )}
             </div>
           )}
 
