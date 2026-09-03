@@ -8,6 +8,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Sparkles, X, Trash2, CalendarDays, Copy, Printer, Mail, Check } from "lucide-react";
+import { jstDate } from "@/lib/jst";
 
 type EventRow = {
   id: string;
@@ -478,7 +479,7 @@ export function VisitReportTab() {
                   <summary className="px-3 py-2 cursor-pointer text-sm font-medium flex items-center justify-between gap-2">
                     <span>{r.title}</span>
                     <span className="flex items-center gap-2 shrink-0">
-                      <span className="text-[10px] text-muted-foreground">{r.created_at.slice(0, 10)}</span>
+                      <span className="text-[10px] text-muted-foreground">{jstDate(r.created_at)}</span>
                       <button type="button" onClick={(e) => { e.preventDefault(); copyReport(r.title, r.content); }} className="text-muted-foreground hover:text-foreground" aria-label="コピー"><Copy className="h-3.5 w-3.5" /></button>
                       <button type="button" onClick={(e) => { e.preventDefault(); printReport(r.title, r.content); }} className="text-muted-foreground hover:text-foreground" aria-label="印刷"><Printer className="h-3.5 w-3.5" /></button>
                       <button type="button" onClick={(e) => { e.preventDefault(); mailReport(r.title, r.content); }} className="text-muted-foreground hover:text-foreground" aria-label="メール"><Mail className="h-3.5 w-3.5" /></button>

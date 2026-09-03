@@ -36,6 +36,7 @@ import { PaymentSummaryCard } from "@/components/arrangements/PaymentSummaryCard
 import { PayerSourceSection } from "@/components/arrangements/PayerSourceSection";
 import { usePermission } from "@/hooks/usePermission";
 import { downloadIcs, mapsUrl } from "@/lib/ics";
+import { jstDateTimeSecond } from "@/lib/jst";
 
 type EventData = {
   id: string;
@@ -1242,7 +1243,7 @@ export default function EventDetailPage({
               {event.created_at && (
                 <div>
                   <span className="inline-block w-14">作成:</span>
-                  <span className="tabular-nums">{event.created_at.slice(0, 19).replace("T", " ")}</span>
+                  <span className="tabular-nums">{jstDateTimeSecond(event.created_at)}</span>
                   {auditNames.createdName && <span className="ml-2">by <span className="font-medium text-foreground">{auditNames.createdName}</span></span>}
                   {!auditNames.createdName && !event.created_by && <span className="ml-2 opacity-70">(記録なし)</span>}
                 </div>
@@ -1250,7 +1251,7 @@ export default function EventDetailPage({
               {event.updated_at && event.updated_at !== event.created_at && (
                 <div>
                   <span className="inline-block w-14">最終更新:</span>
-                  <span className="tabular-nums">{event.updated_at.slice(0, 19).replace("T", " ")}</span>
+                  <span className="tabular-nums">{jstDateTimeSecond(event.updated_at)}</span>
                   {auditNames.updatedName && <span className="ml-2">by <span className="font-medium text-foreground">{auditNames.updatedName}</span></span>}
                   {!auditNames.updatedName && !event.updated_by && <span className="ml-2 opacity-70">(記録なし)</span>}
                 </div>

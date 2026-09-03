@@ -16,6 +16,7 @@ import { PrintPortal } from "@/components/PrintPortal";
 import { QrAddressPrint } from "@/components/dm/QrAddressPrint";
 import { EventCalendar } from "@/components/customers/EventCalendar";
 import type { EventLite } from "@/components/customers/types";
+import { jstDateTimeMinute } from "@/lib/jst";
 
 type Evt = { id: string; name: string | null; venue: string; store_name: string | null; start_date: string; end_date: string; dm_count: number | null; venue_floor: string | null; dm_status: string | null };
 type ProofRow = { id: string; path: string; file_name: string | null; kind: string | null; note: string | null; created_by: string | null; created_at: string };
@@ -841,7 +842,7 @@ export default function PostcardMessagePage() {
                 <div className="space-y-1">
                   {proofs.map((p) => (
                     <div key={p.id} className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-sm">
-                      <span className="text-xs text-muted-foreground shrink-0 tabular-nums">{p.created_at.slice(0, 16).replace("T", " ")}</span>
+                      <span className="text-xs text-muted-foreground shrink-0 tabular-nums">{jstDateTimeMinute(p.created_at)}</span>
                       {p.kind && <span className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 shrink-0">{KIND_OPTIONS.find((o) => o.value === p.kind)?.name ?? p.kind}</span>}
                       <span className="flex-1 truncate">{p.file_name || "校正PDF"}{p.created_by ? `（${p.created_by}）` : ""}</span>
                       <Button size="sm" variant="outline" className="h-7" onClick={() => openProof(p)}>開く</Button>

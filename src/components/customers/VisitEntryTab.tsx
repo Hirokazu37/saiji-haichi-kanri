@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpDown, ArrowUp, ArrowDown, Printer, FileSpreadsheet } from "lucide-react";
 import { downloadCsv } from "@/lib/csv";
+import { jstShortDateTime, jstDateTimeSecond } from "@/lib/jst";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -251,7 +252,7 @@ export function VisitEntryTab({ segments }: Props) {
         c?.address || "",
         formatCustomerSegs(v.customer_id),
         customerTotalVisits.get(v.customer_id) || 0,
-        v.created_at?.slice(0, 19).replace("T", " ") || "",
+        jstDateTimeSecond(v.created_at),
         v.notes || "",
       ]);
     }
@@ -827,7 +828,7 @@ export function VisitEntryTab({ segments }: Props) {
                     {l.notes && <span className="ml-2 text-xs text-muted-foreground">📝 {l.notes}</span>}
                   </div>
                   <span className="text-[10px] text-muted-foreground shrink-0 hidden sm:inline">
-                    {l.deleted_at.slice(5, 16).replace("T", " ")} 取消
+                    {jstShortDateTime(l.deleted_at)} 取消
                   </span>
                   <Button size="sm" variant="outline" onClick={() => restoreVisit(l)}>
                     復元

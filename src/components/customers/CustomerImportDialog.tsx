@@ -15,6 +15,7 @@ import { Combobox, type ComboboxItem } from "@/components/ui/combobox";
 import { parseCsvFile } from "@/lib/csv";
 import { Upload, FileSpreadsheet } from "lucide-react";
 import { segKey, type SegmentMaster } from "./types";
+import { jstDateTimeMinute } from "@/lib/jst";
 
 /** マッピング対象の基本項目（住所は複数列を結合して保存する） */
 const BASE_FIELDS = [
@@ -150,6 +151,9 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
   const [recentLogs, setRecentLogs] = useState<ImportLog[]>([]);
   // 催事モード: 取込人数でDM枚数を更新するか
   const [updateDmCount, setUpdateDmCount] = useState(true);
+  // 催事モード: 置換モード (今回CSVに載っていない既存名簿を削除する)。
+  // DM辞退した人が名簿に残るのを防ぐために使う。デフォルトOFF (安全側)。
+  const [replaceMode, setReplaceMode] = useState(false);
   // 全件マスタ照合: このCSVに無い顧客を「削除候補」にする（産直くんの全得意先CSVのときだけON）
   const [markMissingAsRemoved, setMarkMissingAsRemoved] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -173,6 +177,7 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
     setSuggestNote("");
     setUpdateDmCount(true);
     setMarkMissingAsRemoved(false);
+    setReplaceMode(false); // 破壊的動作は毎回OFFから
   };
 
   // ダイアログを開いたら直近の取込履歴を読む
@@ -253,6 +258,19 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
     if (mapping.customer_no === NONE || mapping.name === NONE) {
       setError("「顧客番号」と「氏名」の列を指定してください");
       return;
+    }
+    // 置換モード時は破壊的動作なので最終確認 (誤操作防止)
+    if (event && replaceMode) {
+      const existing = currentRecipientCount ?? 0;
+      const incoming = rows.length;
+      const ok = window.confirm(
+        `⚠️ 置換モードで取り込みます\n\n` +
+        `既存の名簿 ${existing.toLocaleString()}人 を すべて削除 してから、\n` +
+        `今回のCSV (${incoming.toLocaleString()}行) の顧客だけを 登録し直します。\n\n` +
+        `もし複数区分を集約している場合は、他の区分の名簿も消えます。\n` +
+        `本当に実行しますか？`
+      );
+      if (!ok) return;
     }
     const fixedSegMaster = segMode === "fixed"
       ? segments.find((s) => segKey(s.kbn_no, s.code) === fixedSeg) || null
@@ -363,6 +381,16 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
 
       // 3. 催事モード: 名簿を催事にひも付け、必要ならDM枚数も更新
       if (event) {
+        // 置換モード: 既存の名簿を全削除してから今回CSVで登録し直す
+        // (DM辞退した人などを確実に外すため)
+        if (replaceMode) {
+          setProgress("既存の名簿を削除中…");
+          const { error: delErr } = await supabase
+            .from("event_dm_recipients")
+            .delete()
+            .eq("event_id", event.id);
+          if (delErr) throw new Error(`名簿の置換前削除に失敗: ${delErr.message}`);
+        }
         const recipientRows = Array.from(byNo.keys())
           .map((no) => idByNo.get(no))
           .filter((id): id is string => !!id)
@@ -513,20 +541,56 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
 
           {/* 催事モード: 既存名簿の人数と "追加取込対応" を明示 (複数区分の名簿を1件ずつ追加できるように誘導) */}
           {event && (
-            <div className="rounded-md border-2 border-emerald-300 bg-emerald-50/50 px-3 py-2 text-sm text-emerald-900">
-              <div className="font-bold mb-0.5">✅ 追加取込に対応しています</div>
-              <div className="text-xs space-y-0.5">
+            <div className={`rounded-md border-2 px-3 py-2 text-sm space-y-2 ${
+              replaceMode
+                ? "border-rose-400 bg-rose-50/60 text-rose-900"
+                : "border-emerald-300 bg-emerald-50/50 text-emerald-900"
+            }`}>
+              {!replaceMode ? (
                 <div>
-                  この催事の 名簿には既に <span className="font-bold text-base">{currentRecipientCount === null ? "…" : currentRecipientCount.toLocaleString()}人</span> が登録されています。
+                  <div className="font-bold mb-0.5">✅ 追加取込モード（既定）</div>
+                  <div className="text-xs space-y-0.5">
+                    <div>
+                      この催事の 名簿には既に <span className="font-bold text-base">{currentRecipientCount === null ? "…" : currentRecipientCount.toLocaleString()}人</span> が登録されています。
+                    </div>
+                    <div>
+                      今回のCSVを取込むと <span className="font-medium">既存の名簿には追加</span>され、既に登録済の顧客は自動で重複除外されます（既存は消えません）。
+                    </div>
+                    <div className="text-emerald-700 mt-1">
+                      💡 複数区分（例: 阪神百貨店 + お試し阪神梅田本店）の名簿を1つの催事に集約したい時は、
+                      区分ごとにCSVを分けて 何度でもこの画面から取込んでください。
+                    </div>
+                  </div>
                 </div>
+              ) : (
                 <div>
-                  今回のCSVを取込むと <span className="font-medium">既存の名簿には追加</span>され、既に登録済の顧客は自動で重複除外されます（既存は消えません）。
+                  <div className="font-bold mb-0.5">⚠️ 置換モード</div>
+                  <div className="text-xs space-y-0.5">
+                    <div>
+                      既存の名簿 <span className="font-bold">{currentRecipientCount === null ? "…" : currentRecipientCount.toLocaleString()}人</span> を <span className="font-bold text-rose-800">全削除</span> し、今回CSVで登録し直します。
+                    </div>
+                    <div>
+                      DM辞退のご連絡があった方などが確実に名簿から外れます。
+                    </div>
+                    <div className="text-rose-700 mt-1 font-medium">
+                      ⚠️ 複数区分をまとめている場合は 置換モードにしないでください（他区分の名簿も消えます）
+                    </div>
+                  </div>
                 </div>
-                <div className="text-emerald-700 mt-1">
-                  💡 複数区分（例: 阪神百貨店 + お試し阪神梅田本店）の名簿を1つの催事に集約したい時は、
-                  区分ごとにCSVを分けて 何度でもこの画面から取込んでください。
-                </div>
-              </div>
+              )}
+              {/* 置換モード切替 */}
+              <label className="flex items-start gap-2 pt-1 border-t cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={replaceMode}
+                  onChange={(e) => setReplaceMode(e.target.checked)}
+                  className="h-4 w-4 mt-0.5"
+                />
+                <span className="text-xs">
+                  <span className="font-medium">置換モードにする</span>
+                  （このCSVに載っていない人は名簿から外す · DM辞退対応など · 破壊的動作）
+                </span>
+              </label>
             </div>
           )}
 
@@ -722,11 +786,11 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
 
           {recentLogs.length > 0 && (
             <div className="space-y-1 pt-2 border-t">
-              <div className="text-xs font-semibold text-muted-foreground">最近の取込履歴</div>
+              <div className="text-xs font-semibold text-muted-foreground">最近の取込履歴（日本時間）</div>
               <ul className="space-y-0.5">
                 {recentLogs.map((l) => (
                   <li key={l.id} className="text-xs text-muted-foreground flex flex-wrap gap-x-2">
-                    <span className="font-mono">{l.created_at.slice(0, 16).replace("T", " ")}</span>
+                    <span className="font-mono">{jstDateTimeMinute(l.created_at)}</span>
                     <span className="truncate max-w-[180px]" title={l.file_name}>{l.file_name}</span>
                     <span className="text-foreground">{l.segment_label || "—"}</span>
                     <span>{l.imported_count.toLocaleString()}件</span>
