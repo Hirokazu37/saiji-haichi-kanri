@@ -151,9 +151,10 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
   const [recentLogs, setRecentLogs] = useState<ImportLog[]>([]);
   // 催事モード: 取込人数でDM枚数を更新するか
   const [updateDmCount, setUpdateDmCount] = useState(true);
-  // 催事モード: 置換モード (今回CSVに載っていない既存名簿を削除する)。
-  // DM辞退した人が名簿に残るのを防ぐために使う。デフォルトOFF (安全側)。
-  const [replaceMode, setReplaceMode] = useState(false);
+  // 催事モード: 常に「区分限定置換」で動作。
+  // 区分マスタ選択時: その区分の既存名簿を削除 → 今回CSVで再登録 (常に最新化)
+  // columns モード (CSVの列で区分判定): 追加動作のみ (複数区分を1CSVでカバーするケース)
+  // 別途フラグは持たず、fixedSegMaster の有無で挙動が決まる。
   // 全件マスタ照合: このCSVに無い顧客を「削除候補」にする（産直くんの全得意先CSVのときだけON）
   const [markMissingAsRemoved, setMarkMissingAsRemoved] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -177,7 +178,6 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
     setSuggestNote("");
     setUpdateDmCount(true);
     setMarkMissingAsRemoved(false);
-    setReplaceMode(false); // 破壊的動作は毎回OFFから
   };
 
   // ダイアログを開いたら直近の取込履歴を読む
@@ -262,20 +262,19 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
     const fixedSegMaster = segMode === "fixed"
       ? segments.find((s) => segKey(s.kbn_no, s.code) === fixedSeg) || null
       : null;
-    // 置換モードは 単一区分 (segMode='fixed') + 区分マスタ選択 必須。
-    // その区分に属する既存名簿だけを消して置き換える (他区分は保護)。
-    if (event && replaceMode) {
-      if (!fixedSegMaster) {
-        setError("置換モードでは 区分を1つ選んでください (例: 「お試し阪神梅田本店」)");
-        return;
-      }
+    // 催事モード + 区分マスタ選択時: 常に「区分限定置換」動作 (最新CSVで置換)
+    // 他区分の名簿は保護される
+    if (event && fixedSegMaster) {
       const incoming = rows.length;
+      // 既存 何人がこの区分に居るか (削除見込み) を UI表示ロジックの流用で概算取得
       const ok = window.confirm(
-        `⚠️ 置換モード (区分限定) で取り込みます\n\n` +
-        `既存の 「${fixedSegMaster.segment_name} (${fixedSegMaster.kbn_no}-${fixedSegMaster.code})」 の名簿を削除してから、\n` +
-        `今回のCSV (${incoming.toLocaleString()}行) の顧客を 「${fixedSegMaster.segment_name}」区分として 登録し直します。\n\n` +
-        `他の区分の名簿 (例: 併存する 阪神百貨店 の名簿など) は削除しません。\n` +
-        `本当に実行しますか？`
+        `📮 「${fixedSegMaster.segment_name} (${fixedSegMaster.kbn_no}-${fixedSegMaster.code})」 の名簿を最新CSVで置き換えます。\n\n` +
+        `動作:\n` +
+        `  ・この区分に属する 既存の名簿を いったん削除\n` +
+        `  ・今回のCSV (${incoming.toLocaleString()}行) を 「${fixedSegMaster.segment_name}」 として登録\n\n` +
+        `他の区分の名簿 (例: 併存する阪神百貨店の名簿など) は影響ありません。\n` +
+        `DM辞退・整理された方は 産直くん側で外れているので、この置換で自動的に反映されます。\n\n` +
+        `続けますか？`
       );
       if (!ok) return;
     }
@@ -385,11 +384,11 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
 
       // 3. 催事モード: 名簿を催事にひも付け、必要ならDM枚数も更新
       if (event) {
-        // 置換モード (区分限定): 今回対象の区分に属する既存名簿だけを削除して
-        // 今回CSVで登録し直す。他区分 (例: 4-112 と 9-69 を両方登録している時の
-        // 「もう片方」) は完全に保護される。
-        // 単一区分 (segMode='fixed') かつ fixedSegMaster がある時のみ有効。
-        if (replaceMode && fixedSegMaster) {
+        // 区分マスタが指定されている場合、常に「区分限定置換」で動作する。
+        // その区分に属する既存名簿だけを削除 → 今回CSVで登録し直し。
+        // 他区分 (併存する 阪神百貨店 vs お試し等) は完全に保護される。
+        // 産直くんで整理・DM辞退フラグを外した人は 自動的に外れる。
+        if (fixedSegMaster) {
           setProgress(`${fixedSegMaster.segment_name} の既存名簿を削除中…`);
           // ① この区分に属する 全 customer_id を取得
           const targetCustomerIds: string[] = [];
@@ -567,63 +566,44 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
               : "産直くん11からエクスポートした得意先のCSVを選んでください（Shift_JIS / UTF-8 どちらでも可）。同じ顧客番号は上書き更新されるので、何度でも取り込み直せます。"}
           </div>
 
-          {/* 催事モード: 既存名簿の人数と "追加取込対応" を明示 (複数区分の名簿を1件ずつ追加できるように誘導) */}
+          {/* 催事モード: 動作モードを明示
+              - 区分マスタ選択済 (segMode='fixed' + fixedSeg 選択): その区分の名簿を最新CSVで置換
+              - columns モード or 区分未選択: 追加のみ (複数区分カバー用) */}
           {event && (
-            <div className={`rounded-md border-2 px-3 py-2 text-sm space-y-2 ${
-              replaceMode
-                ? "border-rose-400 bg-rose-50/60 text-rose-900"
+            <div className={`rounded-md border-2 px-3 py-2 text-sm ${
+              segMode === "fixed" && fixedSeg
+                ? "border-blue-300 bg-blue-50/50 text-blue-900"
                 : "border-emerald-300 bg-emerald-50/50 text-emerald-900"
             }`}>
-              {!replaceMode ? (
+              {segMode === "fixed" && fixedSeg ? (
                 <div>
-                  <div className="font-bold mb-0.5">✅ 追加取込モード（既定）</div>
+                  <div className="font-bold mb-0.5">📮 置換モード（区分限定・既定）</div>
                   <div className="text-xs space-y-0.5">
                     <div>
-                      この催事の 名簿には既に <span className="font-bold text-base">{currentRecipientCount === null ? "…" : currentRecipientCount.toLocaleString()}人</span> が登録されています。
+                      下で選んだ <span className="font-medium">区分の既存名簿を最新CSVで置き換え</span> ます。
+                      産直くんで整理・DM辞退フラグを外した方は 自動で外れます。
                     </div>
                     <div>
-                      今回のCSVを取込むと <span className="font-medium">既存の名簿には追加</span>され、既に登録済の顧客は自動で重複除外されます（既存は消えません）。
+                      現在この催事の名簿: <span className="font-bold">{currentRecipientCount === null ? "…" : currentRecipientCount.toLocaleString()}人</span>
+                      （他の区分がある場合、そちらは <span className="font-medium">影響なし</span>）
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div className="font-bold mb-0.5">✅ 追加取込モード</div>
+                  <div className="text-xs space-y-0.5">
+                    <div>
+                      現在この催事の名簿: <span className="font-bold">{currentRecipientCount === null ? "…" : currentRecipientCount.toLocaleString()}人</span>
+                    </div>
+                    <div>
+                      今回CSVを 追加 で取込みます (既存は消えません・重複は自動スキップ)。
                     </div>
                     <div className="text-emerald-700 mt-1">
-                      💡 複数区分（例: 阪神百貨店 + お試し阪神梅田本店）の名簿を1つの催事に集約したい時は、
-                      区分ごとにCSVを分けて 何度でもこの画面から取込んでください。
+                      💡 <span className="font-medium">最新版で置換したい</span> (DM辞退対応など) 場合は、下の「区分」欄で 1つ選んでください
+                      → 自動的に置換モードになります。
                     </div>
                   </div>
-                </div>
-              ) : (
-                <div>
-                  <div className="font-bold mb-0.5">⚠️ 置換モード（区分限定）</div>
-                  <div className="text-xs space-y-0.5">
-                    <div>
-                      下で選ぶ 区分 の既存名簿だけを <span className="font-bold text-rose-800">削除</span> し、今回CSVで登録し直します。
-                    </div>
-                    <div>
-                      同じ催事に紐付いた <span className="font-medium">他の区分の名簿は影響を受けません</span>。
-                      <br />例: 阪神百貨店(4-112) と お試し(9-69) が併存している時に お試しだけ置換したい場合に安全。
-                    </div>
-                    <div className="text-rose-700 mt-1 font-medium">
-                      💡 産直くんで DM辞退のフラグを外した人を反映させる時に使ってください。
-                    </div>
-                  </div>
-                </div>
-              )}
-              {/* 置換モード切替 (置換モードは 単一区分 選択が必須なので segMode='fixed' 時のみ) */}
-              {segMode === "fixed" ? (
-                <label className="flex items-start gap-2 pt-1 border-t cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={replaceMode}
-                    onChange={(e) => setReplaceMode(e.target.checked)}
-                    className="h-4 w-4 mt-0.5"
-                  />
-                  <span className="text-xs">
-                    <span className="font-medium">置換モードにする（区分限定）</span>
-                    （この区分の既存名簿を削除して 今回CSVで再登録 · DM辞退対応など）
-                  </span>
-                </label>
-              ) : (
-                <div className="pt-1 border-t text-[11px] text-muted-foreground">
-                  置換モードは 単一区分の取込時のみ有効です（下の「区分」欄で1つ選んでください）
                 </div>
               )}
             </div>
