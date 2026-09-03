@@ -127,6 +127,15 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
   const supabase = createClient();
   const { displayName } = usePermission();
   const [fileName, setFileName] = useState("");
+  // 催事モード: この催事に既に登録されている名簿人数 (追加取込であることを明示するため表示)
+  const [currentRecipientCount, setCurrentRecipientCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (!open || !event) { setCurrentRecipientCount(null); return; }
+    supabase.from("event_dm_recipients")
+      .select("*", { count: "exact", head: true })
+      .eq("event_id", event.id)
+      .then(({ count }) => setCurrentRecipientCount(count ?? 0));
+  }, [open, event, supabase]);
   // 産直くんの出力ファイル名は「DMハガキ出力用.csv」固定のため、
   // 古いエクスポートの取り違え防止としてファイル更新日時を表示・警告する
   const [fileMtime, setFileMtime] = useState<number | null>(null);
@@ -367,7 +376,13 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
           if (rcErr) throw new Error(rcErr.message);
         }
         if (updateDmCount) {
-          await supabase.from("events").update({ dm_count: records.length }).eq("id", event.id);
+          // 追加取込後は 名簿の合計人数 (event_dm_recipients の総数) を dm_count にする。
+          // records.length (今回のCSV分だけ) だと、既存分を上書きして誤ったカウントになるため。
+          const { count: totalCount } = await supabase
+            .from("event_dm_recipients")
+            .select("*", { count: "exact", head: true })
+            .eq("event_id", event.id);
+          await supabase.from("events").update({ dm_count: totalCount ?? records.length }).eq("id", event.id);
         }
       }
 
@@ -496,6 +511,25 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
               : "産直くん11からエクスポートした得意先のCSVを選んでください（Shift_JIS / UTF-8 どちらでも可）。同じ顧客番号は上書き更新されるので、何度でも取り込み直せます。"}
           </div>
 
+          {/* 催事モード: 既存名簿の人数と "追加取込対応" を明示 (複数区分の名簿を1件ずつ追加できるように誘導) */}
+          {event && (
+            <div className="rounded-md border-2 border-emerald-300 bg-emerald-50/50 px-3 py-2 text-sm text-emerald-900">
+              <div className="font-bold mb-0.5">✅ 追加取込に対応しています</div>
+              <div className="text-xs space-y-0.5">
+                <div>
+                  この催事の 名簿には既に <span className="font-bold text-base">{currentRecipientCount === null ? "…" : currentRecipientCount.toLocaleString()}人</span> が登録されています。
+                </div>
+                <div>
+                  今回のCSVを取込むと <span className="font-medium">既存の名簿には追加</span>され、既に登録済の顧客は自動で重複除外されます（既存は消えません）。
+                </div>
+                <div className="text-emerald-700 mt-1">
+                  💡 複数区分（例: 阪神百貨店 + お試し阪神梅田本店）の名簿を1つの催事に集約したい時は、
+                  区分ごとにCSVを分けて 何度でもこの画面から取込んでください。
+                </div>
+              </div>
+            </div>
+          )}
+
           <label
             onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
             onDragLeave={() => setDragging(false)}
@@ -620,7 +654,14 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
                     onChange={(e) => setUpdateDmCount(e.target.checked)}
                     className="h-4 w-4"
                   />
-                  この催事のDM枚数を名簿の人数（{(rows.length - dupCount).toLocaleString()}人）で更新する
+                  <span>
+                    この催事のDM枚数を <span className="font-medium">名簿の合計人数</span> で更新する
+                    {currentRecipientCount !== null && (
+                      <span className="text-xs text-muted-foreground ml-1">
+                        （取込後の想定合計: 約 {(currentRecipientCount + (rows.length - dupCount)).toLocaleString()}人 — 既登録との重複はさらに減ります）
+                      </span>
+                    )}
+                  </span>
                 </label>
               )}
 
