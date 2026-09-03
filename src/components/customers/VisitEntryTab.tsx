@@ -79,6 +79,11 @@ export function VisitEntryTab({ segments }: Props) {
   // 各顧客の全催事累計来場回数（この催事の来場一覧に載っている顧客のみ）
   // 「来場回数」ソートと、常連バッジ表示に使う
   const [customerTotalVisits, setCustomerTotalVisits] = useState<Map<string, number>>(new Map());
+  // 各顧客の所属区分 (customer_id → ["9-69", ...])。
+  // 産直くん更新作業のため「お試し区分だけで絞込」「Excel/印刷に所属区分列」を出せるようにする
+  const [customerSegs, setCustomerSegs] = useState<Map<string, string[]>>(new Map());
+  // 区分フィルタ ("__all__" = すべて表示 / "kbn-code" = その区分のみ)
+  const [segFilter, setSegFilter] = useState<string>("__all__");
   // 印刷時の列数（多い方が1枚に多く載る。3列がバランス良く既定）
   const [printCols, setPrintCols] = useState<number>(() => {
     try {
@@ -192,29 +197,50 @@ export function VisitEntryTab({ segments }: Props) {
     const CHUNK = 300;
     (async () => {
       const counts = new Map<string, number>();
+      const segMap = new Map<string, string[]>(); // customer_id → ["9-69", ...]
       for (let i = 0; i < uniqueIds.length; i += CHUNK) {
         const chunk = uniqueIds.slice(i, i + CHUNK);
-        const { data } = await supabase
-          .from("event_visits")
-          .select("customer_id")
-          .in("customer_id", chunk);
-        for (const row of (data as { customer_id: string }[]) || []) {
+        const [visRes, segRes] = await Promise.all([
+          supabase.from("event_visits").select("customer_id").in("customer_id", chunk),
+          supabase.from("customer_segments").select("customer_id, kbn_no, code").in("customer_id", chunk),
+        ]);
+        for (const row of (visRes.data as { customer_id: string }[]) || []) {
           counts.set(row.customer_id, (counts.get(row.customer_id) || 0) + 1);
+        }
+        for (const row of (segRes.data as { customer_id: string; kbn_no: number; code: number }[]) || []) {
+          const key = `${row.kbn_no}-${row.code}`;
+          const arr = segMap.get(row.customer_id) || [];
+          arr.push(key);
+          segMap.set(row.customer_id, arr);
         }
       }
       setCustomerTotalVisits(counts);
+      setCustomerSegs(segMap);
     })();
   }, [visits, supabase]);
 
+  // 区分キー ("9-69") → 区分名 のルックアップ
+  const segNameMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of segments) m.set(`${s.kbn_no}-${s.code}`, s.segment_name);
+    return m;
+  }, [segments]);
+  const formatCustomerSegs = useCallback((customerId: string): string => {
+    const keys = customerSegs.get(customerId) || [];
+    if (keys.length === 0) return "";
+    return keys.map((k) => `${segNameMap.get(k) || k} (${k})`).join("、");
+  }, [customerSegs, segNameMap]);
+
   /** 現在の並べ替え順で来場記録を CSV(BOM付きUTF-8) としてダウンロード。
-   * BOM付きなので Excel でダブルクリックすれば文字化けなく開ける。 */
+   * BOM付きなので Excel でダブルクリックすれば文字化けなく開ける。
+   * 所属区分列を含むので、産直くん側でお試し区分を外す作業に使える。 */
   const exportExcel = () => {
     if (!selectedEvent) return;
     const rows: (string | number | null)[][] = [];
     // ヘッダ行
     rows.push([
       "顧客番号", "氏名", "カナ", "住所",
-      "累計来場回数", "来場登録日時", "この回のメモ",
+      "所属区分", "累計来場回数", "来場登録日時", "この回のメモ",
     ]);
     for (const v of sortedVisits) {
       const c = v.customers;
@@ -223,6 +249,7 @@ export function VisitEntryTab({ segments }: Props) {
         c?.name || "",
         c?.kana || "",
         c?.address || "",
+        formatCustomerSegs(v.customer_id),
         customerTotalVisits.get(v.customer_id) || 0,
         v.created_at?.slice(0, 19).replace("T", " ") || "",
         v.notes || "",
@@ -230,15 +257,20 @@ export function VisitEntryTab({ segments }: Props) {
     }
     const venue = selectedEvent.venue + (selectedEvent.store_name ? `_${selectedEvent.store_name}` : "");
     const date = selectedEvent.start_date;
-    // ファイル名にコロン等使えないので置換
+    // ファイル名にコロン等使えないので置換。区分フィルタ中はファイル名にも含める
     const safe = venue.replace(/[\\/:*?"<>|]/g, "_");
-    downloadCsv(`来場記録_${safe}_${date}.csv`, rows);
+    const segSuffix = segFilter !== "__all__" ? `_${segFilter}` : "";
+    downloadCsv(`来場記録_${safe}_${date}${segSuffix}.csv`, rows);
   };
 
   // 並べ替え適用後の来場一覧
   const sortedVisits = useMemo(() => {
     const dir = visitSort.dir === "asc" ? 1 : -1;
-    return [...visits].sort((a, b) => {
+    // まず区分フィルタで絞込
+    const filtered = segFilter === "__all__"
+      ? visits
+      : visits.filter((v) => (customerSegs.get(v.customer_id) || []).includes(segFilter));
+    return [...filtered].sort((a, b) => {
       let r = 0;
       switch (visitSort.key) {
         case "created":
@@ -263,7 +295,21 @@ export function VisitEntryTab({ segments }: Props) {
       }
       return r * dir;
     });
-  }, [visits, visitSort, customerTotalVisits]);
+  }, [visits, visitSort, customerTotalVisits, segFilter, customerSegs]);
+
+  // 来場者に含まれる区分だけを絞込セレクタに表示 (無関係な区分を出さない)
+  const availableSegs = useMemo(() => {
+    const s = new Set<string>();
+    for (const [, keys] of customerSegs.entries()) {
+      for (const k of keys) s.add(k);
+    }
+    return Array.from(s)
+      .map((k) => ({
+        key: k,
+        name: segNameMap.get(k) || k,
+      }))
+      .sort((a, b) => a.key.localeCompare(b.key, "en", { numeric: true }));
+  }, [customerSegs, segNameMap]);
 
   // カレンダー用の集計（来場数・名簿数）。選択画面に戻るたびに最新化
   useEffect(() => {
@@ -904,6 +950,12 @@ export function VisitEntryTab({ segments }: Props) {
                 この催事の来場記録
                 <span className="ml-2 text-xs text-muted-foreground">
                   {visits.length}件
+                  {segFilter !== "__all__" && (
+                    <>
+                      {" "}(表示 <span className="font-bold text-primary">{sortedVisits.length}件</span>／
+                      <span className="text-primary">{segNameMap.get(segFilter) || segFilter}</span>のみ)
+                    </>
+                  )}
                 </span>
               </div>
               <div className="flex items-center gap-1.5 flex-wrap">
@@ -945,6 +997,38 @@ export function VisitEntryTab({ segments }: Props) {
                 </Button>
               </div>
             </div>
+            {/* 区分フィルタ: 産直くん更新作業のために「9-69 お試し...」だけ絞込 */}
+            {availableSegs.length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap print-hide">
+                <span className="text-xs font-bold text-muted-foreground shrink-0">🎫 区分:</span>
+                <select
+                  value={segFilter}
+                  onChange={(e) => setSegFilter(e.target.value)}
+                  className="h-7 rounded-md border border-input bg-white px-2 text-xs max-w-[280px]"
+                  title="区分で絞り込み (産直くん側の更新作業に使う)"
+                >
+                  <option value="__all__">すべての来場者 ({visits.length}件)</option>
+                  {availableSegs.map((s) => {
+                    const cnt = visits.filter((v) => (customerSegs.get(v.customer_id) || []).includes(s.key)).length;
+                    return (
+                      <option key={s.key} value={s.key}>
+                        {s.name} ({s.key}) ({cnt}件)
+                      </option>
+                    );
+                  })}
+                </select>
+                {segFilter !== "__all__" && (
+                  <button
+                    type="button"
+                    onClick={() => setSegFilter("__all__")}
+                    className="text-xs text-muted-foreground hover:text-foreground underline"
+                  >
+                    絞り込みを解除
+                  </button>
+                )}
+              </div>
+            )}
+
             {/* 並べ替えピル */}
             <div className="flex items-center gap-1.5 flex-wrap print-hide">
               <span className="text-xs font-bold text-muted-foreground inline-flex items-center gap-1">
@@ -981,6 +1065,7 @@ export function VisitEntryTab({ segments }: Props) {
             <div className="space-y-1.5 max-h-96 overflow-y-auto visit-print-scroll">
               {sortedVisits.map((v) => {
                 const totalVisits = customerTotalVisits.get(v.customer_id) || 0;
+                const segKeys = customerSegs.get(v.customer_id) || [];
                 return (
                 <div key={v.id} data-visit-row className="px-3 py-1.5 border rounded-md">
                   <div className="flex items-center gap-3">
@@ -988,6 +1073,14 @@ export function VisitEntryTab({ segments }: Props) {
                       #{v.customers?.customer_no ?? "?"}
                     </span>
                     <span className="flex-1 truncate font-medium">{v.customers?.name ?? "（削除された顧客）"}</span>
+                    {segKeys.length > 0 && (
+                      <span
+                        className="text-[10px] px-1.5 py-0.5 rounded border border-sky-200 bg-sky-50 text-sky-800 shrink-0 max-w-[220px] truncate"
+                        title={segKeys.map((k) => `${segNameMap.get(k) || k} (${k})`).join("、")}
+                      >
+                        🎫 {segKeys.map((k) => k).join(",")}
+                      </span>
+                    )}
                     {totalVisits > 1 && (
                       <span
                         className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border shrink-0 ${
