@@ -43,31 +43,22 @@ const EMPTY_MAPPING: Record<BaseFieldKey, string> = {
   pref: NONE, city: NONE, address1: NONE, address2: NONE, address3: NONE, phone: NONE,
 };
 
-function guessMapping(headers: string[], includeAddress: boolean = false) {
+function guessMapping(headers: string[]) {
   const base: Record<BaseFieldKey, string> = { ...EMPTY_MAPPING };
   const seg: Record<number, string> = {};
-  // 個人情報最小化の方針（2026-06 ユーザー決定）:
-  // マスタ用の取込では 顧客番号・氏名・カナ のみが標準。
-  // ただし DM名簿として催事に紐付ける取込 (event mode) では
-  // 印刷に住所・郵便番号が必要なので 自動でマッピングする (2026-09 追加)。
+  // 個人情報最小化の方針（2026-06 ユーザー確定・2026-09 再確認）:
+  // 標準で取り込むのは 顧客番号・氏名・カナ のみ。
+  // 住所・電話・郵便番号は 自動割り当てしない。
+  // → 印刷は CSVから直接読込む (sessionStorage 一時保持) 前提。
+  //   DBに永続保存すると個人情報漏洩リスクが増えるため。
   const patterns: [BaseFieldKey, RegExp][] = [
     ["customer_no", /得意先コード|得意先CD|顧客番号|顧客コード|顧客No|会員番号|^コード$/i],
     ["kana", /カナ|かな|フリガナ|ふりがな/],
     ["name", /氏名|名前|得意先名|顧客名/],
   ];
-  // event モード時のみ 住所系列を追加でマッピング
-  const addressPatterns: [BaseFieldKey, RegExp][] = includeAddress ? [
-    ["postal_code", /郵便番号|〒|zip/i],
-    ["pref", /都道府県|^県$/],
-    ["city", /市区町村|市町村/],
-    ["address1", /住所\s*[1１]|^住所$|得意先住所[1１]?$|^住所$/],
-    ["address2", /住所\s*[2２]/],
-    ["address3", /住所\s*[3３]/],
-  ] : [];
-  const allPatterns = [...patterns, ...addressPatterns];
   headers.forEach((h, i) => {
     const idx = String(i);
-    for (const [key, re] of allPatterns) {
+    for (const [key, re] of patterns) {
       if (base[key] === NONE && re.test(h)) {
         // 氏名はカナ列を誤って拾わないように
         if (key === "name" && /カナ|かな|フリガナ/.test(h)) continue;
@@ -305,8 +296,7 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
       setFileMtime(file.lastModified || null);
       setHeaders(parsed[0]);
       setRows(parsed.slice(1));
-      // event モード時は 住所も自動マッピング (DM印刷に必要なため)
-      const guessed = guessMapping(parsed[0], event !== null);
+      const guessed = guessMapping(parsed[0]);
       setMapping(guessed.base);
       setSegMapping(guessed.seg);
       // 区分らしい列がCSVにあれば「列から読む」モードに自動切替
@@ -900,10 +890,9 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
               <div className="space-y-2">
                 <div className="text-sm font-medium">列の割り当て（自動で推測しています。違っていたら直してください）</div>
                 <div className="text-xs text-muted-foreground">
-                  {event
-                    ? <>DM印刷に必要な<span className="font-semibold text-foreground">顧客番号・氏名・カナ・郵便番号・住所</span>を自動でマッピングしています。電話番号は取込みません（不要なため）。</>
-                    : <>個人情報保護のため、標準で取り込むのは<span className="font-semibold text-foreground">顧客番号・氏名・カナ</span>のみです。住所・電話番号などは「（使わない）」のままにしてください（来場登録には不要です）。</>
-                  }
+                  <span className="font-medium text-amber-800">🔒 個人情報保護のため</span>、標準で取り込むのは<span className="font-semibold text-foreground">顧客番号・氏名・カナ</span>のみです。
+                  住所・電話番号などは「（使わない）」のままにしてください
+                  {event && <>（<span className="font-medium">宛名印刷は 産直くんのCSVから直接読込</span>する仕組みで、DBに住所を保存しません）</>}。
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {BASE_FIELDS.map((f) => (

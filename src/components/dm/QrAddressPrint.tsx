@@ -260,26 +260,16 @@ export function QrAddressPrint({ frontOverlay, eventId, eventLabel }: { frontOve
       // 3) 「宛先不明」「削除候補」は印刷対象から自動除外 (DMハガキで戻ってこないよう)
       const valid = custs.filter((c) => c.status !== "宛先不明" && c.status !== "削除候補");
       const skipped = custs.length - valid.length;
-      // 住所欠損チェック: 過去に「住所は使わない」で取込んだ場合 印刷不可
+      // 住所欠損チェック: 個人情報保護方針により DBには住所を保存していない前提。
+      // よってDBから読込は 名簿の確認・件数把握用途で、宛名印刷には産直くんCSVを使う。
       const noAddrCount = valid.filter((c) => !c.address || !c.address.trim()).length;
-      const noAddrRatio = valid.length > 0 ? noAddrCount / valid.length : 0;
-      if (noAddrRatio >= 1.0) {
-        // 全員住所なし → 印刷不可
+      if (noAddrCount > 0 && noAddrCount >= valid.length * 0.5) {
         setError(
-          `⚠️ 住所が登録されていない顧客が ${noAddrCount}人 (全員) います。\n` +
-          `名簿取込時に「住所」列を「（使わない）」にしていた可能性があります。\n` +
-          `/dm 画面で名簿を「置換モード」で再取込してください (住所も自動マッピングされます)。\n` +
-          `急ぎの場合は 下の「CSVから読込」で直接印刷することもできます。`
+          `⚠️ 住所は DBに保存されていません (個人情報保護方針)。\n` +
+          `${noAddrCount}/${valid.length}人 の住所欄が空白で印刷されます。\n\n` +
+          `→ 実際の宛名印刷は 下の「CSVから読込」を使ってください (産直くんのCSVから直接読み込むので住所付きで印刷できます)。\n` +
+          `「DBから読込」は 名簿の確認や件数把握用です。`
         );
-        setBusy(false);
-        return;
-      }
-      // 一部だけ欠損 → 警告付きで続行
-      if (noAddrCount > 0) {
-        setError(
-          `※ 住所未登録が ${noAddrCount}/${valid.length}人 います。この方々は宛名の住所欄が空白で印刷されます。`
-        );
-        // return しないで続行
       }
       // 4) QR生成 & Postcard 変換 (印刷対象=valid のみ)
       const list: Postcard[] = [];
@@ -396,16 +386,16 @@ export function QrAddressPrint({ frontOverlay, eventId, eventLabel }: { frontOve
         </div>
       </div>
 
-      {/* この催事の名簿から直接読込 (推奨・二重CSV取込回避) */}
+      {/* この催事の名簿から直接読込 (名簿確認用・住所は含まれない) */}
       {eventId && (
-        <div className="rounded-md border-2 border-emerald-400 bg-emerald-50/50 px-3 py-3 max-w-xl mx-auto space-y-2">
-          <div className="flex items-start gap-2 text-sm text-emerald-900">
-            <Database className="h-5 w-5 mt-0.5 shrink-0 text-emerald-700" />
+        <div className="rounded-md border-2 border-gray-300 bg-gray-50/50 px-3 py-3 max-w-xl mx-auto space-y-2">
+          <div className="flex items-start gap-2 text-sm text-gray-800">
+            <Database className="h-5 w-5 mt-0.5 shrink-0 text-gray-600" />
             <div className="flex-1">
-              <div className="font-bold">📋 この催事の名簿から自動読込（推奨）</div>
+              <div className="font-bold">📋 この催事の名簿から読込（名簿確認・件数把握用）</div>
               <div className="text-xs mt-0.5">
-                /dm 画面で登録済の名簿から 宛名リストを直接生成。
-                <span className="font-medium">CSV再取込は不要</span>。宛先不明・削除候補は自動で除外。
+                /dm 画面で登録済の名簿を確認・区分別内訳を表示。
+                <span className="font-medium text-amber-800"> ⚠ 住所はDBに保存していないので、宛名印刷には下の「CSVから読込」を使ってください。</span>
               </div>
             </div>
           </div>
@@ -413,10 +403,11 @@ export function QrAddressPrint({ frontOverlay, eventId, eventLabel }: { frontOve
             <Button
               onClick={loadFromEvent}
               disabled={busy}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              variant="outline"
+              className="border-gray-400 text-gray-700 hover:bg-gray-100"
             >
               <Database className="h-4 w-4 mr-1" />
-              {busy ? "読込中…" : "この催事の名簿から読込"}
+              {busy ? "読込中…" : "この催事の名簿から読込（住所なし・確認用）"}
             </Button>
           </div>
 
@@ -448,10 +439,21 @@ export function QrAddressPrint({ frontOverlay, eventId, eventLabel }: { frontOve
         </div>
       )}
 
-      {/* CSV アップロード (旧来。産直くんの新しいCSVで上書きしたい場合など補助的に使う) */}
-      <div className="text-xs text-muted-foreground text-center max-w-xl mx-auto">
-        または{eventId ? "、CSVから読込 (産直くんから直近抽出したCSVで一時的に印刷したい時)" : "CSVから読込"}:
-      </div>
+      {/* 産直くんCSVから直接読込 (印刷本番用・住所付き・DB保存なし) */}
+      {eventId && (
+        <div className="rounded-md border-2 border-emerald-400 bg-emerald-50/50 px-3 py-2 max-w-xl mx-auto text-sm text-emerald-900">
+          <div className="flex items-start gap-2">
+            <div className="flex-1">
+              <div className="font-bold">📮 印刷はこちら (推奨) — 産直くんCSVから直接読込</div>
+              <div className="text-xs mt-0.5">
+                産直くんで区分抽出した最新の名簿CSVを ここにドロップ。住所はブラウザ上でだけ使い、
+                <span className="font-medium">DBには保存されません</span>。
+                最新の整理結果 (DM辞退・住所変更) もそのまま反映されます。
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       <div
         role="button"
         tabIndex={0}
