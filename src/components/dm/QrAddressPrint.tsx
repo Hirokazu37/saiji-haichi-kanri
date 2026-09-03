@@ -5,10 +5,11 @@ import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { FileSpreadsheet, Printer, Info, Save } from "lucide-react";
+import { FileSpreadsheet, Printer, Info, Save, Database } from "lucide-react";
 import { parseCsvFile } from "@/lib/csv";
 import { cn } from "@/lib/utils";
 import { PrintPortal } from "@/components/PrintPortal";
+import { createClient } from "@/lib/supabase/client";
 
 const NONE = "__none__";
 
@@ -55,7 +56,8 @@ const S_NO: React.CSSProperties = { position: "absolute", top: "73mm", right: "8
 
 /** 名簿CSV（宛名つき）から QR付き宛名はがきを作って印刷する部品。
  *  印刷は body.pp-address クラスで制御し、他の印刷（文面など）と共存できる。 */
-export function QrAddressPrint({ frontOverlay }: { frontOverlay?: React.ReactNode } = {}) {
+export function QrAddressPrint({ frontOverlay, eventId, eventLabel }: { frontOverlay?: React.ReactNode; eventId?: string; eventLabel?: string } = {}) {
+  const supabase = createClient();
   const [fileName, setFileName] = useState("");
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<string[][]>([]);
@@ -207,6 +209,69 @@ export function QrAddressPrint({ frontOverlay }: { frontOverlay?: React.ReactNod
     }
   };
 
+  /** この催事のDB名簿 (event_dm_recipients + customers) から
+   *  住所つきリストを直接生成 → 宛名印刷。CSV再取込を不要にする。
+   *  /dm 画面での取込結果を そのまま印刷に流用できるので二重作業回避。 */
+  const loadFromEvent = async () => {
+    if (!eventId) return;
+    setBusy(true); setError(""); setCards(null);
+    try {
+      // 1) 名簿の customer_id 一覧を取得 (1000件を超えても対応)
+      const recipientIds: string[] = [];
+      for (let from = 0; ; from += 1000) {
+        const { data, error } = await supabase
+          .from("event_dm_recipients")
+          .select("customer_id")
+          .eq("event_id", eventId)
+          .range(from, from + 999);
+        if (error) throw new Error(error.message);
+        const part = (data as { customer_id: string }[]) || [];
+        recipientIds.push(...part.map((r) => r.customer_id));
+        if (part.length < 1000) break;
+      }
+      if (recipientIds.length === 0) {
+        setError("この催事の名簿がまだありません。まず /dm 画面から CSVを取り込んでください。");
+        return;
+      }
+      // 2) 顧客詳細を取得 (300件ずつチャンク)
+      type CustRow = { id: string; customer_no: string; name: string; kana: string | null; postal_code: string | null; address: string | null; status: string };
+      const custs: CustRow[] = [];
+      for (let i = 0; i < recipientIds.length; i += 300) {
+        const chunk = recipientIds.slice(i, i + 300);
+        const { data, error } = await supabase
+          .from("customers")
+          .select("id, customer_no, name, kana, postal_code, address, status")
+          .in("id", chunk);
+        if (error) throw new Error(error.message);
+        custs.push(...((data as CustRow[]) || []));
+      }
+      // 3) 「宛先不明」「削除候補」は印刷対象から自動除外 (DMハガキで戻ってこないよう)
+      const valid = custs.filter((c) => c.status !== "宛先不明" && c.status !== "削除候補");
+      const skipped = custs.length - valid.length;
+      // 4) QR生成 & Postcard 変換
+      const list: Postcard[] = [];
+      for (const c of valid) {
+        const qr = await QRCode.toString(c.customer_no, { type: "svg", margin: 0, errorCorrectionLevel: "M" });
+        list.push({
+          no: c.customer_no,
+          name: c.name || "",
+          postal: c.postal_code || "",
+          address: c.address || "",
+          qr,
+        });
+      }
+      // 顧客番号順にソート (印刷順を安定させる)
+      list.sort((a, b) => a.no.localeCompare(b.no, "ja", { numeric: true }));
+      setCards(list);
+      setFileName(`（DBから読込・${eventLabel || "この催事"}・${list.length}件${skipped > 0 ? ` / 宛先不明等 ${skipped}件を除外` : ""}）`);
+      // CSVアップロード関連のstateは触らない (使い分けOKに)
+    } catch (e) {
+      setError(`名簿読込に失敗: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const col = (row: string[], key: FieldKey): string => {
     const idx = mapping[key];
     if (idx === NONE) return "";
@@ -271,6 +336,36 @@ export function QrAddressPrint({ frontOverlay }: { frontOverlay?: React.ReactNod
         </div>
       </div>
 
+      {/* この催事の名簿から直接読込 (推奨・二重CSV取込回避) */}
+      {eventId && (
+        <div className="rounded-md border-2 border-emerald-400 bg-emerald-50/50 px-3 py-3 max-w-xl mx-auto space-y-2">
+          <div className="flex items-start gap-2 text-sm text-emerald-900">
+            <Database className="h-5 w-5 mt-0.5 shrink-0 text-emerald-700" />
+            <div className="flex-1">
+              <div className="font-bold">📋 この催事の名簿から自動読込（推奨）</div>
+              <div className="text-xs mt-0.5">
+                /dm 画面で登録済の名簿から 宛名リストを直接生成。
+                <span className="font-medium">CSV再取込は不要</span>。宛先不明・削除候補は自動で除外。
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-center">
+            <Button
+              onClick={loadFromEvent}
+              disabled={busy}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              <Database className="h-4 w-4 mr-1" />
+              {busy ? "読込中…" : "この催事の名簿から読込"}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* CSV アップロード (旧来。産直くんの新しいCSVで上書きしたい場合など補助的に使う) */}
+      <div className="text-xs text-muted-foreground text-center max-w-xl mx-auto">
+        または{eventId ? "、CSVから読込 (産直くんから直近抽出したCSVで一時的に印刷したい時)" : "CSVから読込"}:
+      </div>
       <div
         role="button"
         tabIndex={0}

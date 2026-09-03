@@ -871,13 +871,21 @@ export default function PostcardMessagePage() {
           </div>
         )}
 
-        {/* 宛名印刷（QR） — 同じ画面で名簿CSVから宛名はがきも印刷 */}
-        {eventId && (
-          <div className="space-y-2 border-t pt-4">
-            <h2 className="text-base font-bold text-center">宛名印刷（QR付きはがき）</h2>
-            <QrAddressPrint frontOverlay={renderPostcard()} />
-          </div>
-        )}
+        {/* 宛名印刷（QR） — この催事の名簿から直接読込 or CSV取込 で印刷 */}
+        {eventId && (() => {
+          const ev = events.find((e) => e.id === eventId);
+          const label = ev ? `${ev.venue}${ev.store_name ? ` ${ev.store_name}` : ""}${ev.name ? ` / ${ev.name}` : ""} (${ev.start_date}〜${ev.end_date})` : undefined;
+          return (
+            <div className="space-y-2 border-t pt-4">
+              <h2 className="text-base font-bold text-center">宛名印刷（QR付きはがき）</h2>
+              <QrAddressPrint
+                frontOverlay={renderPostcard()}
+                eventId={eventId}
+                eventLabel={label}
+              />
+            </div>
+          );
+        })()}
       </div>
 
       {/* 印刷 — body直下にポータルで出す（印刷時にbodyのクラスでどちらを出すか切替） */}
