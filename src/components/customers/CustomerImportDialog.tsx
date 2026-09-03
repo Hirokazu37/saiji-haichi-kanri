@@ -130,13 +130,59 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
   const [fileName, setFileName] = useState("");
   // 催事モード: この催事に既に登録されている名簿人数 (追加取込であることを明示するため表示)
   const [currentRecipientCount, setCurrentRecipientCount] = useState<number | null>(null);
+  // 催事モード: この催事にひも付いた区分 (event_dm_segments) と、それぞれの現在人数。
+  // 区分別のドロップ枠を出すために使う。
+  type EventSegInfo = { kbn_no: number; code: number; segment_name: string; count: number };
+  const [eventSegs, setEventSegs] = useState<EventSegInfo[]>([]);
+  const [dropDraggingKey, setDropDraggingKey] = useState<string | null>(null); // 各枠のホバー表示用
   useEffect(() => {
-    if (!open || !event) { setCurrentRecipientCount(null); return; }
+    if (!open || !event) { setCurrentRecipientCount(null); setEventSegs([]); return; }
+    // 1) 名簿の総人数
     supabase.from("event_dm_recipients")
       .select("*", { count: "exact", head: true })
       .eq("event_id", event.id)
       .then(({ count }) => setCurrentRecipientCount(count ?? 0));
-  }, [open, event, supabase]);
+    // 2) この催事に紐付いた区分 + 各区分の現在人数
+    (async () => {
+      const { data: links } = await supabase
+        .from("event_dm_segments")
+        .select("kbn_no, code")
+        .eq("event_id", event.id);
+      const linkList = (links as { kbn_no: number; code: number }[]) || [];
+      if (linkList.length === 0) { setEventSegs([]); return; }
+      // 名簿の customer_id と 区分紐付けを取り、区分別に人数集計
+      const { data: recData } = await supabase
+        .from("event_dm_recipients")
+        .select("customer_id")
+        .eq("event_id", event.id);
+      const recIds = ((recData as { customer_id: string }[]) || []).map((r) => r.customer_id);
+      const segCounts = new Map<string, number>();
+      if (recIds.length > 0) {
+        // customer_segments を chunk 取得
+        for (let i = 0; i < recIds.length; i += 300) {
+          const chunk = recIds.slice(i, i + 300);
+          const { data: cs } = await supabase
+            .from("customer_segments")
+            .select("customer_id, kbn_no, code")
+            .in("customer_id", chunk);
+          for (const r of (cs as { customer_id: string; kbn_no: number; code: number }[]) || []) {
+            const k = `${r.kbn_no}-${r.code}`;
+            segCounts.set(k, (segCounts.get(k) || 0) + 1);
+          }
+        }
+      }
+      const infos: EventSegInfo[] = linkList.map((l) => {
+        const seg = segments.find((s) => s.kbn_no === l.kbn_no && s.code === l.code);
+        return {
+          kbn_no: l.kbn_no,
+          code: l.code,
+          segment_name: seg?.segment_name || `区分${l.kbn_no}-${l.code}`,
+          count: segCounts.get(`${l.kbn_no}-${l.code}`) || 0,
+        };
+      });
+      setEventSegs(infos);
+    })();
+  }, [open, event, supabase, segments]);
   // 産直くんの出力ファイル名は「DMハガキ出力用.csv」固定のため、
   // 古いエクスポートの取り違え防止としてファイル更新日時を表示・警告する
   const [fileMtime, setFileMtime] = useState<number | null>(null);
@@ -215,6 +261,23 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
       setError(`${invalidCount}件のファイルは CSV/TXT ではないためスキップしました`);
     }
     // 最初のファイルを 通常フローで読み込み、残りは queue に
+    handleFile(valid[0]);
+    setFileQueue(valid.slice(1));
+  };
+
+  /** 区分別ドロップ枠で受けたファイルの処理。区分を事前確定させてから読み込む。
+   *  複数ファイルを 同一枠にドロップしても 全て同じ区分として扱う。 */
+  const handleFileWithSeg = (files: File[], seg: EventSegInfo) => {
+    const valid = files.filter((f) => /\.(csv|txt)$/i.test(f.name));
+    if (valid.length === 0) {
+      setError("CSVファイル（.csv / .txt）をドロップしてください");
+      return;
+    }
+    // 区分を fixedSeg にプリセット
+    setSegMode("fixed");
+    setFixedSeg(`${seg.kbn_no}-${seg.code}`);
+    setSuggestNote(`区分「${seg.segment_name} (${seg.kbn_no}-${seg.code})」の枠で受け取り済`);
+    // 先頭ファイルを読み、残りは queue へ (連続取込)
     handleFile(valid[0]);
     setFileQueue(valid.slice(1));
   };
@@ -644,6 +707,66 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
             </div>
           )}
 
+          {/* 区分別 ドロップ枠 (催事にひも付いた区分ごとに用意)。
+              こちらにドロップすると 区分が自動確定される → 取込操作が最小。 */}
+          {event && eventSegs.length > 0 && (
+            <div className="space-y-2">
+              <div className="text-xs font-semibold text-muted-foreground">
+                🎯 区分別 ドロップ枠 (この催事に設定された区分ごと)
+              </div>
+              <div className={`grid gap-2 ${eventSegs.length > 1 ? "sm:grid-cols-2" : ""}`}>
+                {eventSegs.map((seg) => {
+                  const key = `${seg.kbn_no}-${seg.code}`;
+                  const active = dropDraggingKey === key;
+                  return (
+                    <label
+                      key={key}
+                      onDragOver={(e) => { e.preventDefault(); setDropDraggingKey(key); }}
+                      onDragLeave={() => setDropDraggingKey(null)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setDropDraggingKey(null);
+                        handleFileWithSeg(Array.from(e.dataTransfer.files || []), seg);
+                      }}
+                      className={`relative flex flex-col items-center justify-center gap-1 border-2 border-dashed rounded-lg p-4 cursor-pointer transition-all min-h-[100px] ${
+                        active
+                          ? "border-blue-500 bg-blue-50 scale-[1.02]"
+                          : "border-blue-300 bg-blue-50/30 hover:bg-blue-50/60"
+                      }`}
+                    >
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-300">
+                        区{seg.kbn_no}-{seg.code}
+                      </span>
+                      <span className="text-sm font-medium text-blue-900 text-center">
+                        {seg.segment_name}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        現在: <span className="font-bold text-blue-800">{seg.count.toLocaleString()}人</span>
+                      </span>
+                      <span className="text-[10px] text-blue-700 mt-1">
+                        {active ? "ドロップで取込" : "CSVをドロップ or クリック"}
+                      </span>
+                      <input
+                        type="file"
+                        accept=".csv,.txt"
+                        multiple
+                        className="absolute inset-0 opacity-0 cursor-pointer"
+                        onChange={(e) => { handleFileWithSeg(Array.from(e.target.files || []), seg); e.target.value = ""; }}
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+              <div className="text-[10px] text-muted-foreground pl-1">
+                💡 2つのCSVを同時にドロップしてもOK (キュー処理で 順番に取込)。ファイル名から区分推定もされます。
+              </div>
+            </div>
+          )}
+
+          {/* 汎用ドロップ枠 (区分別枠に該当しない or 別の区分で試したい時の補助) */}
+          <div className="text-xs text-muted-foreground pt-1">
+            {event && eventSegs.length > 0 ? "その他の区分・ファイル (区分は下で選択):" : ""}
+          </div>
           <label
             onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
             onDragLeave={() => setDragging(false)}
