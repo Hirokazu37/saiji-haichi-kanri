@@ -151,6 +151,8 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
   const [recentLogs, setRecentLogs] = useState<ImportLog[]>([]);
   // 催事モード: 取込人数でDM枚数を更新するか
   const [updateDmCount, setUpdateDmCount] = useState(true);
+  // 複数CSV取込用のキュー (先頭が「現在処理中」、残りは順次自動読込)
+  const [fileQueue, setFileQueue] = useState<File[]>([]);
   // 催事モード: 常に「区分限定置換」で動作。
   // 区分マスタ選択時: その区分の既存名簿を削除 → 今回CSVで再登録 (常に最新化)
   // columns モード (CSVの列で区分判定): 追加動作のみ (複数区分を1CSVでカバーするケース)
@@ -178,6 +180,7 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
     setSuggestNote("");
     setUpdateDmCount(true);
     setMarkMissingAsRemoved(false);
+    setFileQueue([]);
   };
 
   // ダイアログを開いたら直近の取込履歴を読む
@@ -197,6 +200,24 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
     group: `区分${s.kbn_no}`,
     sublabel: `${s.kbn_no}-${s.code}`,
   }));
+
+  /** 複数CSVをまとめてドロップ/選択したときの処理。
+   *  先頭のファイルを 通常の handleFile で読み込み、残りをキューに入れる。
+   *  各ファイルの取込が完了したら 次のキューが自動で読み込まれる (useEffect で連鎖)。 */
+  const handleMultiFiles = (files: File[]) => {
+    const valid = files.filter((f) => /\.(csv|txt)$/i.test(f.name));
+    if (valid.length === 0) {
+      setError("CSVファイル（.csv / .txt）をドロップしてください");
+      return;
+    }
+    const invalidCount = files.length - valid.length;
+    if (invalidCount > 0) {
+      setError(`${invalidCount}件のファイルは CSV/TXT ではないためスキップしました`);
+    }
+    // 最初のファイルを 通常フローで読み込み、残りは queue に
+    handleFile(valid[0]);
+    setFileQueue(valid.slice(1));
+  };
 
   const handleFile = async (file: File) => {
     setError(""); setResult("");
@@ -519,6 +540,20 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
         .order("created_at", { ascending: false })
         .limit(5);
       setRecentLogs((logs as ImportLog[]) || []);
+      // 取込待ちキューに次のCSVがあれば 自動で読み込む (ユーザー体験の連続化)
+      if (fileQueue.length > 0) {
+        const [next, ...rest] = fileQueue;
+        setFileQueue(rest);
+        // 現在の状態 (mapping, fixedSeg 等) を一旦リセットしてから次を読む
+        setFileName(""); setFileMtime(null); setHeaders([]); setRows([]);
+        setMapping({ ...EMPTY_MAPPING });
+        setSegMapping({});
+        setSegMode("fixed");
+        setFixedSeg("");
+        setSuggestNote("");
+        // 少し待ってから次を読む (setResult のメッセージが見える時間を確保)
+        setTimeout(() => { handleFile(next); }, 300);
+      }
     } catch (e) {
       setError(`取込中にエラーが発生しました: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -615,13 +650,8 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
             onDrop={(e) => {
               e.preventDefault();
               setDragging(false);
-              const f = e.dataTransfer.files?.[0];
-              if (!f) return;
-              if (!/\.(csv|txt)$/i.test(f.name)) {
-                setError("CSVファイル（.csv / .txt）をドロップしてください");
-                return;
-              }
-              handleFile(f);
+              const files = Array.from(e.dataTransfer.files || []);
+              handleMultiFiles(files);
             }}
             className={`flex items-center justify-center gap-2 border-2 border-dashed rounded-lg p-6 cursor-pointer transition-colors ${
               dragging ? "border-primary bg-primary/5" : "hover:bg-muted/50"
@@ -629,15 +659,44 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
           >
             <FileSpreadsheet className="h-5 w-5 text-muted-foreground" />
             <span className="text-sm">
-              {fileName || (dragging ? "ここにドロップして取込" : "CSVファイルを選択（ここにドラッグ＆ドロップも可）")}
+              {fileName || (dragging
+                ? "ここにドロップして取込（複数CSVをまとめてドロップも可）"
+                : "CSVファイルを選択（ここにドラッグ＆ドロップも可・複数選択OK）")}
             </span>
             <input
               type="file"
               accept=".csv,.txt"
+              multiple
               className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }}
+              onChange={(e) => { handleMultiFiles(Array.from(e.target.files || [])); e.target.value = ""; }}
             />
           </label>
+
+          {/* 取込待ちキュー (2件目以降のCSV) */}
+          {fileQueue.length > 0 && (
+            <div className="rounded-md border-2 border-amber-300 bg-amber-50/60 px-3 py-2 text-xs text-amber-900">
+              <div className="font-bold mb-1">📋 取込待ち {fileQueue.length}件</div>
+              <ul className="space-y-0.5">
+                {fileQueue.map((f, i) => (
+                  <li key={i} className="flex items-baseline gap-2">
+                    <span className="text-amber-700">{i + 1}.</span>
+                    <span className="flex-1 truncate">{f.name}</span>
+                    <span className="text-amber-700 text-[10px]">({(f.size / 1024).toFixed(0)} KB)</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-1 text-amber-700 text-[10px]">
+                今のCSVを取込ボタンで登録すると、次のCSVが自動で読み込まれます。
+              </div>
+              <button
+                type="button"
+                onClick={() => setFileQueue([])}
+                className="mt-1 text-[11px] text-muted-foreground hover:text-foreground underline"
+              >
+                待ちキューをクリア
+              </button>
+            </div>
+          )}
 
           {fileMtime != null && (() => {
             const ageMs = Date.now() - fileMtime;
