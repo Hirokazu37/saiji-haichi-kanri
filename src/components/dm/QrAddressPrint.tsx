@@ -260,6 +260,27 @@ export function QrAddressPrint({ frontOverlay, eventId, eventLabel }: { frontOve
       // 3) 「宛先不明」「削除候補」は印刷対象から自動除外 (DMハガキで戻ってこないよう)
       const valid = custs.filter((c) => c.status !== "宛先不明" && c.status !== "削除候補");
       const skipped = custs.length - valid.length;
+      // 住所欠損チェック: 過去に「住所は使わない」で取込んだ場合 印刷不可
+      const noAddrCount = valid.filter((c) => !c.address || !c.address.trim()).length;
+      const noAddrRatio = valid.length > 0 ? noAddrCount / valid.length : 0;
+      if (noAddrRatio >= 1.0) {
+        // 全員住所なし → 印刷不可
+        setError(
+          `⚠️ 住所が登録されていない顧客が ${noAddrCount}人 (全員) います。\n` +
+          `名簿取込時に「住所」列を「（使わない）」にしていた可能性があります。\n` +
+          `/dm 画面で名簿を「置換モード」で再取込してください (住所も自動マッピングされます)。\n` +
+          `急ぎの場合は 下の「CSVから読込」で直接印刷することもできます。`
+        );
+        setBusy(false);
+        return;
+      }
+      // 一部だけ欠損 → 警告付きで続行
+      if (noAddrCount > 0) {
+        setError(
+          `※ 住所未登録が ${noAddrCount}/${valid.length}人 います。この方々は宛名の住所欄が空白で印刷されます。`
+        );
+        // return しないで続行
+      }
       // 4) QR生成 & Postcard 変換 (印刷対象=valid のみ)
       const list: Postcard[] = [];
       for (const c of valid) {
