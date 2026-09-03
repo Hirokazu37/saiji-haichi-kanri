@@ -67,6 +67,9 @@ export function QrAddressPrint({ frontOverlay, eventId, eventLabel }: { frontOve
     return m;
   });
   const [cards, setCards] = useState<Postcard[] | null>(null);
+  // DB名簿読込時の区分別内訳 (「区分4-112 阪神百貨店: 1,205件」など)
+  const [segBreakdown, setSegBreakdown] = useState<Array<{ key: string; name: string; count: number }>>([]);
+  const [noSegCount, setNoSegCount] = useState<number>(0);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -211,10 +214,11 @@ export function QrAddressPrint({ frontOverlay, eventId, eventLabel }: { frontOve
 
   /** この催事のDB名簿 (event_dm_recipients + customers) から
    *  住所つきリストを直接生成 → 宛名印刷。CSV再取込を不要にする。
-   *  /dm 画面での取込結果を そのまま印刷に流用できるので二重作業回避。 */
+   *  /dm 画面での取込結果を そのまま印刷に流用できるので二重作業回避。
+   *  区分別の内訳 (例: 4-112 阪神百貨店 1,205件 / 9-69 お試し 478件) も表示。 */
   const loadFromEvent = async () => {
     if (!eventId) return;
-    setBusy(true); setError(""); setCards(null);
+    setBusy(true); setError(""); setCards(null); setSegBreakdown([]); setNoSegCount(0);
     try {
       // 1) 名簿の customer_id 一覧を取得 (1000件を超えても対応)
       const recipientIds: string[] = [];
@@ -236,19 +240,27 @@ export function QrAddressPrint({ frontOverlay, eventId, eventLabel }: { frontOve
       // 2) 顧客詳細を取得 (300件ずつチャンク)
       type CustRow = { id: string; customer_no: string; name: string; kana: string | null; postal_code: string | null; address: string | null; status: string };
       const custs: CustRow[] = [];
+      // 顧客の所属区分も同時取得
+      const custSegSet = new Map<string, Set<string>>(); // customer_id → Set<"kbn-code">
       for (let i = 0; i < recipientIds.length; i += 300) {
         const chunk = recipientIds.slice(i, i + 300);
-        const { data, error } = await supabase
-          .from("customers")
-          .select("id, customer_no, name, kana, postal_code, address, status")
-          .in("id", chunk);
-        if (error) throw new Error(error.message);
-        custs.push(...((data as CustRow[]) || []));
+        const [{ data: custData, error: custErr }, { data: segData, error: segErr }] = await Promise.all([
+          supabase.from("customers").select("id, customer_no, name, kana, postal_code, address, status").in("id", chunk),
+          supabase.from("customer_segments").select("customer_id, kbn_no, code").in("customer_id", chunk),
+        ]);
+        if (custErr) throw new Error(custErr.message);
+        if (segErr) throw new Error(segErr.message);
+        custs.push(...((custData as CustRow[]) || []));
+        for (const r of (segData as { customer_id: string; kbn_no: number; code: number }[]) || []) {
+          const k = `${r.kbn_no}-${r.code}`;
+          if (!custSegSet.has(r.customer_id)) custSegSet.set(r.customer_id, new Set());
+          custSegSet.get(r.customer_id)!.add(k);
+        }
       }
       // 3) 「宛先不明」「削除候補」は印刷対象から自動除外 (DMハガキで戻ってこないよう)
       const valid = custs.filter((c) => c.status !== "宛先不明" && c.status !== "削除候補");
       const skipped = custs.length - valid.length;
-      // 4) QR生成 & Postcard 変換
+      // 4) QR生成 & Postcard 変換 (印刷対象=valid のみ)
       const list: Postcard[] = [];
       for (const c of valid) {
         const qr = await QRCode.toString(c.customer_no, { type: "svg", margin: 0, errorCorrectionLevel: "M" });
@@ -264,7 +276,34 @@ export function QrAddressPrint({ frontOverlay, eventId, eventLabel }: { frontOve
       list.sort((a, b) => a.no.localeCompare(b.no, "ja", { numeric: true }));
       setCards(list);
       setFileName(`（DBから読込・${eventLabel || "この催事"}・${list.length}件${skipped > 0 ? ` / 宛先不明等 ${skipped}件を除外` : ""}）`);
-      // CSVアップロード関連のstateは触らない (使い分けOKに)
+
+      // 5) 印刷対象 (valid) の区分別内訳を集計 & 区分名を引く
+      const segCounts = new Map<string, number>(); // "kbn-code" → 印刷対象人数
+      let noSeg = 0;
+      for (const c of valid) {
+        const keys = custSegSet.get(c.id);
+        if (!keys || keys.size === 0) { noSeg++; continue; }
+        for (const k of keys) segCounts.set(k, (segCounts.get(k) || 0) + 1);
+      }
+      // 区分名を引く: 出てきた区分キーだけを取得
+      const uniqueSegKeys = Array.from(segCounts.keys());
+      let nameMap = new Map<string, string>();
+      if (uniqueSegKeys.length > 0) {
+        // "9-69" 形式を kbn_no と code のペアに分解して or で問い合わせ
+        const { data: segNames } = await supabase
+          .from("sanchoku_segments")
+          .select("kbn_no, code, segment_name")
+          .or(uniqueSegKeys.map((k) => {
+            const [kbn, code] = k.split("-");
+            return `and(kbn_no.eq.${kbn},code.eq.${code})`;
+          }).join(","));
+        nameMap = new Map((segNames || []).map((s: { kbn_no: number; code: number; segment_name: string }) => [`${s.kbn_no}-${s.code}`, s.segment_name]));
+      }
+      const breakdown = uniqueSegKeys
+        .map((k) => ({ key: k, name: nameMap.get(k) || "(未登録)", count: segCounts.get(k) || 0 }))
+        .sort((a, b) => b.count - a.count);
+      setSegBreakdown(breakdown);
+      setNoSegCount(noSeg);
     } catch (e) {
       setError(`名簿読込に失敗: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -359,6 +398,32 @@ export function QrAddressPrint({ frontOverlay, eventId, eventLabel }: { frontOve
               {busy ? "読込中…" : "この催事の名簿から読込"}
             </Button>
           </div>
+
+          {/* 区分別内訳: DBから読込 実行後に表示 */}
+          {segBreakdown.length > 0 && (
+            <div className="border-t border-emerald-300 pt-2 mt-2 space-y-1">
+              <div className="text-xs font-bold text-emerald-800">📊 区分別 内訳（印刷対象・重複含む）</div>
+              <ul className="text-xs space-y-0.5">
+                {segBreakdown.map((s) => (
+                  <li key={s.key} className="flex items-baseline gap-2 pl-4">
+                    <span className="inline-block min-w-[70px] font-mono text-emerald-700">区{s.key}</span>
+                    <span className="flex-1 truncate">{s.name}</span>
+                    <span className="font-bold text-emerald-900 tabular-nums">{s.count.toLocaleString()}件</span>
+                  </li>
+                ))}
+                {noSegCount > 0 && (
+                  <li className="flex items-baseline gap-2 pl-4 text-muted-foreground">
+                    <span className="inline-block min-w-[70px]">（区分なし）</span>
+                    <span className="flex-1">-</span>
+                    <span className="tabular-nums">{noSegCount.toLocaleString()}件</span>
+                  </li>
+                )}
+              </ul>
+              <p className="text-[10px] text-emerald-700/80 pl-4">
+                ※ 同じ顧客が複数区分に所属する場合、各区分でカウントされます（合計は実人数より多くなることがあります）
+              </p>
+            </div>
+          )}
         </div>
       )}
 
