@@ -840,6 +840,49 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
             );
           })()}
 
+          {/* 上部アクションバー: 読み込んだファイルの情報 + 大きな取り込みボタン
+              (スクロール不要で1クリック取込を可能に) */}
+          {rows.length > 0 && (
+            <div className="rounded-lg border-2 border-primary bg-primary/5 p-4 flex items-center gap-3 flex-wrap sticky top-0 z-10 shadow-sm">
+              <div className="flex-1 min-w-0 space-y-0.5">
+                <div className="text-sm">
+                  <span className="font-bold text-base">{fileName}</span>
+                  <span className="ml-2 text-muted-foreground">
+                    ({(rows.length - dupCount).toLocaleString()}件
+                    {dupCount > 0 && ` / 重複 ${dupCount}件は自動除外`})
+                  </span>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  区分: {segMode === "fixed" && fixedSeg
+                    ? (() => {
+                        const s = segments.find((x) => segKey(x.kbn_no, x.code) === fixedSeg);
+                        return s ? (
+                          <span className="font-bold text-blue-800">
+                            📮 {s.segment_name} ({s.kbn_no}-{s.code}) に置換
+                          </span>
+                        ) : "未選択";
+                      })()
+                    : segMode === "columns"
+                      ? <span className="text-emerald-800 font-medium">CSVの列で自動判定 (追加)</span>
+                      : <span className="text-amber-800 font-medium">⚠ 下の「区分」欄で選んでください</span>
+                  }
+                  {fileQueue.length > 0 && (
+                    <span className="ml-3">・取込後に自動で残り {fileQueue.length}件も処理</span>
+                  )}
+                </div>
+              </div>
+              <Button
+                onClick={handleImport}
+                disabled={importing || rows.length === 0}
+                size="lg"
+                className="text-base font-bold shadow-md whitespace-nowrap"
+              >
+                <Upload className="h-5 w-5 mr-1.5" />
+                {importing ? "取込中…" : `📥 取り込む (${(rows.length - dupCount).toLocaleString()}件)`}
+              </Button>
+            </div>
+          )}
+
           {headers.length > 0 && (
             <>
               <div className="space-y-2">
