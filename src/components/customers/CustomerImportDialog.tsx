@@ -668,31 +668,31 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
               - 区分マスタ選択済 (segMode='fixed' + fixedSeg 選択): その区分の名簿を最新CSVで置換
               - columns モード or 区分未選択: 追加のみ (複数区分カバー用) */}
           {event && (
-            <div className={`rounded-md border-2 px-3 py-2 text-sm ${
+            <div className={`rounded-md border-2 px-4 py-3 text-sm ${
               segMode === "fixed" && fixedSeg
                 ? "border-blue-300 bg-blue-50/50 text-blue-900"
                 : "border-emerald-300 bg-emerald-50/50 text-emerald-900"
             }`}>
               {segMode === "fixed" && fixedSeg ? (
                 <div>
-                  <div className="font-bold mb-0.5">📮 置換モード（区分限定・既定）</div>
-                  <div className="text-xs space-y-0.5">
+                  <div className="font-bold text-base mb-1">📮 置換モード（区分限定・既定）</div>
+                  <div className="text-sm space-y-1">
                     <div>
-                      下で選んだ <span className="font-medium">区分の既存名簿を最新CSVで置き換え</span> ます。
+                      下で選んだ <span className="font-bold">区分の既存名簿を最新CSVで置き換え</span> ます。
                       産直くんで整理・DM辞退フラグを外した方は 自動で外れます。
                     </div>
                     <div>
-                      現在この催事の名簿: <span className="font-bold">{currentRecipientCount === null ? "…" : currentRecipientCount.toLocaleString()}人</span>
+                      現在この催事の名簿: <span className="font-bold text-base">{currentRecipientCount === null ? "…" : currentRecipientCount.toLocaleString()}人</span>
                       （他の区分がある場合、そちらは <span className="font-medium">影響なし</span>）
                     </div>
                   </div>
                 </div>
               ) : (
                 <div>
-                  <div className="font-bold mb-0.5">✅ 追加取込モード</div>
-                  <div className="text-xs space-y-0.5">
+                  <div className="font-bold text-base mb-1">✅ 追加取込モード</div>
+                  <div className="text-sm space-y-1">
                     <div>
-                      現在この催事の名簿: <span className="font-bold">{currentRecipientCount === null ? "…" : currentRecipientCount.toLocaleString()}人</span>
+                      現在この催事の名簿: <span className="font-bold text-base">{currentRecipientCount === null ? "…" : currentRecipientCount.toLocaleString()}人</span>
                     </div>
                     <div>
                       今回CSVを 追加 で取込みます (既存は消えません・重複は自動スキップ)。
@@ -711,10 +711,10 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
               こちらにドロップすると 区分が自動確定される → 取込操作が最小。 */}
           {event && eventSegs.length > 0 && (
             <div className="space-y-2">
-              <div className="text-xs font-semibold text-muted-foreground">
-                🎯 区分別 ドロップ枠 (この催事に設定された区分ごと)
+              <div className="text-sm font-bold text-foreground">
+                🎯 区分別 ドロップ枠 <span className="text-xs font-normal text-muted-foreground">(この催事に設定された区分ごと)</span>
               </div>
-              <div className={`grid gap-2 ${eventSegs.length > 1 ? "sm:grid-cols-2" : ""}`}>
+              <div className={`grid gap-3 ${eventSegs.length > 1 ? "sm:grid-cols-2" : ""}`}>
                 {eventSegs.map((seg) => {
                   const key = `${seg.kbn_no}-${seg.code}`;
                   const active = dropDraggingKey === key;
@@ -728,23 +728,23 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
                         setDropDraggingKey(null);
                         handleFileWithSeg(Array.from(e.dataTransfer.files || []), seg);
                       }}
-                      className={`relative flex flex-col items-center justify-center gap-1 border-2 border-dashed rounded-lg p-4 cursor-pointer transition-all min-h-[100px] ${
+                      className={`relative flex flex-col items-center justify-center gap-1.5 border-2 border-dashed rounded-lg p-5 cursor-pointer transition-all min-h-[140px] ${
                         active
                           ? "border-blue-500 bg-blue-50 scale-[1.02]"
                           : "border-blue-300 bg-blue-50/30 hover:bg-blue-50/60"
                       }`}
                     >
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-300">
+                      <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-300">
                         区{seg.kbn_no}-{seg.code}
                       </span>
-                      <span className="text-sm font-medium text-blue-900 text-center">
+                      <span className="text-base font-bold text-blue-900 text-center">
                         {seg.segment_name}
                       </span>
-                      <span className="text-[10px] text-muted-foreground">
-                        現在: <span className="font-bold text-blue-800">{seg.count.toLocaleString()}人</span>
+                      <span className="text-sm text-muted-foreground">
+                        現在: <span className="font-bold text-blue-800 text-base">{seg.count.toLocaleString()}人</span>
                       </span>
-                      <span className="text-[10px] text-blue-700 mt-1">
-                        {active ? "ドロップで取込" : "CSVをドロップ or クリック"}
+                      <span className={`text-sm font-medium mt-1 ${active ? "text-blue-900" : "text-blue-700"}`}>
+                        {active ? "📥 ドロップで取込" : "📁 CSVをドロップ or クリック"}
                       </span>
                       <input
                         type="file"
@@ -757,16 +757,18 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
                   );
                 })}
               </div>
-              <div className="text-[10px] text-muted-foreground pl-1">
+              <div className="text-xs text-muted-foreground pl-1">
                 💡 2つのCSVを同時にドロップしてもOK (キュー処理で 順番に取込)。ファイル名から区分推定もされます。
               </div>
             </div>
           )}
 
           {/* 汎用ドロップ枠 (区分別枠に該当しない or 別の区分で試したい時の補助) */}
-          <div className="text-xs text-muted-foreground pt-1">
-            {event && eventSegs.length > 0 ? "その他の区分・ファイル (区分は下で選択):" : ""}
-          </div>
+          {event && eventSegs.length > 0 && (
+            <div className="text-sm font-medium text-muted-foreground pt-2">
+              その他の区分・ファイル <span className="text-xs">(区分は下で選択)</span>:
+            </div>
+          )}
           <label
             onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
             onDragLeave={() => setDragging(false)}
@@ -983,15 +985,15 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
 
           {recentLogs.length > 0 && (
             <div className="space-y-1 pt-2 border-t">
-              <div className="text-xs font-semibold text-muted-foreground">最近の取込履歴（日本時間）</div>
-              <ul className="space-y-0.5">
+              <div className="text-sm font-bold text-foreground">最近の取込履歴 <span className="text-xs font-normal text-muted-foreground">(日本時間)</span></div>
+              <ul className="space-y-1">
                 {recentLogs.map((l) => (
-                  <li key={l.id} className="text-xs text-muted-foreground flex flex-wrap gap-x-2">
-                    <span className="font-mono">{jstDateTimeMinute(l.created_at)}</span>
-                    <span className="truncate max-w-[180px]" title={l.file_name}>{l.file_name}</span>
-                    <span className="text-foreground">{l.segment_label || "—"}</span>
-                    <span>{l.imported_count.toLocaleString()}件</span>
-                    {l.imported_by && <span>({l.imported_by})</span>}
+                  <li key={l.id} className="text-sm text-foreground flex flex-wrap gap-x-3 gap-y-0.5 py-0.5">
+                    <span className="font-mono text-muted-foreground">{jstDateTimeMinute(l.created_at)}</span>
+                    <span className="truncate max-w-[220px] text-muted-foreground" title={l.file_name}>{l.file_name}</span>
+                    <span className="font-medium">{l.segment_label || "—"}</span>
+                    <span className="font-bold">{l.imported_count.toLocaleString()}件</span>
+                    {l.imported_by && <span className="text-muted-foreground">({l.imported_by})</span>}
                   </li>
                 ))}
               </ul>
