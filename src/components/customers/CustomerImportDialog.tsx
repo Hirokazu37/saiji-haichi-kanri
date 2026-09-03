@@ -182,6 +182,9 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
           count: segCounts.get(`${l.kbn_no}-${l.code}`) || 0,
         };
       });
+      // 区分番号の若い順 (kbn_no ↑ → code ↑) にソート。
+      // 他画面(バッジ・催事一覧)も同じ順で並んでいるので、UIの一貫性のため。
+      infos.sort((a, b) => a.kbn_no - b.kbn_no || a.code - b.code);
       setEventSegs(infos);
     })();
   }, [open, event, supabase, segments]);
