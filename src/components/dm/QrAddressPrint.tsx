@@ -5,7 +5,7 @@ import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { FileSpreadsheet, Printer, Info, Save, Database } from "lucide-react";
+import { FileSpreadsheet, Printer, Info, Save, X } from "lucide-react";
 import { parseCsvFile } from "@/lib/csv";
 import { cn } from "@/lib/utils";
 import { PrintPortal } from "@/components/PrintPortal";
@@ -56,7 +56,7 @@ const S_NO: React.CSSProperties = { position: "absolute", top: "73mm", right: "8
 
 /** 名簿CSV（宛名つき）から QR付き宛名はがきを作って印刷する部品。
  *  印刷は body.pp-address クラスで制御し、他の印刷（文面など）と共存できる。 */
-export function QrAddressPrint({ frontOverlay, eventId, eventLabel }: { frontOverlay?: React.ReactNode; eventId?: string; eventLabel?: string } = {}) {
+export function QrAddressPrint({ frontOverlay, eventId }: { frontOverlay?: React.ReactNode; eventId?: string; eventLabel?: string } = {}) {
   const supabase = createClient();
   const [fileName, setFileName] = useState("");
   const [headers, setHeaders] = useState<string[]>([]);
@@ -67,9 +67,28 @@ export function QrAddressPrint({ frontOverlay, eventId, eventLabel }: { frontOve
     return m;
   });
   const [cards, setCards] = useState<Postcard[] | null>(null);
-  // DB名簿読込時の区分別内訳 (「区分4-112 阪神百貨店: 1,205件」など)
-  const [segBreakdown, setSegBreakdown] = useState<Array<{ key: string; name: string; count: number }>>([]);
-  const [noSegCount, setNoSegCount] = useState<number>(0);
+  // 区分別ドロップ枠から取込んだ内訳。segKey (`4-112` 等) → { name, count, fileName }
+  type SegLoad = { name: string; count: number; fileName: string };
+  const [loadedSegs, setLoadedSegs] = useState<Map<string, SegLoad>>(new Map());
+  // この催事にひも付いた区分 (event_dm_segments)。区分別ドロップ枠のラベルに使う
+  type EventSegInfo = { kbn_no: number; code: number; segment_name: string };
+  const [eventSegs, setEventSegs] = useState<EventSegInfo[]>([]);
+  const [dropDraggingKey, setDropDraggingKey] = useState<string | null>(null);
+  // 各区分ごとの sanchoku_segments マスタ (区分名を引くため一度取得)
+  useEffect(() => {
+    if (!eventId) { setEventSegs([]); return; }
+    (async () => {
+      const { data: links } = await supabase.from("event_dm_segments").select("kbn_no, code").eq("event_id", eventId);
+      const linkList = (links as { kbn_no: number; code: number }[]) || [];
+      if (linkList.length === 0) { setEventSegs([]); return; }
+      const { data: segs } = await supabase.from("sanchoku_segments").select("kbn_no, code, segment_name");
+      const nameMap = new Map((segs || []).map((s: { kbn_no: number; code: number; segment_name: string }) => [`${s.kbn_no}-${s.code}`, s.segment_name]));
+      const infos = linkList
+        .map((l) => ({ kbn_no: l.kbn_no, code: l.code, segment_name: nameMap.get(`${l.kbn_no}-${l.code}`) || `区分${l.kbn_no}-${l.code}` }))
+        .sort((a, b) => a.kbn_no - b.kbn_no || a.code - b.code);
+      setEventSegs(infos);
+    })();
+  }, [eventId, supabase]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -212,114 +231,77 @@ export function QrAddressPrint({ frontOverlay, eventId, eventLabel }: { frontOve
     }
   };
 
-  /** この催事のDB名簿 (event_dm_recipients + customers) から
-   *  住所つきリストを直接生成 → 宛名印刷。CSV再取込を不要にする。
-   *  /dm 画面での取込結果を そのまま印刷に流用できるので二重作業回避。
-   *  区分別の内訳 (例: 4-112 阪神百貨店 1,205件 / 9-69 お試し 478件) も表示。 */
-  const loadFromEvent = async () => {
-    if (!eventId) return;
-    setBusy(true); setError(""); setCards(null); setSegBreakdown([]); setNoSegCount(0);
+  /** 区分別ドロップ枠に落とされたCSVを処理:
+   *  - CSVをパース → 列マッピングを自動推測
+   *  - 各行を Postcard に変換 (QR生成)
+   *  - 既存の cards に「追加マージ」(複数区分をまとめて印刷可能に)
+   *  - loadedSegs に「この区分から N件」を記録
+   *  住所はブラウザ上でだけ使い、DBには保存しない (個人情報保護)。 */
+  const handleSegmentDrop = async (file: File, seg: EventSegInfo) => {
+    setBusy(true); setError("");
     try {
-      // 1) 名簿の customer_id 一覧を取得 (1000件を超えても対応)
-      const recipientIds: string[] = [];
-      for (let from = 0; ; from += 1000) {
-        const { data, error } = await supabase
-          .from("event_dm_recipients")
-          .select("customer_id")
-          .eq("event_id", eventId)
-          .range(from, from + 999);
-        if (error) throw new Error(error.message);
-        const part = (data as { customer_id: string }[]) || [];
-        recipientIds.push(...part.map((r) => r.customer_id));
-        if (part.length < 1000) break;
-      }
-      if (recipientIds.length === 0) {
-        setError("この催事の名簿がまだありません。まず /dm 画面から CSVを取り込んでください。");
+      const parsed = await parseCsvFile(file);
+      if (parsed.length < 2) { setError("データ行がありません"); return; }
+      const headers0 = parsed[0];
+      const dataRows = parsed.slice(1);
+      const map = guess(headers0);
+      // 必須列: 顧客番号・氏名
+      if (map.customer_no === NONE || map.name === NONE) {
+        setError(`${file.name}: 「顧客番号」と「氏名」の列が見つかりません。CSVヘッダーを確認してください。`);
         return;
       }
-      // 2) 顧客詳細を取得 (300件ずつチャンク)
-      type CustRow = { id: string; customer_no: string; name: string; kana: string | null; postal_code: string | null; address: string | null; status: string };
-      const custs: CustRow[] = [];
-      // 顧客の所属区分も同時取得
-      const custSegSet = new Map<string, Set<string>>(); // customer_id → Set<"kbn-code">
-      for (let i = 0; i < recipientIds.length; i += 300) {
-        const chunk = recipientIds.slice(i, i + 300);
-        const [{ data: custData, error: custErr }, { data: segData, error: segErr }] = await Promise.all([
-          supabase.from("customers").select("id, customer_no, name, kana, postal_code, address, status").in("id", chunk),
-          supabase.from("customer_segments").select("customer_id, kbn_no, code").in("customer_id", chunk),
-        ]);
-        if (custErr) throw new Error(custErr.message);
-        if (segErr) throw new Error(segErr.message);
-        custs.push(...((custData as CustRow[]) || []));
-        for (const r of (segData as { customer_id: string; kbn_no: number; code: number }[]) || []) {
-          const k = `${r.kbn_no}-${r.code}`;
-          if (!custSegSet.has(r.customer_id)) custSegSet.set(r.customer_id, new Set());
-          custSegSet.get(r.customer_id)!.add(k);
-        }
+      const colOf = (row: string[], key: FieldKey): string => {
+        const idx = map[key];
+        if (idx === NONE) return "";
+        return (row[Number(idx)] ?? "").trim();
+      };
+      // 同一 顧客番号 の重複を除去
+      const byNo = new Map<string, string[]>();
+      for (const r of dataRows) {
+        const no = colOf(r, "customer_no");
+        if (!no) continue;
+        byNo.set(no, r);
       }
-      // 3) 「宛先不明」「削除候補」は印刷対象から自動除外 (DMハガキで戻ってこないよう)
-      const valid = custs.filter((c) => c.status !== "宛先不明" && c.status !== "削除候補");
-      const skipped = custs.length - valid.length;
-      // 住所欠損チェック: 個人情報保護方針により DBには住所を保存していない前提。
-      // よってDBから読込は 名簿の確認・件数把握用途で、宛名印刷には産直くんCSVを使う。
-      const noAddrCount = valid.filter((c) => !c.address || !c.address.trim()).length;
-      if (noAddrCount > 0 && noAddrCount >= valid.length * 0.5) {
-        setError(
-          `⚠️ 住所は DBに保存されていません (個人情報保護方針)。\n` +
-          `${noAddrCount}/${valid.length}人 の住所欄が空白で印刷されます。\n\n` +
-          `→ 実際の宛名印刷は 下の「CSVから読込」を使ってください (産直くんのCSVから直接読み込むので住所付きで印刷できます)。\n` +
-          `「DBから読込」は 名簿の確認や件数把握用です。`
-        );
-      }
-      // 4) QR生成 & Postcard 変換 (印刷対象=valid のみ)
-      const list: Postcard[] = [];
-      for (const c of valid) {
-        const qr = await QRCode.toString(c.customer_no, { type: "svg", margin: 0, errorCorrectionLevel: "M" });
-        list.push({
-          no: c.customer_no,
-          name: c.name || "",
-          postal: c.postal_code || "",
-          address: c.address || "",
+      const newCards: Postcard[] = [];
+      for (const [no, r] of byNo) {
+        const main = [colOf(r, "pref"), colOf(r, "city"), colOf(r, "addr1")].filter(Boolean).join("");
+        const tail = [colOf(r, "addr2"), colOf(r, "addr3")].filter(Boolean).join(" ");
+        const qr = await QRCode.toString(no, { type: "svg", margin: 0, errorCorrectionLevel: "M" });
+        newCards.push({
+          no,
+          name: colOf(r, "name"),
+          postal: colOf(r, "postal"),
+          address: [main, tail].filter(Boolean).join(" "),
           qr,
         });
       }
-      // 顧客番号順にソート (印刷順を安定させる)
-      list.sort((a, b) => a.no.localeCompare(b.no, "ja", { numeric: true }));
-      setCards(list);
-      setFileName(`（DBから読込・${eventLabel || "この催事"}・${list.length}件${skipped > 0 ? ` / 宛先不明等 ${skipped}件を除外` : ""}）`);
-
-      // 5) 印刷対象 (valid) の区分別内訳を集計 & 区分名を引く
-      const segCounts = new Map<string, number>(); // "kbn-code" → 印刷対象人数
-      let noSeg = 0;
-      for (const c of valid) {
-        const keys = custSegSet.get(c.id);
-        if (!keys || keys.size === 0) { noSeg++; continue; }
-        for (const k of keys) segCounts.set(k, (segCounts.get(k) || 0) + 1);
-      }
-      // 区分名を引く: 出てきた区分キーだけを取得
-      const uniqueSegKeys = Array.from(segCounts.keys());
-      let nameMap = new Map<string, string>();
-      if (uniqueSegKeys.length > 0) {
-        // "9-69" 形式を kbn_no と code のペアに分解して or で問い合わせ
-        const { data: segNames } = await supabase
-          .from("sanchoku_segments")
-          .select("kbn_no, code, segment_name")
-          .or(uniqueSegKeys.map((k) => {
-            const [kbn, code] = k.split("-");
-            return `and(kbn_no.eq.${kbn},code.eq.${code})`;
-          }).join(","));
-        nameMap = new Map((segNames || []).map((s: { kbn_no: number; code: number; segment_name: string }) => [`${s.kbn_no}-${s.code}`, s.segment_name]));
-      }
-      const breakdown = uniqueSegKeys
-        .map((k) => ({ key: k, name: nameMap.get(k) || "(未登録)", count: segCounts.get(k) || 0 }))
-        .sort((a, b) => b.count - a.count);
-      setSegBreakdown(breakdown);
-      setNoSegCount(noSeg);
+      // 既存の cards にマージ (同じ顧客番号は 後から入れた方で上書き)
+      const merged = new Map<string, Postcard>();
+      for (const c of cards || []) merged.set(c.no, c);
+      for (const c of newCards) merged.set(c.no, c);
+      const combined = Array.from(merged.values()).sort((a, b) => a.no.localeCompare(b.no, "ja", { numeric: true }));
+      setCards(combined);
+      // 内訳記録
+      const key = `${seg.kbn_no}-${seg.code}`;
+      setLoadedSegs((prev) => {
+        const next = new Map(prev);
+        next.set(key, { name: seg.segment_name, count: newCards.length, fileName: file.name });
+        return next;
+      });
+      setFileName(`区分別読込 (${combined.length}件・${loadedSegs.size + 1}区分)`);
     } catch (e) {
-      setError(`名簿読込に失敗: ${e instanceof Error ? e.message : String(e)}`);
+      setError(`CSV読込失敗 (${file.name}): ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setBusy(false);
     }
+  };
+
+  /** 区分別読込をリセット (印刷対象カードをクリア) */
+  const resetSegmentLoads = () => {
+    setCards(null);
+    setLoadedSegs(new Map());
+    setFileName("");
+    setError("");
   };
 
   const col = (row: string[], key: FieldKey): string => {
@@ -386,72 +368,94 @@ export function QrAddressPrint({ frontOverlay, eventId, eventLabel }: { frontOve
         </div>
       </div>
 
-      {/* この催事の名簿から直接読込 (名簿確認用・住所は含まれない) */}
-      {eventId && (
-        <div className="rounded-md border-2 border-gray-300 bg-gray-50/50 px-3 py-3 max-w-xl mx-auto space-y-2">
-          <div className="flex items-start gap-2 text-sm text-gray-800">
-            <Database className="h-5 w-5 mt-0.5 shrink-0 text-gray-600" />
-            <div className="flex-1">
-              <div className="font-bold">📋 この催事の名簿から読込（名簿確認・件数把握用）</div>
-              <div className="text-xs mt-0.5">
-                /dm 画面で登録済の名簿を確認・区分別内訳を表示。
-                <span className="font-medium text-amber-800"> ⚠ 住所はDBに保存していないので、宛名印刷には下の「CSVから読込」を使ってください。</span>
-              </div>
-            </div>
+      {/* 区分別 CSV ドロップ枠 (催事にひも付いた区分ごと)
+          産直くんCSVを ここにドロップ → 直接印刷 (住所はブラウザ上のみ・DB非保存) */}
+      {eventId && eventSegs.length > 0 && (
+        <div className="space-y-2">
+          <div className="text-sm font-bold text-emerald-800">
+            📮 区分別 CSV ドロップ枠 <span className="text-xs font-normal text-muted-foreground">(産直くんCSVをドロップ → 直接印刷。住所はDBに保存されません)</span>
           </div>
-          <div className="flex justify-center">
-            <Button
-              onClick={loadFromEvent}
-              disabled={busy}
-              variant="outline"
-              className="border-gray-400 text-gray-700 hover:bg-gray-100"
-            >
-              <Database className="h-4 w-4 mr-1" />
-              {busy ? "読込中…" : "この催事の名簿から読込（住所なし・確認用）"}
-            </Button>
+          <div className={`grid gap-3 ${eventSegs.length > 1 ? "sm:grid-cols-2" : ""}`}>
+            {eventSegs.map((seg) => {
+              const key = `${seg.kbn_no}-${seg.code}`;
+              const active = dropDraggingKey === key;
+              const loaded = loadedSegs.get(key);
+              return (
+                <label
+                  key={key}
+                  onDragOver={(e) => { e.preventDefault(); setDropDraggingKey(key); }}
+                  onDragLeave={() => setDropDraggingKey(null)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDropDraggingKey(null);
+                    const f = e.dataTransfer.files?.[0];
+                    if (f) handleSegmentDrop(f, seg);
+                  }}
+                  className={`relative flex flex-col items-center justify-center gap-1.5 border-2 border-dashed rounded-lg p-5 cursor-pointer transition-all min-h-[140px] ${
+                    active
+                      ? "border-emerald-600 bg-emerald-50 scale-[1.02]"
+                      : loaded
+                        ? "border-emerald-500 bg-emerald-50/70"
+                        : "border-emerald-300 bg-emerald-50/20 hover:bg-emerald-50/50"
+                  }`}
+                >
+                  <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300">
+                    区{seg.kbn_no}-{seg.code}
+                  </span>
+                  <span className="text-base font-bold text-emerald-900 text-center">
+                    {seg.segment_name}
+                  </span>
+                  {loaded ? (
+                    <>
+                      <span className="text-sm text-emerald-700">
+                        ✅ 読込済: <span className="font-bold text-base">{loaded.count.toLocaleString()}件</span>
+                      </span>
+                      <span className="text-[10px] text-muted-foreground truncate max-w-full">{loaded.fileName}</span>
+                      <span className="text-xs text-emerald-700">別CSVをドロップで置換</span>
+                    </>
+                  ) : (
+                    <span className={`text-sm font-medium mt-1 ${active ? "text-emerald-900" : "text-emerald-700"}`}>
+                      {active ? "📥 ドロップで読込" : "📁 CSVをドロップ or クリック"}
+                    </span>
+                  )}
+                  <input
+                    type="file"
+                    accept=".csv,.txt"
+                    className="absolute inset-0 opacity-0 cursor-pointer"
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) handleSegmentDrop(f, seg); e.target.value = ""; }}
+                  />
+                </label>
+              );
+            })}
           </div>
-
-          {/* 区分別内訳: DBから読込 実行後に表示 */}
-          {segBreakdown.length > 0 && (
-            <div className="border-t border-emerald-300 pt-2 mt-2 space-y-1">
-              <div className="text-xs font-bold text-emerald-800">📊 区分別 内訳（印刷対象・重複含む）</div>
-              <ul className="text-xs space-y-0.5">
-                {segBreakdown.map((s) => (
-                  <li key={s.key} className="flex items-baseline gap-2 pl-4">
-                    <span className="inline-block min-w-[70px] font-mono text-emerald-700">区{s.key}</span>
-                    <span className="flex-1 truncate">{s.name}</span>
-                    <span className="font-bold text-emerald-900 tabular-nums">{s.count.toLocaleString()}件</span>
-                  </li>
-                ))}
-                {noSegCount > 0 && (
-                  <li className="flex items-baseline gap-2 pl-4 text-muted-foreground">
-                    <span className="inline-block min-w-[70px]">（区分なし）</span>
-                    <span className="flex-1">-</span>
-                    <span className="tabular-nums">{noSegCount.toLocaleString()}件</span>
-                  </li>
+          {/* 読込状況サマリ */}
+          {loadedSegs.size > 0 && (
+            <div className="rounded-md border-2 border-primary bg-primary/5 px-3 py-2 flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-bold">
+                📊 印刷対象: <span className="text-base">{cards?.length.toLocaleString() || 0}件</span>
+                {loadedSegs.size > 1 && (
+                  <span className="text-xs font-normal text-muted-foreground ml-2">
+                    ({Array.from(loadedSegs.values()).map((l) => l.count).reduce((a, b) => a + b, 0).toLocaleString()}件から重複除去)
+                  </span>
                 )}
-              </ul>
-              <p className="text-[10px] text-emerald-700/80 pl-4">
-                ※ 同じ顧客が複数区分に所属する場合、各区分でカウントされます（合計は実人数より多くなることがあります）
-              </p>
+              </span>
+              <span className="text-xs text-muted-foreground">
+                内訳: {Array.from(loadedSegs.values()).map((l) => `${l.name} ${l.count}`).join(" / ")}
+              </span>
+              <button
+                type="button"
+                onClick={resetSegmentLoads}
+                className="ml-auto text-xs text-muted-foreground hover:text-foreground underline inline-flex items-center gap-1"
+              >
+                <X className="h-3 w-3" />クリア
+              </button>
             </div>
           )}
         </div>
       )}
-
-      {/* 産直くんCSVから直接読込 (印刷本番用・住所付き・DB保存なし) */}
-      {eventId && (
-        <div className="rounded-md border-2 border-emerald-400 bg-emerald-50/50 px-3 py-2 max-w-xl mx-auto text-sm text-emerald-900">
-          <div className="flex items-start gap-2">
-            <div className="flex-1">
-              <div className="font-bold">📮 印刷はこちら (推奨) — 産直くんCSVから直接読込</div>
-              <div className="text-xs mt-0.5">
-                産直くんで区分抽出した最新の名簿CSVを ここにドロップ。住所はブラウザ上でだけ使い、
-                <span className="font-medium">DBには保存されません</span>。
-                最新の整理結果 (DM辞退・住所変更) もそのまま反映されます。
-              </div>
-            </div>
-          </div>
+      {eventId && eventSegs.length > 0 && (
+        <div className="text-xs text-muted-foreground text-center max-w-xl mx-auto pt-2">
+          または、区分に紐付かないCSV / 単一ファイルで印刷したい時:
         </div>
       )}
       <div
