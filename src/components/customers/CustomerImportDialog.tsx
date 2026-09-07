@@ -153,11 +153,18 @@ export function CustomerImportDialog({ open, onOpenChange, onImported, segments,
       const linkList = (links as { kbn_no: number; code: number }[]) || [];
       if (linkList.length === 0) { setEventSegs([]); return; }
       // 名簿の customer_id と 区分紐付けを取り、区分別に人数集計
-      const { data: recData } = await supabase
-        .from("event_dm_recipients")
-        .select("customer_id")
-        .eq("event_id", event.id);
-      const recIds = ((recData as { customer_id: string }[]) || []).map((r) => r.customer_id);
+      // Supabase の LIMIT 1000 に引っかからないよう range() でページング取得
+      const recIds: string[] = [];
+      for (let from = 0; ; from += 1000) {
+        const { data: recData } = await supabase
+          .from("event_dm_recipients")
+          .select("customer_id")
+          .eq("event_id", event.id)
+          .range(from, from + 999);
+        const part = ((recData as { customer_id: string }[]) || []).map((r) => r.customer_id);
+        recIds.push(...part);
+        if (part.length < 1000) break;
+      }
       const segCounts = new Map<string, number>();
       if (recIds.length > 0) {
         // customer_segments を chunk 取得
