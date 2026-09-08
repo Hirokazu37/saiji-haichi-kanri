@@ -122,6 +122,8 @@ export function QrAddressPrint({ frontOverlay, eventId }: { frontOverlay?: React
   });
   const [msgDirty, setMsgDirty] = useState(false);
   const [msgPosSaved, setMsgPosSaved] = useState(false);
+  // 「宛名なし4面印刷」のシート枚数 (1シート=4面)。frontOverlay がある時のみ使う。
+  const [msgOnlySheets, setMsgOnlySheets] = useState(1);
   const setMsgQuad = (i: number, axis: "dx" | "dy", v: number) => {
     setMsgOffsets((prev) => prev.map((q, idx) => (idx === i ? { ...q, [axis]: v } : q)));
     setMsgDirty(true);
@@ -543,8 +545,9 @@ export function QrAddressPrint({ frontOverlay, eventId }: { frontOverlay?: React
         </div>
       )}
 
-      {/* 文面(出店のご案内)エリアの面ごと微調整 — frontOverlay がある時のみ */}
-      {cards && frontOverlay && (
+      {/* 文面(出店のご案内)エリアの面ごと微調整 — frontOverlay がある時のみ
+          (CSV未読込でも「宛名なし4面印刷」に効くので表示する) */}
+      {frontOverlay && (
         <div className="space-y-1 border-t pt-3">
           <div className="flex items-center justify-center gap-2 flex-wrap">
             <span className="text-xs text-muted-foreground">
@@ -604,6 +607,34 @@ export function QrAddressPrint({ frontOverlay, eventId }: { frontOverlay?: React
         </div>
       )}
 
+      {/* 宛名なしで4面印刷 — CSV未読込でも押せる。frontOverlay(文面)がある時のみ */}
+      {frontOverlay && (
+        <div className="rounded-md border bg-amber-50/40 border-amber-200 p-3 space-y-2 max-w-xl mx-auto">
+          <div className="text-sm font-bold text-center text-amber-900">📝 宛名なしで文面だけ4面印刷</div>
+          <div className="text-xs text-muted-foreground text-center">
+            出店のご案内（文面）のみをA4×4面で印刷します。宛名やQRは出しません。
+          </div>
+          <div className="flex items-center justify-center gap-2 flex-wrap">
+            <Label className="text-xs shrink-0">シート数</Label>
+            <input
+              type="number"
+              min={1}
+              max={100}
+              value={msgOnlySheets}
+              onChange={(e) => setMsgOnlySheets(Math.max(1, Math.min(100, parseInt(e.target.value) || 1)))}
+              className="h-9 w-20 rounded-md border border-input bg-white px-2 text-sm text-center tabular-nums"
+            />
+            <span className="text-xs text-muted-foreground">枚（=はがき{msgOnlySheets * 4}面分）</span>
+            <Button onClick={() => printWith("pp-msg-only")}>
+              <Printer className="h-4 w-4 mr-1" />文面だけを印刷（{msgOnlySheets}枚 / {msgOnlySheets * 4}面）
+            </Button>
+          </div>
+          <div className="text-[11px] text-muted-foreground text-center">
+            印刷ダイアログで「余白なし」「等倍(100%)」に。位置の微調整は下の「出店のご案内エリア」設定が反映されます。
+          </div>
+        </div>
+      )}
+
       {/* まとめて印刷 */}
       {cards && (
         <div className="rounded-md border bg-muted/20 p-3 space-y-2 max-w-xl mx-auto">
@@ -628,39 +659,46 @@ export function QrAddressPrint({ frontOverlay, eventId }: { frontOverlay?: React
         </div>
       )}
 
-      {/* 印刷レイアウト — body直下にポータルで出す（body.pp-address のときだけ印刷） */}
-      {cards && (
+      {/* 印刷レイアウト — body直下にポータルで出す（body.pp-* のときだけ印刷）
+          - pp-address: 宛名のみ (cards 必須)
+          - pp-both:    宛名+文面 (cards + frontOverlay 必須)
+          - pp-msg-only:文面のみ (frontOverlay 必須、cards 不要) */}
+      {(cards || frontOverlay) && (
         <PrintPortal>
-          <div className="qr-print">
-            <style>{`
-              .qr-print, .qr-print-both { display: none; }
-              @media print {
-                @page { size: A4 portrait; margin: 0; }
-                body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-                body.pp-address .qr-print { display: block !important; margin: 0; }
-                body.pp-both .qr-print-both { display: block !important; margin: 0; }
-                .qr-sheet { width: 210mm; height: 297mm; display: grid; grid-template-columns: 105mm 105mm; grid-template-rows: 148.5mm 148.5mm; page-break-after: always; }
-                /* 差出人=左上／郵便枠=右上 はテンプレ側。郵便番号は右上の枠、宛名はその下 */
-                .qr-card { position: relative; box-sizing: border-box; overflow: hidden; }
-                .qr-shift { position: absolute; inset: 0; }
-                .qr-postal { position: absolute; top: 21mm; left: 30mm; width: 65mm; font-size: 11pt; }
-                .qr-addr { position: absolute; top: 27mm; left: 30mm; width: 65mm; font-size: 11pt; line-height: 1.5; }
-                .qr-name { position: absolute; top: 46mm; left: 30mm; width: 65mm; font-size: 14pt; }
-                .qr-qrcode { position: absolute; top: 55mm; right: 10mm; width: 18mm; height: 18mm; }
-                .qr-qrcode svg { width: 100%; height: 100%; }
-                .qr-no { position: absolute; top: 73mm; right: 8mm; width: 22mm; text-align: center; font-size: 9pt; color: #333; }
-              }
-            `}</style>
-            {pages.map((page, pi) => (
-              <div key={pi} className="qr-sheet">
-                {page.map((c, ci) => (
-                  <div key={c.no} className="qr-card">{printAddr(c, ci % 4)}</div>
-                ))}
-              </div>
-            ))}
-          </div>
+          <style>{`
+            .qr-print, .qr-print-both, .qr-print-msg-only { display: none; }
+            @media print {
+              @page { size: A4 portrait; margin: 0; }
+              body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              body.pp-address .qr-print { display: block !important; margin: 0; }
+              body.pp-both .qr-print-both { display: block !important; margin: 0; }
+              body.pp-msg-only .qr-print-msg-only { display: block !important; margin: 0; }
+              .qr-sheet { width: 210mm; height: 297mm; display: grid; grid-template-columns: 105mm 105mm; grid-template-rows: 148.5mm 148.5mm; page-break-after: always; }
+              /* 差出人=左上／郵便枠=右上 はテンプレ側。郵便番号は右上の枠、宛名はその下 */
+              .qr-card { position: relative; box-sizing: border-box; overflow: hidden; }
+              .qr-shift { position: absolute; inset: 0; }
+              .qr-postal { position: absolute; top: 21mm; left: 30mm; width: 65mm; font-size: 11pt; }
+              .qr-addr { position: absolute; top: 27mm; left: 30mm; width: 65mm; font-size: 11pt; line-height: 1.5; }
+              .qr-name { position: absolute; top: 46mm; left: 30mm; width: 65mm; font-size: 14pt; }
+              .qr-qrcode { position: absolute; top: 55mm; right: 10mm; width: 18mm; height: 18mm; }
+              .qr-qrcode svg { width: 100%; height: 100%; }
+              .qr-no { position: absolute; top: 73mm; right: 8mm; width: 22mm; text-align: center; font-size: 9pt; color: #333; }
+            }
+          `}</style>
+          {/* 宛名のみ */}
+          {cards && (
+            <div className="qr-print">
+              {pages.map((page, pi) => (
+                <div key={pi} className="qr-sheet">
+                  {page.map((c, ci) => (
+                    <div key={c.no} className="qr-card">{printAddr(c, ci % 4)}</div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
           {/* まとめ印刷: 宛名＋文面（文面は全面共通の内容だが、面ごとに位置微調整） */}
-          {frontOverlay && (
+          {cards && frontOverlay && (
             <div className="qr-print-both">
               {pages.map((page, pi) => (
                 <div key={pi} className="qr-sheet">
@@ -673,6 +711,20 @@ export function QrAddressPrint({ frontOverlay, eventId }: { frontOverlay?: React
                       </div>
                     );
                   })}
+                </div>
+              ))}
+            </div>
+          )}
+          {/* 宛名なし: 文面だけを4面×msgOnlySheets 枚 */}
+          {frontOverlay && (
+            <div className="qr-print-msg-only">
+              {Array.from({ length: msgOnlySheets }).map((_, pi) => (
+                <div key={pi} className="qr-sheet">
+                  {[0, 1, 2, 3].map((q) => (
+                    <div key={q} className="qr-card">
+                      <div className="qr-shift" style={msgShiftFor(q)}>{frontOverlay}</div>
+                    </div>
+                  ))}
                 </div>
               ))}
             </div>
