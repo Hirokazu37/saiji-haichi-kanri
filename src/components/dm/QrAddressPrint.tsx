@@ -772,7 +772,9 @@ export function QrAddressPrint({ frontOverlay, eventId }: { frontOverlay?: React
               body.pp-address .qr-print { display: block !important; margin: 0; }
               body.pp-both .qr-print-both { display: block !important; margin: 0; }
               body.pp-msg-only .qr-print-msg-only { display: block !important; margin: 0; }
-              .qr-sheet { width: 210mm; height: 297mm; display: grid; grid-template-columns: 105mm 105mm; grid-template-rows: 148.5mm 148.5mm; page-break-after: always; }
+              .qr-sheet { width: 210mm; height: 297mm; display: grid; grid-template-columns: 105mm 105mm; grid-template-rows: 148.5mm 148.5mm; break-after: page; page-break-after: always; }
+              /* 最後のシートの後に空白ページが出ないよう改ページを解除 */
+              .qr-sheet:last-child { break-after: auto; page-break-after: auto; }
               /* 差出人=左上／郵便枠=右上 はテンプレ側。郵便番号は右上の枠、宛名はその下 */
               .qr-card { position: relative; box-sizing: border-box; overflow: hidden; }
               .qr-shift { position: absolute; inset: 0; }
