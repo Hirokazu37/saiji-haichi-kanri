@@ -70,6 +70,11 @@ export function QrAddressPrint({ frontOverlay, eventId }: { frontOverlay?: React
   // 区分別ドロップ枠から取込んだ内訳。segKey (`4-112` 等) → { name, count, fileName }
   type SegLoad = { name: string; count: number; fileName: string };
   const [loadedSegs, setLoadedSegs] = useState<Map<string, SegLoad>>(new Map());
+  // 追加分ドロップ枠から取り込んだ CSV 一覧 (時系列)。同じ枠に何度でも追加できる。
+  // key は timestamp (ms) 文字列。value は { count: 実際に新規追加された件数, fileName }
+  type ExtraLoad = { count: number; fileName: string };
+  const [extraLoads, setExtraLoads] = useState<Map<string, ExtraLoad>>(new Map());
+  const [extraDragging, setExtraDragging] = useState(false);
   // この催事にひも付いた区分 (event_dm_segments)。区分別ドロップ枠のラベルに使う
   type EventSegInfo = { kbn_no: number; code: number; segment_name: string };
   const [eventSegs, setEventSegs] = useState<EventSegInfo[]>([]);
@@ -233,64 +238,99 @@ export function QrAddressPrint({ frontOverlay, eventId }: { frontOverlay?: React
     }
   };
 
+  /** CSV から Postcard[] を作る共通処理。既存 cards にマージした後の
+   *  ・fileUniqueCount: このCSV内の一意件数 (同一顧客番号の重複除去済み)
+   *  ・addedCount: 実際に新規追加された件数 (既存 cards との重複を除いた分)
+   *  ・totalCount: マージ後の総件数
+   *  を返す。住所はブラウザ上でだけ使い、DBには保存しない (個人情報保護)。 */
+  const buildCardsFromCsv = async (file: File): Promise<{ fileUniqueCount: number; addedCount: number; totalCount: number } | null> => {
+    const parsed = await parseCsvFile(file);
+    if (parsed.length < 2) { setError("データ行がありません"); return null; }
+    const headers0 = parsed[0];
+    const dataRows = parsed.slice(1);
+    const map = guess(headers0);
+    if (map.customer_no === NONE || map.name === NONE) {
+      setError(`${file.name}: 「顧客番号」と「氏名」の列が見つかりません。CSVヘッダーを確認してください。`);
+      return null;
+    }
+    const colOf = (row: string[], key: FieldKey): string => {
+      const idx = map[key];
+      if (idx === NONE) return "";
+      return (row[Number(idx)] ?? "").trim();
+    };
+    // 同一 顧客番号 の重複を除去 (このファイル内)
+    const byNo = new Map<string, string[]>();
+    for (const r of dataRows) {
+      const no = colOf(r, "customer_no");
+      if (!no) continue;
+      byNo.set(no, r);
+    }
+    const newCards: Postcard[] = [];
+    for (const [no, r] of byNo) {
+      const main = [colOf(r, "pref"), colOf(r, "city"), colOf(r, "addr1")].filter(Boolean).join("");
+      const tail = [colOf(r, "addr2"), colOf(r, "addr3")].filter(Boolean).join(" ");
+      const qr = await QRCode.toString(no, { type: "svg", margin: 0, errorCorrectionLevel: "M" });
+      newCards.push({
+        no,
+        name: colOf(r, "name"),
+        postal: colOf(r, "postal"),
+        address: [main, tail].filter(Boolean).join(" "),
+        qr,
+      });
+    }
+    // 既存 cards にマージ (同じ顧客番号は後入れで上書き)。既に居た顧客数=重複=追加ではないので差し引く。
+    const existing = new Map<string, Postcard>();
+    for (const c of cards || []) existing.set(c.no, c);
+    const beforeCount = existing.size;
+    for (const c of newCards) existing.set(c.no, c);
+    const combined = Array.from(existing.values()).sort((a, b) => a.no.localeCompare(b.no, "ja", { numeric: true }));
+    setCards(combined);
+    return {
+      fileUniqueCount: newCards.length,
+      addedCount: combined.length - beforeCount,
+      totalCount: combined.length,
+    };
+  };
+
   /** 区分別ドロップ枠に落とされたCSVを処理:
-   *  - CSVをパース → 列マッピングを自動推測
-   *  - 各行を Postcard に変換 (QR生成)
-   *  - 既存の cards に「追加マージ」(複数区分をまとめて印刷可能に)
-   *  - loadedSegs に「この区分から N件」を記録
-   *  住所はブラウザ上でだけ使い、DBには保存しない (個人情報保護)。 */
+   *  この枠は「同じ区分に置換」ではなく「既存にマージ」の挙動。
+   *  count は「今回このドロップで新規追加された件数」を表示する。 */
   const handleSegmentDrop = async (file: File, seg: EventSegInfo) => {
     setBusy(true); setError("");
     try {
-      const parsed = await parseCsvFile(file);
-      if (parsed.length < 2) { setError("データ行がありません"); return; }
-      const headers0 = parsed[0];
-      const dataRows = parsed.slice(1);
-      const map = guess(headers0);
-      // 必須列: 顧客番号・氏名
-      if (map.customer_no === NONE || map.name === NONE) {
-        setError(`${file.name}: 「顧客番号」と「氏名」の列が見つかりません。CSVヘッダーを確認してください。`);
-        return;
-      }
-      const colOf = (row: string[], key: FieldKey): string => {
-        const idx = map[key];
-        if (idx === NONE) return "";
-        return (row[Number(idx)] ?? "").trim();
-      };
-      // 同一 顧客番号 の重複を除去
-      const byNo = new Map<string, string[]>();
-      for (const r of dataRows) {
-        const no = colOf(r, "customer_no");
-        if (!no) continue;
-        byNo.set(no, r);
-      }
-      const newCards: Postcard[] = [];
-      for (const [no, r] of byNo) {
-        const main = [colOf(r, "pref"), colOf(r, "city"), colOf(r, "addr1")].filter(Boolean).join("");
-        const tail = [colOf(r, "addr2"), colOf(r, "addr3")].filter(Boolean).join(" ");
-        const qr = await QRCode.toString(no, { type: "svg", margin: 0, errorCorrectionLevel: "M" });
-        newCards.push({
-          no,
-          name: colOf(r, "name"),
-          postal: colOf(r, "postal"),
-          address: [main, tail].filter(Boolean).join(" "),
-          qr,
-        });
-      }
-      // 既存の cards にマージ (同じ顧客番号は 後から入れた方で上書き)
-      const merged = new Map<string, Postcard>();
-      for (const c of cards || []) merged.set(c.no, c);
-      for (const c of newCards) merged.set(c.no, c);
-      const combined = Array.from(merged.values()).sort((a, b) => a.no.localeCompare(b.no, "ja", { numeric: true }));
-      setCards(combined);
-      // 内訳記録
+      const res = await buildCardsFromCsv(file);
+      if (!res) return;
       const key = `${seg.kbn_no}-${seg.code}`;
       setLoadedSegs((prev) => {
         const next = new Map(prev);
-        next.set(key, { name: seg.segment_name, count: newCards.length, fileName: file.name });
+        // このCSVの一意件数を表示 (既存との重複ではなく、CSV自体の件数)
+        next.set(key, { name: seg.segment_name, count: res.fileUniqueCount, fileName: file.name });
         return next;
       });
-      setFileName(`区分別読込 (${combined.length}件・${loadedSegs.size + 1}区分)`);
+      setFileName(`区分別読込 (${res.totalCount}件)`);
+    } catch (e) {
+      setError(`CSV読込失敗 (${file.name}): ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** 追加分ドロップ枠 (区分外) にCSVをドロップ:
+   *  - 既存 cards に「追加マージ」(同一顧客番号はスキップ扱い)
+   *  - extraLoads に (時刻キー) → { count: 新規追加された件数, fileName } を積む
+   *  同じ枠に何度でもドロップ可能 (毎回追記) */
+  const handleExtraDrop = async (file: File) => {
+    setBusy(true); setError("");
+    try {
+      const res = await buildCardsFromCsv(file);
+      if (!res) return;
+      const key = String(Date.now());
+      setExtraLoads((prev) => {
+        const next = new Map(prev);
+        next.set(key, { count: res.addedCount, fileName: file.name });
+        return next;
+      });
+      setFileName(`区分別読込 + 追加分 (${res.totalCount}件)`);
     } catch (e) {
       setError(`CSV読込失敗 (${file.name}): ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -302,6 +342,7 @@ export function QrAddressPrint({ frontOverlay, eventId }: { frontOverlay?: React
   const resetSegmentLoads = () => {
     setCards(null);
     setLoadedSegs(new Map());
+    setExtraLoads(new Map());
     setFileName("");
     setError("");
   };
@@ -377,7 +418,7 @@ export function QrAddressPrint({ frontOverlay, eventId }: { frontOverlay?: React
           <div className="text-sm font-bold text-emerald-800">
             📮 区分別 CSV ドロップ枠 <span className="text-xs font-normal text-muted-foreground">(産直くんCSVをドロップ → 直接印刷。住所はDBに保存されません)</span>
           </div>
-          <div className={`grid gap-3 ${eventSegs.length > 1 ? "sm:grid-cols-2" : ""}`}>
+          <div className="grid gap-3 sm:grid-cols-2">
             {eventSegs.map((seg) => {
               const key = `${seg.kbn_no}-${seg.code}`;
               const active = dropDraggingKey === key;
@@ -413,7 +454,7 @@ export function QrAddressPrint({ frontOverlay, eventId }: { frontOverlay?: React
                         ✅ 読込済: <span className="font-bold text-base">{loaded.count.toLocaleString()}件</span>
                       </span>
                       <span className="text-[10px] text-muted-foreground truncate max-w-full">{loaded.fileName}</span>
-                      <span className="text-xs text-emerald-700">別CSVをドロップで置換</span>
+                      <span className="text-xs text-emerald-700">別CSVをドロップで再読込</span>
                     </>
                   ) : (
                     <span className={`text-sm font-medium mt-1 ${active ? "text-emerald-900" : "text-emerald-700"}`}>
@@ -429,30 +470,88 @@ export function QrAddressPrint({ frontOverlay, eventId }: { frontOverlay?: React
                 </label>
               );
             })}
+            {/* 追加分ドロップ枠 (区分外)。何度でも重ねてドロップして少しずつ足せる。 */}
+            <label
+              onDragOver={(e) => { e.preventDefault(); setExtraDragging(true); }}
+              onDragLeave={() => setExtraDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setExtraDragging(false);
+                const f = e.dataTransfer.files?.[0];
+                if (f) handleExtraDrop(f);
+              }}
+              className={`relative flex flex-col items-center justify-center gap-1.5 border-2 border-dashed rounded-lg p-5 cursor-pointer transition-all min-h-[140px] ${
+                extraDragging
+                  ? "border-amber-600 bg-amber-50 scale-[1.02]"
+                  : extraLoads.size > 0
+                    ? "border-amber-500 bg-amber-50/70"
+                    : "border-amber-300 bg-amber-50/20 hover:bg-amber-50/50"
+              }`}
+            >
+              <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300">
+                ＋追加
+              </span>
+              <span className="text-base font-bold text-amber-900 text-center">
+                追加分（区分外・後追い）
+              </span>
+              {extraLoads.size > 0 ? (
+                <>
+                  <span className="text-sm text-amber-700">
+                    ✅ 追加済: <span className="font-bold text-base">
+                      {Array.from(extraLoads.values()).reduce((a, l) => a + l.count, 0).toLocaleString()}件
+                    </span>
+                    <span className="text-xs ml-1">({extraLoads.size}回)</span>
+                  </span>
+                  <span className="text-[10px] text-muted-foreground truncate max-w-full">
+                    最新: {Array.from(extraLoads.values()).at(-1)?.fileName}
+                  </span>
+                  <span className="text-xs text-amber-700">別CSVをさらにドロップで追加</span>
+                </>
+              ) : (
+                <span className={`text-sm font-medium mt-1 ${extraDragging ? "text-amber-900" : "text-amber-700"}`}>
+                  {extraDragging ? "📥 ドロップで追加" : "📁 追加したいCSVをドロップ"}
+                </span>
+              )}
+              <input
+                type="file"
+                accept=".csv,.txt"
+                className="absolute inset-0 opacity-0 cursor-pointer"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleExtraDrop(f); e.target.value = ""; }}
+              />
+            </label>
           </div>
           {/* 読込状況サマリ */}
-          {loadedSegs.size > 0 && (
-            <div className="rounded-md border-2 border-primary bg-primary/5 px-3 py-2 flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-bold">
-                📊 印刷対象: <span className="text-base">{cards?.length.toLocaleString() || 0}件</span>
-                {loadedSegs.size > 1 && (
-                  <span className="text-xs font-normal text-muted-foreground ml-2">
-                    ({Array.from(loadedSegs.values()).map((l) => l.count).reduce((a, b) => a + b, 0).toLocaleString()}件から重複除去)
-                  </span>
-                )}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                内訳: {Array.from(loadedSegs.values()).map((l) => `${l.name} ${l.count}`).join(" / ")}
-              </span>
-              <button
-                type="button"
-                onClick={resetSegmentLoads}
-                className="ml-auto text-xs text-muted-foreground hover:text-foreground underline inline-flex items-center gap-1"
-              >
-                <X className="h-3 w-3" />クリア
-              </button>
-            </div>
-          )}
+          {(loadedSegs.size > 0 || extraLoads.size > 0) && (() => {
+            const segTotal = Array.from(loadedSegs.values()).reduce((a, l) => a + l.count, 0);
+            const extraTotal = Array.from(extraLoads.values()).reduce((a, l) => a + l.count, 0);
+            const rawTotal = segTotal + extraTotal;
+            const partsCount = loadedSegs.size + (extraLoads.size > 0 ? 1 : 0);
+            return (
+              <div className="rounded-md border-2 border-primary bg-primary/5 px-3 py-2 flex items-center gap-2 flex-wrap">
+                <span className="text-sm font-bold">
+                  📊 印刷対象: <span className="text-base">{cards?.length.toLocaleString() || 0}件</span>
+                  {partsCount > 1 && (
+                    <span className="text-xs font-normal text-muted-foreground ml-2">
+                      ({rawTotal.toLocaleString()}件から重複除去)
+                    </span>
+                  )}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  内訳: {[
+                    ...Array.from(loadedSegs.values()).map((l) => `${l.name} ${l.count}`),
+                    ...(extraLoads.size > 0 ? [`追加 ${extraTotal}${extraLoads.size > 1 ? `(${extraLoads.size}回)` : ""}`] : []),
+                  ].join(" / ")}
+                </span>
+                <button
+                  type="button"
+                  onClick={resetSegmentLoads}
+                  className="ml-auto text-xs text-muted-foreground hover:text-foreground underline inline-flex items-center gap-1"
+                >
+                  <X className="h-3 w-3" />クリア
+                </button>
+              </div>
+            );
+          })()}
         </div>
       )}
       {eventId && eventSegs.length > 0 && (
