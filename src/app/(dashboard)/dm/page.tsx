@@ -60,6 +60,10 @@ export default function DMListPage() {
   const [segmentsByVenueKey, setSegmentsByVenueKey] = useState<Map<string, SegmentRow[]>>(new Map());
   // 催事ID → 選択中のDM区分キー("kbn-code")の集合
   const [eventSegSel, setEventSegSel] = useState<Map<string, Set<string>>>(new Map());
+  // 催事ID → 過去にその催事に紐付けられた「会場マスタ外」区分キーの集合。
+  // ユーザーが紐付けを外しても表示上は薄黄チップとして残し、再選択しやすくするための履歴。
+  // 追加のみで削除はしない(ページリロードで初期化)。
+  const [shownExtras, setShownExtras] = useState<Map<string, Set<string>>>(new Map());
   // 名簿CSV取込ダイアログ（対象の催事と、最初から選んでおく区分）
   const [importTarget, setImportTarget] = useState<{ id: string; label: string; segKey?: string } | null>(null);
   const [allSegments, setAllSegments] = useState<SegmentMaster[]>([]);
@@ -111,6 +115,22 @@ export default function DMListPage() {
       map.get(key)!.push(s);
     }
     setSegmentsByVenueKey(map);
+    // 初期ロード時点の「会場マスタ外」区分を shownExtras に記録
+    // (以降 unlink されても表示に残す)
+    const evtById = new Map<string, EventDM>((evRes.data || []).map((e: EventDM) => [e.id, e]));
+    setShownExtras((prev) => {
+      const next = new Map(prev);
+      selMap.forEach((keys, evtId) => {
+        const ev = evtById.get(evtId);
+        if (!ev) return;
+        const venueSegs = map.get(`${ev.venue}|${ev.store_name || ""}`) || [];
+        const venueKeys = new Set(venueSegs.map((s) => `${s.kbn_no}-${s.code}`));
+        const set = new Set(next.get(evtId) || []);
+        keys.forEach((k) => { if (!venueKeys.has(k)) set.add(k); });
+        if (set.size > 0) next.set(evtId, set);
+      });
+      return next;
+    });
     setLoading(false);
   }, [supabase]);
 
@@ -136,6 +156,23 @@ export default function DMListPage() {
       m.set(evtId, set);
       return m;
     });
+    // 追加時：会場マスタ外の区分なら shownExtras に記録 (unlink 後も表示に残すため)
+    if (!wasSelected) {
+      const ev = events.find((e) => e.id === evtId);
+      if (ev) {
+        const venueSegs = segmentsByVenueKey.get(`${ev.venue}|${ev.store_name || ""}`) || [];
+        const isExtra = !venueSegs.some((v) => v.kbn_no === s.kbn_no && v.code === s.code);
+        if (isExtra) {
+          setShownExtras((prev) => {
+            const m = new Map(prev);
+            const set = new Set(m.get(evtId) || []);
+            set.add(key);
+            m.set(evtId, set);
+            return m;
+          });
+        }
+      }
+    }
     if (wasSelected) {
       await supabase.from("event_dm_segments").delete().match({ event_id: evtId, kbn_no: s.kbn_no, code: s.code });
     } else {
@@ -391,8 +428,13 @@ export default function DMListPage() {
                         const venueSegs = segmentsByVenueKey.get(`${e.venue}|${e.store_name || ""}`) || [];
                         const venueKeys = new Set(venueSegs.map((s) => `${s.kbn_no}-${s.code}`));
                         // 会場一致以外で、この催事に追加済みの区分（例：名鉄百貨店）
-                        const extraSegs = Array.from(eventSegSel.get(e.id) || [])
-                          .filter((k) => !venueKeys.has(k))
+                        // 現在選択中に加えて、過去に選択されて外された区分(shownExtras)も
+                        // 薄黄チップとして残す = 「消える」代わりに「黄色になる」動作を実現
+                        const extraKeys = new Set<string>([
+                          ...Array.from(eventSegSel.get(e.id) || []).filter((k) => !venueKeys.has(k)),
+                          ...Array.from(shownExtras.get(e.id) || []),
+                        ]);
+                        const extraSegs = Array.from(extraKeys)
                           .map((k) => segByKey.get(k))
                           .filter((s): s is SegmentMaster => !!s);
                         // 色は「紐付け済(緑) / 未紐付け候補(薄黄)」の2値。
