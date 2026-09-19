@@ -116,10 +116,18 @@ export default function DMListPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  /** この催事のDMをどの区分（名簿）に出したかをトグルで記録 */
+  /** この催事のDMをどの区分（名簿）に出したかをトグルで記録。
+   *  削除（＝紐付け解除）は誤クリック事故が多いので確認ダイアログを出す。
+   *  追加は今まで通り即実行。 */
   const toggleEventSegment = async (evtId: string, s: SegmentRow) => {
     const key = `${s.kbn_no}-${s.code}`;
     const wasSelected = eventSegSel.get(evtId)?.has(key) ?? false;
+    if (wasSelected) {
+      const ok = window.confirm(
+        `この催事から区分「${s.segment_name}（区${s.kbn_no}-${s.code}）」の紐付けを外しますか？\n\n※ 産直くん側の区分自体は消えません。この催事とのひも付けのみ解除します。`
+      );
+      if (!ok) return;
+    }
     // 楽観更新
     setEventSegSel((prev) => {
       const m = new Map(prev);
