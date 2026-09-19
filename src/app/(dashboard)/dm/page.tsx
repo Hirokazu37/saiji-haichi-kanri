@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import Link from "next/link";
-import { Upload, Search, CheckCircle2, AlertTriangle, Plus, X } from "lucide-react";
+import { Upload, Search, CheckCircle2, AlertTriangle, Plus } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
 import { CustomerImportDialog } from "@/components/customers/CustomerImportDialog";
 import { segKey, type SegmentMaster } from "@/components/customers/types";
@@ -396,47 +396,25 @@ export default function DMListPage() {
                           .map((k) => segByKey.get(k))
                           .filter((s): s is SegmentMaster => !!s);
                         // 色は「紐付け済(緑) / 未紐付け候補(薄黄)」の2値。
-                        // 緑チップは削除アクションを右端の × ボタンに分離し、
-                        // 本体の誤クリックで外れる事故を防ぐ。
-                        // 薄黄チップは全体クリックで紐付け追加。
+                        // 全体クリックで切替。誤削除防止は confirm ダイアログで対応(toggleEventSegment内)。
                         const renderChip = (s: SegmentMaster, extra: boolean) => {
                           const key = `${s.kbn_no}-${s.code}`;
                           const isSel = eventSegSel.get(e.id)?.has(key) ?? false;
                           const caption = s.segment_name || (s.venue_id ? venueLabelById.get(s.venue_id) || "" : "");
                           const codeText = `区${s.kbn_no}-${s.code}`;
+                          const cls = isSel
+                            ? "bg-green-700 border-green-700 text-white"
+                            : "bg-amber-50 border-amber-200 text-amber-800";
+                          const title = `${codeText}${caption ? ` ／ ${caption}` : ""}` +
+                            (isSel
+                              ? `（選択中${extra ? " ／ 会場マスタ以外から追加" : ""}・クリックで外す）`
+                              : "（クリックでこの催事のDM名簿に設定）");
                           const inner = (
                             <span className="flex flex-col items-center leading-tight">
                               <span className="font-mono text-base font-bold">{codeText}</span>
                               {caption && <span className="text-[9px] max-w-[110px] truncate opacity-90">{caption}</span>}
                             </span>
                           );
-
-                          if (isSel) {
-                            // 緑チップ: 表示部（クリック無効）＋ × ボタン
-                            const title = `${codeText}${caption ? ` ／ ${caption}` : ""}（この催事のDM名簿として選択中${extra ? " ／ 会場マスタ以外から追加" : ""}）`;
-                            const cls = "bg-green-700 border-green-700 text-white";
-                            return (
-                              <span key={(extra ? "x-" : "") + key} title={title}
-                                className={`inline-flex items-stretch rounded border overflow-hidden ${cls}`}>
-                                <span className="px-1.5 py-0.5">{inner}</span>
-                                {canEdit && (
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleEventSegment(e.id, s)}
-                                    title="この区分をこの催事から外す"
-                                    aria-label="外す"
-                                    className="border-l border-green-500/60 px-1.5 hover:bg-green-800 transition-colors flex items-center justify-center"
-                                  >
-                                    <X className="h-3.5 w-3.5" />
-                                  </button>
-                                )}
-                              </span>
-                            );
-                          }
-
-                          // 薄黄チップ: 全体クリックで追加
-                          const title = `${codeText}${caption ? ` ／ ${caption}` : ""}（クリックでこの催事のDM名簿に設定）`;
-                          const cls = "bg-amber-50 border-amber-200 text-amber-800";
                           return canEdit ? (
                             <button key={(extra ? "x-" : "") + key} type="button" onClick={() => toggleEventSegment(e.id, s)} title={title}
                               className={`inline-flex px-1.5 py-0.5 rounded border transition-colors hover:opacity-80 ${cls}`}>
