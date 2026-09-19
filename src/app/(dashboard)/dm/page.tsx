@@ -401,13 +401,15 @@ export default function DMListPage() {
                           const isSel = eventSegSel.get(e.id)?.has(key) ?? false;
                           // キャプションは産直くんの汎用マスター表記（取り込んだ区分名）をそのまま使う
                           const caption = s.segment_name || (s.venue_id ? venueLabelById.get(s.venue_id) || "" : "");
-                          const cls = extra
-                            ? "bg-blue-600 border-blue-600 text-white"
-                            : isSel
-                              ? "bg-green-700 border-green-700 text-white"
-                              : "bg-amber-50 border-amber-200 text-amber-800";
+                          // 色は「紐付け済(緑) / 未紐付け候補(薄黄)」の2値に統一。
+                          // 「＋」プレフィックス(extra)は会場マスタ以外から追加した区分の目印として残す。
+                          const cls = isSel
+                            ? "bg-green-700 border-green-700 text-white"
+                            : "bg-amber-50 border-amber-200 text-amber-800";
                           const title = `区${s.kbn_no}-${s.code}${caption ? ` ／ ${caption}` : ""}` +
-                            (extra ? "（他店の区分・クリックで外す）" : isSel ? "（この催事のDM名簿として選択中）" : "（クリックでこの催事のDM名簿に設定）");
+                            (isSel
+                              ? `（この催事のDM名簿として選択中${extra ? " ／ 会場マスタ以外から追加" : ""}・クリックで外す）`
+                              : "（クリックでこの催事のDM名簿に設定）");
                           const inner = (
                             <span className="flex flex-col items-center leading-tight">
                               <span className="font-mono text-base font-bold">{extra ? "＋" : ""}区{s.kbn_no}-{s.code}</span>
