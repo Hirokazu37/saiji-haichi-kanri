@@ -202,6 +202,13 @@ function NewEventPageInner() {
         notes: src.notes || "",
         equipment_from: src.equipment_from || "",
         equipment_to: src.equipment_to || "",
+        // 入金設定も引き継ぐ。欠落させると form.payer_source が undefined になり
+        // .startsWith() で落ちて複製できなくなる。
+        payer_source: src.force_direct
+          ? "direct"
+          : src.payer_master_id
+            ? `payer:${src.payer_master_id}`
+            : "venue",
       });
       setHotelEntries(((hotelsRes.data || []) as { hotel_name: string | null; notes: string | null; room_count: number | null }[]).map((h) => ({
         hotel_name: h.hotel_name || "",
